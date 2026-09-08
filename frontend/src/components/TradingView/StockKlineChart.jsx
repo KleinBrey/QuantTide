@@ -116,8 +116,20 @@ function formatVolume(value) {
   return number.toLocaleString('zh-CN');
 }
 
-function rowSummary(row) {
+function formatChangePercent(value) {
+  if (value == null) return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`;
+}
+
+function rowSummary(row, previousRow) {
   if (!row) return null;
+
+  const previousClose = Number(previousRow?.close);
+  const changePct =
+    Number.isFinite(previousClose) && previousClose !== 0 ? ((row.close - previousClose) / previousClose) * 100 : null;
+
   return {
     time: row.time,
     open: row.open,
@@ -125,6 +137,7 @@ function rowSummary(row) {
     low: row.low,
     close: row.close,
     volume: row.volume,
+    changePct,
     rising: row.close >= row.open
   };
 }
@@ -157,11 +170,11 @@ export default function StockKlineChart({
   const rows = useMemo(() => aggregateRows(dailyRows, period), [dailyRows, period]);
   const stockName = stock?.name;
   const stockCode = stock?.symbol || stock?.code || stock?.thscode;
-  const [activeBar, setActiveBar] = useState(() => rowSummary(rows.at(-1)));
+  const [activeBar, setActiveBar] = useState(() => rowSummary(rows.at(-1), rows.at(-2)));
   const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
-    setActiveBar(rowSummary(rows.at(-1)));
+    setActiveBar(rowSummary(rows.at(-1), rows.at(-2)));
     setContextMenu(null);
   }, [rows]);
 
@@ -319,10 +332,11 @@ export default function StockKlineChart({
       resetTimeScale(chart, rows.length);
     };
 
-    const rowsByTime = new Map(rows.map(row => [String(row.time), row]));
+    const summariesByTime = new Map(rows.map((row, index) => [String(row.time), rowSummary(row, rows[index - 1])]));
+    const latestSummary = rowSummary(rows.at(-1), rows.at(-2));
     const handleCrosshairMove = parameter => {
-      const selected = parameter.time ? rowsByTime.get(timeKey(parameter.time)) : rows.at(-1);
-      setActiveBar(rowSummary(selected || rows.at(-1)));
+      const selected = parameter.time ? summariesByTime.get(timeKey(parameter.time)) : latestSummary;
+      setActiveBar(selected || latestSummary);
     };
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
@@ -352,7 +366,7 @@ export default function StockKlineChart({
 
   const handleResetView = () => {
     resetViewRef.current();
-    setActiveBar(rowSummary(rows.at(-1)));
+    setActiveBar(rowSummary(rows.at(-1), rows.at(-2)));
     setContextMenu(null);
   };
 
@@ -392,28 +406,44 @@ export default function StockKlineChart({
         <div className={styles.chartShell} onContextMenu={handleContextMenu}>
           {activeBar ? (
             <div className={styles.legend} aria-live="polite">
-              <span className={styles.legendDate}>{activeBar.time}</span>
-              <span>
-                开 <strong>{formatPrice(activeBar.open)}</strong>
-              </span>
-              <span>
-                高 <strong>{formatPrice(activeBar.high)}</strong>
-              </span>
-              <span>
-                低 <strong>{formatPrice(activeBar.low)}</strong>
-              </span>
-              <span>
-                收{' '}
-                <strong className={activeBar.rising ? styles.rise : styles.fall}>{formatPrice(activeBar.close)}</strong>
-              </span>
-              <span>
-                量 <strong>{formatVolume(activeBar.volume)}</strong>
-              </span>
-              {movingAverages.map(({ days, color }) => (
-                <span className={styles.maKey} key={days} style={{ '--ma-color': color }}>
-                  MA{days}
+              <div className={styles.legendValues}>
+                <span className={styles.legendDate}>{activeBar.time}</span>
+                <span>
+                  开 <strong>{formatPrice(activeBar.open)}</strong>
                 </span>
-              ))}
+                <span>
+                  高 <strong>{formatPrice(activeBar.high)}</strong>
+                </span>
+                <span>
+                  低 <strong>{formatPrice(activeBar.low)}</strong>
+                </span>
+                <span>
+                  收{' '}
+                  <strong className={activeBar.rising ? styles.rise : styles.fall}>
+                    {formatPrice(activeBar.close)}
+                  </strong>
+                </span>
+                <span>
+                  量 <strong>{formatVolume(activeBar.volume)}</strong>
+                </span>
+                <span>
+                  涨幅{' '}
+                  <strong
+                    className={
+                      activeBar.changePct > 0 ? styles.rise : activeBar.changePct < 0 ? styles.fall : undefined
+                    }
+                  >
+                    {formatChangePercent(activeBar.changePct)}
+                  </strong>
+                </span>
+              </div>
+              <div className={styles.legendValues}>
+                {movingAverages.map(({ days, color }) => (
+                  <span className={styles.maKey} key={days} style={{ '--ma-color': color }}>
+                    MA{days}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
           <div

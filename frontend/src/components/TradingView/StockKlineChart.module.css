@@ -129,19 +129,25 @@
 }
 
 .legend {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   color: #71717a;
-  display: flex;
-  flex-wrap: wrap;
   font-size: 11px;
-  gap: 5px 12px;
   left: 14px;
   line-height: 20px;
-  max-width: calc(100% - 88px);
+  width: calc(100% - 100px);
+  max-width: calc(100% - 100px);
   pointer-events: none;
   position: absolute;
   top: 8px;
   z-index: 2;
+}
+
+.legendValues {
+  display: flex;
+  gap: 5px;
+  align-items: center;
 }
 
 .legend strong {
