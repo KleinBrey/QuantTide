@@ -15,6 +15,7 @@ from backend.app.repository import (
     DailyBarRepository,
     HKStockHotDailyRepository,
     StockHotDailyRepository,
+    StockDailyBasicRepository,
     StockRepository,
     USStockHotDailyRepository,
 )
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
 
     # 注册stock表的repository，用来统一处理增删改查
     stock_repository = StockRepository(database)
+    stock_daily_basic_repository = StockDailyBasicRepository(database)
     daily_repository = DailyBarRepository(database)
     stock_hot_repository = StockHotDailyRepository(database)
     hk_stock_hot_repository = HKStockHotDailyRepository(database)
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
         hithink_provider=hithink_provider,
         tushare_provider=tushare_provider,
         stock_repository=stock_repository,
+        stock_daily_basic_repository=stock_daily_basic_repository,
         daily_repository=daily_repository,
         iwencai_provider=iwencai_provider,
         stock_hot_repository=stock_hot_repository,
@@ -60,6 +63,7 @@ async def lifespan(app: FastAPI):
 
     # 将共享实例挂载到 app.state，供路由及其他应用组件复用。
     app.state.stock_repository = stock_repository
+    app.state.stock_daily_basic_repository = stock_daily_basic_repository
     app.state.daily_repository = daily_repository
     app.state.stock_hot_repository = stock_hot_repository
     app.state.hk_stock_hot_repository = hk_stock_hot_repository

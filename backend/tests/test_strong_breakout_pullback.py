@@ -12,8 +12,8 @@ from backend.app.strategy.implementations.breakout_pullback_n import (
 from backend.app.strategy.registry import execute_strategy, find_strategy
 
 
-class FakeTushareProvider:
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
+class FakeStockDailyBasicRepository:
+    def get_table_data(self) -> pd.DataFrame:
         return pd.DataFrame({"symbol": ["TEST.SZ"], "market_cap": [20_000_000_000]})
 
 
@@ -119,7 +119,7 @@ class StrongBreakoutPullbackStrategyTests(unittest.TestCase):
             stocks=stocks,
             daily_bars=bars,
             hot_stocks=hot_stocks,
-            tushare_provider=FakeTushareProvider(),
+            stock_daily_basic=FakeStockDailyBasicRepository().get_table_data(),
         )
 
         definition = find_strategy("strong-breakout-pullback")

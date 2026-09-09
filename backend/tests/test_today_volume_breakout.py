@@ -11,8 +11,8 @@ from backend.app.strategy.implementations.today_volume_breakout import (
 from backend.app.strategy.registry import execute_strategy, find_strategy
 
 
-class FakeTushareProvider:
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
+class FakeStockDailyBasicRepository:
+    def get_table_data(self) -> pd.DataFrame:
         return pd.DataFrame(
             {
                 "symbol": ["PASS.SZ", "FLAT.SZ", "SMALL.SZ", "LIMIT.SZ"],
@@ -39,7 +39,8 @@ def make_bars(symbol: str, latest_volume: float, latest_close: float) -> pd.Data
 
 class TodayVolumeBreakoutStrategyTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.strategy = TodayVolumeBreakoutStrategy(FakeTushareProvider())
+        self.strategy = TodayVolumeBreakoutStrategy()
+        self.stock_daily_basic = FakeStockDailyBasicRepository().get_table_data()
         self.stocks = pd.DataFrame(
             {
                 "symbol": ["PASS.SZ", "FLAT.SZ", "SMALL.SZ", "LIMIT.SZ"],
@@ -65,7 +66,12 @@ class TodayVolumeBreakoutStrategyTests(unittest.TestCase):
         )
 
     def test_selects_latest_positive_two_times_volume_stock(self) -> None:
-        result = self.strategy.select(self.stocks, self.bars, self.hot_stocks)
+        result = self.strategy.select(
+            self.stocks,
+            self.bars,
+            self.hot_stocks,
+            self.stock_daily_basic,
+        )
 
         self.assertEqual(result.columns.tolist(), RESULT_COLUMNS)
         self.assertEqual(result["symbol"].tolist(), ["PASS.SZ"])
@@ -82,7 +88,7 @@ class TodayVolumeBreakoutStrategyTests(unittest.TestCase):
             stocks=self.stocks,
             daily_bars=self.bars,
             hot_stocks=self.hot_stocks,
-            tushare_provider=FakeTushareProvider(),
+            stock_daily_basic=self.stock_daily_basic,
         )
         self.assertEqual(result["symbol"].tolist(), ["PASS.SZ"])
 

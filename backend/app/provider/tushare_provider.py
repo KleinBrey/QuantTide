@@ -132,18 +132,20 @@ class TushareProvider:
 
         return result
 
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
-        """获取指定交易日动态每日指标,包含市值，市盈率等"""
+    def fetch_daily_basic(self) -> pd.DataFrame:
+        """获取最新交易日动态每日指标，包含市值、市盈率等。"""
 
         result = self.pro.daily_basic(
-            trade_date=trade_date,
             fields="ts_code,trade_date,total_mv",
         )
         if result is None or result.empty:
-            return pd.DataFrame(columns=["symbol", "market_cap"])
+            return pd.DataFrame(columns=["symbol", "trade_date", "market_cap"])
 
         # 格式化symbol
         result["symbol"] = result["ts_code"]
+        result["trade_date"] = pd.to_datetime(
+            result["trade_date"], format="%Y%m%d", errors="coerce"
+        ).dt.date
         # tushare daily_basic.total_mv 总市值 （万元） 的单位是万元，策略统一使用元。
         result["market_cap"] = (
             pd.to_numeric(result["total_mv"], errors="coerce") * 10000
@@ -152,8 +154,10 @@ class TushareProvider:
         return (
             # 去掉 market_cap 字段没有值的
             # 去重 symbol 字段的值，有重复的用最后一个
-            result.dropna(subset=["market_cap"])
-            .drop_duplicates(subset="symbol", keep="last")[["symbol", "market_cap"]]
+            result.dropna(subset=["trade_date", "market_cap"])
+            .drop_duplicates(subset="symbol", keep="last")[
+                ["symbol", "trade_date", "market_cap"]
+            ]
             .reset_index(drop=True)
         )
 

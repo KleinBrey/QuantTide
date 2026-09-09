@@ -9,9 +9,9 @@ import pandas as pd
 from rich.console import Console
 
 from backend.app.database import DuckDBDatabase
-from backend.app.provider import TushareProvider
 from backend.app.repository import (
     DailyBarRepository,
+    StockDailyBasicRepository,
     StockHotDailyRepository,
     StockRepository,
 )
@@ -89,14 +89,20 @@ class StrategyConfig:
 DEFAULT_CONFIG = StrategyConfig()
 
 
-def load_market_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_market_data() -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+]:
     """读取本地股票、日 K 和最新热度数据。"""
 
     database = DuckDBDatabase()
     stocks = StockRepository(database).get_table_data()
     daily_bars = DailyBarRepository(database).get_table_data()
     hot_stocks = StockHotDailyRepository(database).get_latest()
-    return stocks, daily_bars, hot_stocks
+    stock_daily_basic = StockDailyBasicRepository(database).get_table_data()
+    return stocks, daily_bars, hot_stocks, stock_daily_basic
 
 
 def find_latest_signal(
@@ -225,7 +231,7 @@ def run_strategy(
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
-    tushare_provider: TushareProvider,
+    stock_daily_basic: pd.DataFrame,
     config: StrategyConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """计算最新交易日的突破回调企稳信号。"""
@@ -248,9 +254,8 @@ def run_strategy(
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
     signals["signal_stage"] = "放量企稳"
-    trade_date = signals["latest_date"].max().strftime("%Y%m%d")
     stock_info = stocks.merge(
-        tushare_provider.fetch_daily_basic(trade_date),
+        stock_daily_basic,
         on="symbol",
         how="left",
     )
@@ -276,7 +281,7 @@ def run_strategy(
 
 if __name__ == "__main__":
     with console.status("[bold green]正在读取本地数据并计算突破回调策略..."):
-        stocks, daily_bars, hot_stocks = load_market_data()
+        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
@@ -285,7 +290,7 @@ if __name__ == "__main__":
             stocks=stocks,
             daily_bars=daily_bars,
             hot_stocks=hot_stocks,
-            tushare_provider=TushareProvider(),
+            stock_daily_basic=stock_daily_basic,
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")

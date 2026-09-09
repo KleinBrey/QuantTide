@@ -14,7 +14,7 @@ def main() -> None:
 
     data = provider.pro.daily_basic(
         ts_code="",
-        trade_date="20180726",
+        trade_date="",
         fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pb",
     )
 

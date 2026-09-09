@@ -21,6 +21,7 @@ from backend.app.repository import (
     DailyBarRepository,
     HKStockHotDailyRepository,
     StockHotDailyRepository,
+    StockDailyBasicRepository,
     StockRepository,
     USStockHotDailyRepository,
 )
@@ -35,12 +36,14 @@ from backend.app.strategy.result import format_strategy_result
 from backend.app.utils.symbol import validate_symbol
 from backend.scripts.sync_daily_k_db import sync_daily_k
 from backend.scripts.sync_hot_stock_db import sync_stock_hot
+from backend.scripts.sync_stock_daily_basic_db import sync_stock_daily_basic
 from backend.scripts.sync_stock_list_db import sync_stock_list
 
 from .dependencies import (
     get_daily_repository,
     get_hk_stock_hot_repository,
     get_service,
+    get_stock_daily_basic_repository,
     get_stock_hot_repository,
     get_stock_repository,
     get_us_stock_hot_repository,
@@ -55,6 +58,10 @@ database_sync_lock = threading.Lock()
 # 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
 StockListRepository = Annotated[StockRepository, Depends(get_stock_repository)]
 DailyRepository = Annotated[DailyBarRepository, Depends(get_daily_repository)]
+StockDailyBasicRepo = Annotated[
+    StockDailyBasicRepository,
+    Depends(get_stock_daily_basic_repository),
+]
 StockHotRepository = Annotated[
     StockHotDailyRepository,
     Depends(get_stock_hot_repository),
@@ -127,6 +134,17 @@ async def sync_daily_k_database() -> dict[str, str | float]:
     )
 
 
+@router.post("/database-sync/stock-daily-basic")
+async def sync_stock_daily_basic_database() -> dict[str, str | float]:
+    """执行最新交易日股票指标数据库同步脚本。"""
+
+    return await _run_database_sync(
+        "sync_stock_daily_basic_db.py",
+        "最新交易日股票指标同步完成",
+        sync_stock_daily_basic,
+    )
+
+
 @router.post("/database-sync/hot-stock")
 async def sync_hot_stock_database() -> dict[str, str | float]:
     """执行每日股票热度数据库同步脚本。"""
@@ -141,6 +159,7 @@ async def sync_hot_stock_database() -> dict[str, str | float]:
 @router.get("/database-sync/latest-update-times")
 def database_latest_update_times(
     stock_repository: StockListRepository,
+    stock_daily_basic_repository: StockDailyBasicRepo,
     daily_repository: DailyRepository,
     stock_hot_repository: StockHotRepository,
     hk_stock_hot_repository: HKStockHotRepository,
@@ -153,6 +172,7 @@ def database_latest_update_times(
         "hk-hot-stock": hk_stock_hot_repository.get_latest_update_time(),
         "us-hot-stock": us_stock_hot_repository.get_latest_update_time(),
         "daily-k": daily_repository.get_latest_update_time(),
+        "stock-daily-basic": stock_daily_basic_repository.get_latest_update_time(),
         "stock-list": stock_repository.get_latest_update_time(),
     }
 
@@ -270,8 +290,8 @@ def strategy_signals(
     strategy_id: str,
     stock_repository: StockListRepository,
     daily_repository: DailyRepository,
+    stock_daily_basic_repository: StockDailyBasicRepo,
     stock_hot_repository: StockHotRepository,
-    service: dbService,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, object]:
     """执行指定策略并返回结果"""
@@ -285,7 +305,7 @@ def strategy_signals(
             stocks=stock_repository.get_table_data(),
             daily_bars=daily_repository.get_table_data(),
             hot_stocks=stock_hot_repository.get_latest(),
-            tushare_provider=service.tushare_provider,
+            stock_daily_basic=stock_daily_basic_repository.get_table_data(),
         )
     except Exception as error:
         logger.exception("执行策略 %s 失败", strategy_id)

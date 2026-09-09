@@ -13,6 +13,8 @@ from ..utils.symbol import validate_symbol
 
 STOCK_COLUMNS = ["symbol", "name", "exchange", "market", "type", "source"]
 
+STOCK_DAILY_BASIC_COLUMNS = ["symbol", "trade_date", "market_cap"]
+
 DAILY_BAR_COLUMNS = [
     "symbol",
     "trade_date",
@@ -114,6 +116,61 @@ class StockRepository(BaseRepository):
         """兼容原有调用；实际执行新增或更新。"""
 
         return self.upsert_stocks(rows)
+
+
+class StockDailyBasicRepository(BaseRepository):
+    """负责 stock_daily_basic 表的读写。"""
+
+    def get_latest_update_time(self) -> datetime | None:
+        """获取股票最新指标表最近一次更新时间。"""
+
+        with self.db.connection(read_only=True) as connection:
+            row = connection.execute(
+                "SELECT MAX(update_time) FROM stock_daily_basic"
+            ).fetchone()
+
+        return row[0] if row and row[0] is not None else None
+
+    def get_table_data(self) -> pd.DataFrame:
+        """获取每只股票最新交易日的每日指标。"""
+
+        with self.db.connection(read_only=True) as connection:
+            return connection.execute(
+                """
+                SELECT *
+                FROM stock_daily_basic
+                ORDER BY symbol
+                """
+            ).df()
+
+    def upsert_stock_daily_basic(self, rows: pd.DataFrame) -> int:
+        """新增或更新股票最新每日指标，返回处理的行数。"""
+
+        if rows.empty:
+            return 0
+
+        _require_columns(rows, STOCK_DAILY_BASIC_COLUMNS)
+        daily_basic = rows[STOCK_DAILY_BASIC_COLUMNS].copy()
+        with self.db.connection() as connection:
+            connection.register("incoming_stock_daily_basic", daily_basic)
+            connection.execute("""
+                INSERT INTO stock_daily_basic (
+                    symbol,
+                    trade_date,
+                    market_cap
+                )
+                SELECT
+                    symbol,
+                    trade_date,
+                    market_cap
+                FROM incoming_stock_daily_basic
+                ON CONFLICT (symbol) DO UPDATE SET
+                    trade_date = excluded.trade_date,
+                    market_cap = excluded.market_cap,
+                    update_time = now()
+                """)
+
+        return len(daily_basic)
 
 
 class DailyBarRepository(BaseRepository):

@@ -9,6 +9,7 @@ from ..repository import (
     DailyBarRepository,
     HKStockHotDailyRepository,
     StockHotDailyRepository,
+    StockDailyBasicRepository,
     StockRepository,
     USStockHotDailyRepository,
 )
@@ -30,6 +31,7 @@ class Service:
         hithink_provider: HithinkProvider | None = None,
         tushare_provider: TushareProvider | None = None,
         stock_repository: StockRepository | None = None,
+        stock_daily_basic_repository: StockDailyBasicRepository | None = None,
         daily_repository: DailyBarRepository | None = None,
         iwencai_provider: IwencaiProvider | None = None,
         stock_hot_repository: StockHotDailyRepository | None = None,
@@ -39,6 +41,7 @@ class Service:
         self.hithink_provider = hithink_provider
         self.tushare_provider = tushare_provider
         self.stock_repository = stock_repository
+        self.stock_daily_basic_repository = stock_daily_basic_repository
         self.daily_repository = daily_repository
         self.iwencai_provider = iwencai_provider
         self.stock_hot_repository = stock_hot_repository
@@ -355,6 +358,16 @@ class Service:
             raise
         else:
             print("股票列表更新成功!")
+
+    def update_stock_daily_basic(self) -> int:
+        """获取并保存最新交易日的股票每日指标。"""
+
+        daily_basic = self.tushare_provider.fetch_daily_basic()
+        affected_rows = self.stock_daily_basic_repository.upsert_stock_daily_basic(
+            daily_basic
+        )
+        print(f"股票每日指标更新成功，共写入 {affected_rows} 条")
+        return affected_rows
 
     def update_daily_bar(
         self,

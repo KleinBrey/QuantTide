@@ -1,11 +1,20 @@
 -- 股票基础信息表：每只股票保存一条记录。
 CREATE TABLE IF NOT EXISTS stocks (
-  symbol VARCHAR PRIMARY KEY,
+  symbol VARCHAR NOT NULL PRIMARY KEY,
   name VARCHAR NOT NULL,
   exchange VARCHAR NOT NULL, 
   market VARCHAR NOT NULL, 
   type VARCHAR NOT NULL DEFAULT 'a-share',
   source VARCHAR NOT NULL,
+  -- 记录更新时间；插入时未指定则使用数据库当前时间。
+  update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 股票最新指标：保存每只股票最新交易日的动态基本面数据。
+CREATE TABLE IF NOT EXISTS stock_daily_basic (
+  symbol VARCHAR NOT NULL PRIMARY KEY,
+  trade_date DATE NOT NULL,
+  market_cap DOUBLE NOT NULL,
   -- 记录更新时间；插入时未指定则使用数据库当前时间。
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

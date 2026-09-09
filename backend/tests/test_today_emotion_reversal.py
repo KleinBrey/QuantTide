@@ -11,8 +11,8 @@ from backend.app.strategy.implementations.today_emotion_reversal import (
 from backend.app.strategy.registry import execute_strategy, find_strategy
 
 
-class FakeTushareProvider:
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
+class FakeStockDailyBasicRepository:
+    def get_table_data(self) -> pd.DataFrame:
         return pd.DataFrame(
             {
                 "symbol": [
@@ -56,7 +56,8 @@ def make_bars(
 
 class TodayEmotionReversalStrategyTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.strategy = TodayEmotionReversalStrategy(FakeTushareProvider())
+        self.strategy = TodayEmotionReversalStrategy()
+        self.stock_daily_basic = FakeStockDailyBasicRepository().get_table_data()
         symbols = [
             "PASS.SZ",
             "BOUNDARY.SZ",
@@ -121,7 +122,12 @@ class TodayEmotionReversalStrategyTests(unittest.TestCase):
         )
 
     def test_selects_matching_stocks_and_sorts_by_hot_rank(self) -> None:
-        result = self.strategy.select(self.stocks, self.bars, self.hot_stocks)
+        result = self.strategy.select(
+            self.stocks,
+            self.bars,
+            self.hot_stocks,
+            self.stock_daily_basic,
+        )
 
         self.assertEqual(result.columns.tolist(), RESULT_COLUMNS)
         self.assertEqual(result["symbol"].tolist(), ["BOUNDARY.SZ", "PASS.SZ"])
@@ -130,7 +136,12 @@ class TodayEmotionReversalStrategyTests(unittest.TestCase):
         self.assertEqual(result["hot_rank"].tolist(), [1, 3])
 
     def test_open_gap_threshold_is_strict(self) -> None:
-        result = self.strategy.select(self.stocks, self.bars, self.hot_stocks)
+        result = self.strategy.select(
+            self.stocks,
+            self.bars,
+            self.hot_stocks,
+            self.stock_daily_basic,
+        )
 
         self.assertNotIn("GAP_LIMIT.SZ", result["symbol"].tolist())
 
@@ -143,7 +154,7 @@ class TodayEmotionReversalStrategyTests(unittest.TestCase):
             stocks=self.stocks,
             daily_bars=self.bars,
             hot_stocks=self.hot_stocks,
-            tushare_provider=FakeTushareProvider(),
+            stock_daily_basic=self.stock_daily_basic,
         )
         self.assertEqual(result["symbol"].tolist(), ["BOUNDARY.SZ", "PASS.SZ"])
 

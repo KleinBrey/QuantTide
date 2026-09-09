@@ -4,6 +4,7 @@ from backend.app.repository import (
     DailyBarRepository,
     HKStockHotDailyRepository,
     StockHotDailyRepository,
+    StockDailyBasicRepository,
     StockRepository,
     USStockHotDailyRepository,
 )
@@ -16,6 +17,10 @@ def get_stock_repository(request: Request) -> StockRepository:
 
 def get_daily_repository(request: Request) -> DailyBarRepository:
     return request.app.state.daily_repository
+
+
+def get_stock_daily_basic_repository(request: Request) -> StockDailyBasicRepository:
+    return request.app.state.stock_daily_basic_repository
 
 
 def get_stock_hot_repository(request: Request) -> StockHotDailyRepository:

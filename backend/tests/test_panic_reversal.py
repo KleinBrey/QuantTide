@@ -17,8 +17,8 @@ from backend.app.strategy.registry import execute_strategy
 from backend.app.strategy.result import format_strategy_result
 
 
-class FakeTushareProvider:
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
+class FakeStockDailyBasicRepository:
+    def get_table_data(self) -> pd.DataFrame:
         return pd.DataFrame({"symbol": ["TEST.SZ"], "market_cap": [20_000_000_000]})
 
 
@@ -109,7 +109,7 @@ class PanicReversalStrategyTests(unittest.TestCase):
             stocks=stocks,
             daily_bars=daily_bars,
             hot_stocks=hot_stocks,
-            tushare_provider=FakeTushareProvider(),
+            stock_daily_basic=FakeStockDailyBasicRepository().get_table_data(),
         )
 
         self.assertEqual(result.columns.tolist(), RESULT_COLUMNS)

@@ -16,8 +16,8 @@ from backend.app.strategy.implementations.recent_volume_breakout import (
 )
 
 
-class FakeTushareProvider:
-    def fetch_daily_basic(self, trade_date: str) -> pd.DataFrame:
+class FakeStockDailyBasicRepository:
+    def get_table_data(self) -> pd.DataFrame:
         return pd.DataFrame(
             {
                 "symbol": ["PASS.SZ", "QUIET.SZ", "SMALL.SZ"],
@@ -41,7 +41,8 @@ def make_bars(symbol: str, recent_volume: float, final_close: float) -> pd.DataF
 
 class VolumeBreakoutStrategyTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.strategy = VolumeBreakoutStrategy(FakeTushareProvider())
+        self.strategy = VolumeBreakoutStrategy()
+        self.stock_daily_basic = FakeStockDailyBasicRepository().get_table_data()
         self.stocks = pd.DataFrame(
             {
                 "symbol": ["PASS.SZ", "QUIET.SZ", "SMALL.SZ"],
@@ -66,7 +67,12 @@ class VolumeBreakoutStrategyTests(unittest.TestCase):
         )
 
     def test_selects_matching_stock_and_exposes_api_fields(self) -> None:
-        result = self.strategy.select(self.stocks, self.bars, self.hot_stocks)
+        result = self.strategy.select(
+            self.stocks,
+            self.bars,
+            self.hot_stocks,
+            self.stock_daily_basic,
+        )
 
         self.assertEqual(result.columns.tolist(), RESULT_COLUMNS)
         self.assertEqual(result["symbol"].tolist(), ["PASS.SZ"])
@@ -75,7 +81,12 @@ class VolumeBreakoutStrategyTests(unittest.TestCase):
         self.assertEqual(result.loc[0, "hot_rank"], 2)
 
     def test_payload_is_json_ready_and_reports_total_before_limit(self) -> None:
-        selected = self.strategy.select(self.stocks, self.bars, self.hot_stocks)
+        selected = self.strategy.select(
+            self.stocks,
+            self.bars,
+            self.hot_stocks,
+            self.stock_daily_basic,
+        )
         payload = format_strategy_result("recent_volume_breakout", selected, limit=1)
 
         self.assertEqual(payload["count"], 1)
@@ -88,6 +99,7 @@ class VolumeBreakoutStrategyTests(unittest.TestCase):
             self.stocks,
             self.bars,
             pd.DataFrame(columns=["symbol", "hot_value"]),
+            self.stock_daily_basic,
         )
 
         self.assertTrue(result.empty)
@@ -105,7 +117,7 @@ class VolumeBreakoutStrategyTests(unittest.TestCase):
             stocks=self.stocks,
             daily_bars=self.bars,
             hot_stocks=self.hot_stocks,
-            tushare_provider=FakeTushareProvider(),
+            stock_daily_basic=self.stock_daily_basic,
         )
         self.assertEqual(result["symbol"].tolist(), ["PASS.SZ"])
 

@@ -16,9 +16,9 @@ import pandas as pd
 from rich.console import Console
 
 from backend.app.database import DuckDBDatabase
-from backend.app.provider import TushareProvider
 from backend.app.repository import (
     DailyBarRepository,
+    StockDailyBasicRepository,
     StockHotDailyRepository,
     StockRepository,
 )
@@ -59,7 +59,12 @@ RESULT_COLUMNS = [
 ]
 
 
-def load_market_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_market_data() -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+]:
     """读取本地数据"""
 
     database = DuckDBDatabase()
@@ -73,7 +78,10 @@ def load_market_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     # 最新股票热度
     hot_stocks = StockHotDailyRepository(database).get_latest()
 
-    return stocks, daily_bars, hot_stocks
+    # 股票最新动态指标
+    stock_daily_basic = StockDailyBasicRepository(database).get_table_data()
+
+    return stocks, daily_bars, hot_stocks, stock_daily_basic
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,25 +107,23 @@ class StrategyConfig:
 
 class TodayVolumeBreakoutStrategy:
 
-    def __init__(self, tushare_provider: TushareProvider | None = None):
+    def __init__(self):
         self.config = StrategyConfig()
-        self.tushare_provider = tushare_provider or TushareProvider()
 
     def select(
-        self, stocks: pd.DataFrame, daily_bars: pd.DataFrame, hot_stocks: pd.DataFrame
+        self,
+        stocks: pd.DataFrame,
+        daily_bars: pd.DataFrame,
+        hot_stocks: pd.DataFrame,
+        stock_daily_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """计算指标并返回符合全部条件的股票。"""
 
         if stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        # 获取最新历史交易日
-        latest_trade_date = (
-            pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y%m%d")
-        )
-
-        # 合并股票市值，市盈率等动态字段
-        stocks = self.merge_stock_basic(stocks, latest_trade_date)
+        # 合并股票市值动态字段
+        stocks = self.merge_stock_basic(stocks, stock_daily_basic)
         # 过滤掉 ST、科创板和北交所股票
         stocks = self.filter_stocks(stocks)
 
@@ -132,17 +138,14 @@ class TodayVolumeBreakoutStrategy:
         result = self._filter_return(result)
         return self._sort_filter_by_hot(result, hot_stocks)
 
+    @staticmethod
     def merge_stock_basic(
-        self, stocks: pd.DataFrame, latest_trade_date: str
+        stocks: pd.DataFrame,
+        stock_daily_basic: pd.DataFrame,
     ) -> pd.DataFrame:
-        """补齐股票的动态字段，如市值，市盈率"""
+        """补齐股票市值动态字段。"""
 
-        daily_basic = self.tushare_provider.fetch_daily_basic(latest_trade_date)
-
-        # 合并股票动态字段
-        result = stocks.merge(daily_basic, on="symbol", how="left")
-
-        return result
+        return stocks.merge(stock_daily_basic, on="symbol", how="left")
 
     def filter_stocks(self, stocks: pd.DataFrame) -> pd.DataFrame:
         """排除 ST、科创板和北交所股票。"""
@@ -258,27 +261,31 @@ def run_strategy(
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
-    tushare_provider: TushareProvider,
+    stock_daily_basic: pd.DataFrame,
 ) -> pd.DataFrame:
     """供 API 调用的策略入口。"""
 
-    return TodayVolumeBreakoutStrategy(tushare_provider).select(
+    return TodayVolumeBreakoutStrategy().select(
         stocks,
         daily_bars,
         hot_stocks,
+        stock_daily_basic,
     )
 
 
 if __name__ == "__main__":
     with console.status("[bold green]正在请求股票数据..."):
-        stocks, daily_bars, hot_stocks = load_market_data()
+        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
         # 数据库最新交易日
         latest_trade_date = (
             pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y-%m-%d")
         )
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
         selected_stocks = TodayVolumeBreakoutStrategy().select(
-            stocks, daily_bars, hot_stocks
+            stocks,
+            daily_bars,
+            hot_stocks,
+            stock_daily_basic,
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:

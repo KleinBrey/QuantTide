@@ -8,6 +8,7 @@ from .duck_db import (
     DailyBarRepository,
     HKStockHotDailyRepository,
     StockHotDailyRepository,
+    StockDailyBasicRepository,
     StockRepository,
     USStockHotDailyRepository,
 )
@@ -15,6 +16,7 @@ from .duck_db import (
 __all__ = [
     "BaseRepository",
     "StockRepository",
+    "StockDailyBasicRepository",
     "DailyBarRepository",
     "StockHotDailyRepository",
     "HKStockHotDailyRepository",

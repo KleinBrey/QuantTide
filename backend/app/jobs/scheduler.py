@@ -4,6 +4,7 @@ from apscheduler.triggers.cron import CronTrigger
 from backend.app.config.config import Settings
 from backend.app.jobs.tasks import (
     run_daily_k_sync,
+    run_stock_daily_basic_sync,
     run_stock_hot_sync,
     run_stock_list_sync,
 )
@@ -63,6 +64,20 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
         ),
         id="weekday-daily-k-sync",
         args=[3, 100],
+        **common,
+    )
+
+    """更新股票每日指标"""
+    # 每日更新：周一至周五执行，每天 16:00 触发
+    scheduler.add_job(
+        run_stock_daily_basic_sync,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=16,
+            minute=0,
+            timezone=settings.scheduler_timezone,
+        ),
+        id="weekday-stock-daily-basic-sync",
         **common,
     )
 
