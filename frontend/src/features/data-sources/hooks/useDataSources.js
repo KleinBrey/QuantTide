@@ -4,6 +4,7 @@ import {
   fetchLatestUpdateTimes,
   syncDailyK,
   syncHotStock,
+  syncStockDailyBasic,
   syncStockList
 } from '../api/dataSourcesApi.js';
 
@@ -19,6 +20,12 @@ const SYNC_TASKS = [
     name: '日 K 线数据',
     description: '同步最近 3 个自然日的行情，每批处理 100 只股票。',
     run: syncDailyK
+  },
+  {
+    id: 'stock-daily-basic',
+    name: '股票每日指标',
+    description: '获取最新交易日全部 A 股总市值，并更新股票每日指标表。',
+    run: syncStockDailyBasic
   },
   {
     id: 'stock-list',
@@ -60,42 +67,45 @@ export function useDataSources() {
     void loadLatestUpdateTimes();
   }, [loadLatestUpdateTimes]);
 
-  const runSync = useCallback(async taskId => {
-    if (activeTask.current) return;
+  const runSync = useCallback(
+    async taskId => {
+      if (activeTask.current) return;
 
-    const task = SYNC_TASKS.find(item => item.id === taskId);
-    if (!task) return;
+      const task = SYNC_TASKS.find(item => item.id === taskId);
+      if (!task) return;
 
-    activeTask.current = taskId;
-    setError('');
-    setResults(current => ({
-      ...current,
-      [taskId]: { status: 'running', message: '正在执行同步脚本…', finishedAt: '', duration: null }
-    }));
-
-    try {
-      const { data } = await task.run();
+      activeTask.current = taskId;
+      setError('');
       setResults(current => ({
         ...current,
-        [taskId]: {
-          status: 'success',
-          message: data.message,
-          finishedAt: data.finished_at,
-          duration: data.duration_seconds
-        }
+        [taskId]: { status: 'running', message: '正在执行同步脚本…', finishedAt: '', duration: null }
       }));
-      void loadLatestUpdateTimes();
-    } catch (requestError) {
-      const message = requestError.response?.data?.detail || requestError.message || '同步脚本执行失败';
-      setError(`${task.name}：${message}`);
-      setResults(current => ({
-        ...current,
-        [taskId]: { status: 'failed', message: '同步脚本执行失败', finishedAt: '', duration: null }
-      }));
-    } finally {
-      activeTask.current = null;
-    }
-  }, [loadLatestUpdateTimes]);
+
+      try {
+        const { data } = await task.run();
+        setResults(current => ({
+          ...current,
+          [taskId]: {
+            status: 'success',
+            message: data.message,
+            finishedAt: data.finished_at,
+            duration: data.duration_seconds
+          }
+        }));
+        void loadLatestUpdateTimes();
+      } catch (requestError) {
+        const message = requestError.response?.data?.detail || requestError.message || '同步脚本执行失败';
+        setError(`${task.name}：${message}`);
+        setResults(current => ({
+          ...current,
+          [taskId]: { status: 'failed', message: '同步脚本执行失败', finishedAt: '', duration: null }
+        }));
+      } finally {
+        activeTask.current = null;
+      }
+    },
+    [loadLatestUpdateTimes]
+  );
 
   const runningTaskId = Object.keys(results).find(taskId => results[taskId].status === 'running') || null;
 

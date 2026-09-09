@@ -12,6 +12,10 @@ export function syncDailyK() {
   return request.post('/api/database-sync/daily-k', {}, { timeout: 0 });
 }
 
+export function syncStockDailyBasic() {
+  return request.post('/api/database-sync/stock-daily-basic', {}, { timeout: 0 });
+}
+
 export function syncHotStock() {
   return request.post('/api/database-sync/hot-stock', {}, { timeout: 0 });
 }
