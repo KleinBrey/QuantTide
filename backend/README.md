@@ -64,8 +64,15 @@ uv run uvicorn backend.app.main:app \
 - `tushare_provider.py`：股票列表、日 K、复权行情和每日市值指标；
 - `hithink_provider.py`：HiThink 股票列表、快照和历史行情；
 - `akshare_provider.py`：AkShare 股票列表和历史行情适配；
+- `futu_provider.py`：通过本机 Futu OpenD 获取股票列表、快照、历史 K 线和热议榜；
 - `iwencai_provider.py`：问财股票热度查询；
 - `example/`：各 Provider 的手动冒烟测试。
+
+Futu OpenD 登录并监听本机 `11111` 端口后，可运行美股热议榜冒烟测试：
+
+```bash
+uv run python -m backend.app.provider.example.futu_smoke_test
+```
 
 ### `app/repository/`
 

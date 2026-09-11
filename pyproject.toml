@@ -20,6 +20,7 @@ dependencies = [
   "pydantic-settings>=2.10,<3",
   "akshare>=1.18.91,<2",
   "tushare>=1.2.26,<2",
+  "futu-api>=10,<11",
 ]
 
 [dependency-groups]
