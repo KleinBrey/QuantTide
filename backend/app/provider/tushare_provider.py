@@ -119,7 +119,7 @@ class TushareProvider:
         start: int,
         end: int,
     ) -> dict:
-        """获取历史行情，并返回现有 Service 能处理的字段和单位。"""
+        """获取历史行情，并返回 CNMarketService 能处理的字段和单位。"""
 
         result = self.pro.daily(
             ts_code=thscode,
@@ -171,7 +171,7 @@ class TushareProvider:
         adjust: str = "forward",
         offset: int = 0,
     ) -> dict:
-        """获取历史行情，并返回现有 Service 能处理的字段和单位。"""
+        """获取历史行情，并返回 CNMarketService 能处理的字段和单位。"""
 
         try:
             frequency = self._INTERVAL_MAP[interval.lower()]

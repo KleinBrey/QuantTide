@@ -3,7 +3,7 @@
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
 from backend.app.repository import DailyBarRepository, StockRepository
-from backend.app.services import Service
+from backend.app.services import CNMarketService
 
 
 def sync_daily_k(lookback_days: int, batch_size: int) -> None:
@@ -22,13 +22,13 @@ def sync_daily_k(lookback_days: int, batch_size: int) -> None:
     tushare_provider = TushareProvider()
 
     # 业务逻辑处理
-    service = Service(
+    cn_market_service = CNMarketService(
         tushare_provider=tushare_provider,
         stock_repository=stock_repository,
         daily_repository=daily_repository,
     )
 
-    service.update_daily_bar(lookback_days, batch_size)
+    cn_market_service.update_daily_bar(lookback_days, batch_size)
 
 
 def main() -> None:

@@ -11,7 +11,7 @@ from backend.app.config.config import Settings
 from backend.app.database import DuckDBDatabase
 from backend.app.jobs.scheduler import create_scheduler
 from backend.app.repository import StockDailyBasicRepository
-from backend.app.services import Service
+from backend.app.services import CNMarketService
 
 
 class FakeTushareProvider:
@@ -29,7 +29,7 @@ class StockDailyBasicTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.database = DuckDBDatabase()
-        self.database.database_path = Path(self.temp_dir.name) / "market.duckdb"
+        self.database.database_path = Path(self.temp_dir.name) / "cn_market.duckdb"
         self.database.initialize()
         self.repository = StockDailyBasicRepository(self.database)
 
@@ -91,12 +91,12 @@ class StockDailyBasicTests(unittest.TestCase):
 
     def test_service_fetches_and_persists_latest_data(self) -> None:
         provider = FakeTushareProvider()
-        service = Service(
+        cn_market_service = CNMarketService(
             tushare_provider=provider,
             stock_daily_basic_repository=self.repository,
         )
 
-        affected_rows = service.update_stock_daily_basic()
+        affected_rows = cn_market_service.update_stock_daily_basic()
         result = self.repository.get_table_data()
 
         self.assertEqual(affected_rows, 2)

@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS stocks (
   name VARCHAR NOT NULL,
   exchange VARCHAR NOT NULL, 
   market VARCHAR NOT NULL, 
-  type VARCHAR NOT NULL DEFAULT 'a-share',
   source VARCHAR NOT NULL,
   -- 记录更新时间；插入时未指定则使用数据库当前时间。
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -52,48 +51,6 @@ CREATE TABLE IF NOT EXISTS daily_bars (
 );
 
 CREATE TABLE IF NOT EXISTS stock_hot_daily (
-  -- 热度所属交易日。
-  trade_date DATE NOT NULL,
-  -- 股票代码。
-  symbol VARCHAR NOT NULL,
-  -- 股票名称。
-  name VARCHAR NOT NULL,
-  -- 当日最新价。
-  price DOUBLE,
-  -- 当日涨跌幅。
-  change_pct DOUBLE,
-  -- 问财返回的股票热度值。
-  hot_value DOUBLE NOT NULL,
-  -- 数据来源。
-  source VARCHAR NOT NULL DEFAULT 'Iwencai',
-  -- 记录更新时间。
-  update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  -- 同一股票、同一交易日只保留一条热度记录。
-  PRIMARY KEY (trade_date, symbol)
-);
-
-CREATE TABLE IF NOT EXISTS hk_stock_hot_daily (
-  -- 热度所属交易日。
-  trade_date DATE NOT NULL,
-  -- 股票代码。
-  symbol VARCHAR NOT NULL,
-  -- 股票名称。
-  name VARCHAR NOT NULL,
-  -- 当日最新价。
-  price DOUBLE,
-  -- 当日涨跌幅。
-  change_pct DOUBLE,
-  -- 问财返回的股票热度值。
-  hot_value DOUBLE NOT NULL,
-  -- 数据来源。
-  source VARCHAR NOT NULL DEFAULT 'Iwencai',
-  -- 记录更新时间。
-  update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  -- 同一股票、同一交易日只保留一条热度记录。
-  PRIMARY KEY (trade_date, symbol)
-);
-
-CREATE TABLE IF NOT EXISTS us_stock_hot_daily (
   -- 热度所属交易日。
   trade_date DATE NOT NULL,
   -- 股票代码。

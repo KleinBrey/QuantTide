@@ -3,7 +3,7 @@
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
 from backend.app.repository import StockRepository
-from backend.app.services import Service
+from backend.app.services import CNMarketService
 
 
 def sync_stock_list() -> None:
@@ -18,13 +18,13 @@ def sync_stock_list() -> None:
     tushare_provider = TushareProvider()
 
     # 业务逻辑处理
-    service = Service(
+    cn_market_service = CNMarketService(
         tushare_provider=tushare_provider,
         stock_repository=stock_repository,
     )
 
     # 插入股票列表数据
-    service.update_stocks_list()
+    cn_market_service.update_stocks_list()
 
 
 def main() -> None:

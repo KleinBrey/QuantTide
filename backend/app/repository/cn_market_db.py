@@ -1,4 +1,4 @@
-"""DuckDB 数据仓库层。
+"""A 股 ``cn_market.duckdb`` 数据仓库层。
 
 Repository 只负责数据库读写，不负责调用第三方接口或清洗业务数据。
 每张表的冲突键和更新字段不同，因此由具体 Repository 明确实现写入逻辑。
@@ -11,7 +11,7 @@ import pandas as pd
 from ..database import DuckDBDatabase
 from ..utils.symbol import validate_symbol
 
-STOCK_COLUMNS = ["symbol", "name", "exchange", "market", "type", "source"]
+STOCK_COLUMNS = ["symbol", "name", "exchange", "market", "source"]
 
 STOCK_DAILY_BASIC_COLUMNS = ["symbol", "trade_date", "market_cap"]
 
@@ -90,7 +90,6 @@ class StockRepository(BaseRepository):
                     name,
                     exchange,
                     market,
-                    type,
                     source
                 )
                 SELECT
@@ -98,14 +97,12 @@ class StockRepository(BaseRepository):
                     name,
                     exchange,
                     market,
-                    type,
                     source
                 FROM incoming_stocks
                 ON CONFLICT (symbol) DO UPDATE SET
                     name = excluded.name,
                     exchange = excluded.exchange,
                     market = excluded.market,
-                    type = excluded.type,
                     source = excluded.source,
                     update_time = now()
                 """)
@@ -412,15 +409,3 @@ class StockHotDailyRepository(BaseRepository):
         """兼容 insert 风格命名；实际执行新增或更新。"""
 
         return self.upsert_stock_hot_daily(rows)
-
-
-class HKStockHotDailyRepository(StockHotDailyRepository):
-    """负责 hk_stock_hot_daily 表的读写。"""
-
-    table_name = "hk_stock_hot_daily"
-
-
-class USStockHotDailyRepository(StockHotDailyRepository):
-    """负责 us_stock_hot_daily 表的读写。"""
-
-    table_name = "us_stock_hot_daily"

@@ -5,17 +5,26 @@ import duckdb
 # 项目根目录：从当前文件所在目录往上三级
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-database_path: Path = PROJECT_ROOT / "data" / "market.duckdb"
+CN_DATABASE_PATH = PROJECT_ROOT / "data" / "cn_market.duckdb"
+HK_DATABASE_PATH = PROJECT_ROOT / "data" / "hk_market.duckdb"
+US_DATABASE_PATH = PROJECT_ROOT / "data" / "us_market.duckdb"
 
-schema_path = Path(__file__).parent / "schema.sql"
+SCHEMA_DIRECTORY = Path(__file__).parent
+CN_SCHEMA_PATH = SCHEMA_DIRECTORY / "cn_schema.sql"
+HK_SCHEMA_PATH = SCHEMA_DIRECTORY / "hk_schema.sql"
+US_SCHEMA_PATH = SCHEMA_DIRECTORY / "us_schema.sql"
 
 
 class DuckDBDatabase:
 
-    def __init__(self):
+    def __init__(
+        self,
+        database_path: str | Path = CN_DATABASE_PATH,
+        schema_path: str | Path = CN_SCHEMA_PATH,
+    ):
         # 把数据库路径转换成完整的绝对路径。
         self.database_path = Path(database_path).expanduser().resolve()
-        self.schema_path = schema_path
+        self.schema_path = Path(schema_path).expanduser().resolve()
         # UI 必须一直使用同一个连接。
         # 只要这个连接没有关闭，UI 页面就可以继续工作。
         self._ui_connection = None
@@ -58,3 +67,17 @@ class DuckDBDatabase:
             self._ui_connection.execute("CALL stop_ui_server()")
             self._ui_connection.close()
             self._ui_connection = None
+
+
+class HKDuckDBDatabase(DuckDBDatabase):
+    """港股 DuckDB 连接，默认使用独立的港股库和表结构。"""
+
+    def __init__(self, database_path: str | Path = HK_DATABASE_PATH):
+        super().__init__(database_path=database_path, schema_path=HK_SCHEMA_PATH)
+
+
+class USDuckDBDatabase(DuckDBDatabase):
+    """美股 DuckDB 连接，默认使用独立的美股库和表结构。"""
+
+    def __init__(self, database_path: str | Path = US_DATABASE_PATH):
+        super().__init__(database_path=database_path, schema_path=US_SCHEMA_PATH)

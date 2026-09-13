@@ -1,30 +1,28 @@
-"""市场数据格式化与同步服务。"""
+"""A 股市场数据格式化与同步服务。"""
 
-from datetime import date, datetime, timedelta
-from typing import Callable
-from zoneinfo import ZoneInfo
+from __future__ import annotations
+
+import random
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import pandas as pd
+from tqdm.auto import tqdm
 
 from ..provider import HithinkProvider, IwencaiProvider, TushareProvider
 from ..repository import (
     DailyBarRepository,
-    HKStockHotDailyRepository,
     StockHotDailyRepository,
     StockDailyBasicRepository,
     StockRepository,
-    USStockHotDailyRepository,
 )
 from ..utils.symbol import chunked
-
-import pandas as pd
-from tqdm.auto import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
-import threading
-import random
+from .hot_stock_service import HotStockService
 
 
-class Service:
-    HOT_STOCK_CACHE_TTL = timedelta(hours=2)
+class CNMarketService(HotStockService):
+    """负责 A 股股票列表、行情、指标与热度数据。"""
 
     def __init__(
         self,
@@ -35,28 +33,25 @@ class Service:
         daily_repository: DailyBarRepository | None = None,
         iwencai_provider: IwencaiProvider | None = None,
         stock_hot_repository: StockHotDailyRepository | None = None,
-        hk_stock_hot_repository: HKStockHotDailyRepository | None = None,
-        us_stock_hot_repository: USStockHotDailyRepository | None = None,
-    ):
+    ) -> None:
+        super().__init__(
+            iwencai_provider=iwencai_provider,
+            stock_hot_repository=stock_hot_repository,
+            fetch_method_name="fetch_hot_rank",
+            market_name="A 股",
+        )
         self.hithink_provider = hithink_provider
         self.tushare_provider = tushare_provider
         self.stock_repository = stock_repository
         self.stock_daily_basic_repository = stock_daily_basic_repository
         self.daily_repository = daily_repository
-        self.iwencai_provider = iwencai_provider
-        self.stock_hot_repository = stock_hot_repository
-        self.hk_stock_hot_repository = hk_stock_hot_repository
-        self.us_stock_hot_repository = us_stock_hot_repository
-        self._hot_stock_sync_lock = threading.Lock()
-        self._hk_hot_stock_sync_lock = threading.Lock()
-        self._us_hot_stock_sync_lock = threading.Lock()
 
     @staticmethod
     def format_stock_list(value: pd.DataFrame, source: str) -> pd.DataFrame:
         """格式化股票列表数据"""
 
         frame = pd.DataFrame(value)
-        columns = ["symbol", "name", "exchange", "market", "type", "source"]
+        columns = ["symbol", "name", "exchange", "market", "source"]
         # 交易所
         exchange_map = {
             "SSE": "SH",
@@ -69,7 +64,6 @@ class Service:
         # 格式转换
         frame["symbol"] = frame["ts_code"]
         frame["exchange"] = frame["exchange"].map(exchange_map)
-        frame["type"] = "A股"
         frame["source"] = source
         # 只保留目标列，并按 columns 中的顺序排列
         return frame[columns].reset_index(drop=True)
@@ -146,203 +140,6 @@ class Service:
 
         # 只保留目标列，并按 columns 中的顺序排列
         return frame[columns].reset_index(drop=True)
-
-    @staticmethod
-    def format_hot_stock(
-        value: pd.DataFrame,
-        trade_date: date | datetime | str,
-    ) -> pd.DataFrame:
-        """把问财热度结果格式化为 stock_hot_daily 表结构。"""
-
-        columns = [
-            "trade_date",
-            "symbol",
-            "name",
-            "price",
-            "change_pct",
-            "hot_value",
-            "source",
-        ]
-        frame = pd.DataFrame(value).copy()
-        if frame.empty:
-            return pd.DataFrame(columns=columns)
-
-        if "hot_value" not in frame.columns and "hot_rank" in frame.columns:
-            frame = frame.rename(columns={"hot_rank": "hot_value"})
-
-        required_columns = ["symbol", "name", "price", "change_pct", "hot_value"]
-        missing_columns = [
-            column for column in required_columns if column not in frame.columns
-        ]
-        if missing_columns:
-            raise ValueError(f"股票热度数据缺少字段：{', '.join(missing_columns)}")
-
-        frame["trade_date"] = pd.to_datetime(trade_date, errors="raise").date()
-        frame["name"] = frame["name"].astype("string").str.strip()
-        for column in ["price", "change_pct", "hot_value"]:
-            frame[column] = pd.to_numeric(
-                frame[column].astype("string").str.rstrip("%"), errors="coerce"
-            )
-        frame["source"] = "Iwencai"
-
-        frame = frame.dropna(subset=["symbol", "name", "hot_value"])
-        frame = frame.drop_duplicates(subset=["trade_date", "symbol"], keep="last")
-        return frame[columns].reset_index(drop=True)
-
-    def update_hot_stock(
-        self,
-        trade_date: date | datetime | str | None = None,
-    ) -> int:
-        """获取并保存指定交易日的问财股票热度榜。"""
-
-        return self._update_hot_stock(
-            repository=self.stock_hot_repository,
-            fetch_method_name="fetch_hot_rank",
-            market_name="A 股",
-            trade_date=trade_date,
-        )
-
-    def update_hk_hot_stock(
-        self,
-        trade_date: date | datetime | str | None = None,
-    ) -> int:
-        """获取并保存指定交易日的问财港股热度榜。"""
-
-        return self._update_hot_stock(
-            repository=self.hk_stock_hot_repository,
-            fetch_method_name="fetch_hk_hot_rank",
-            market_name="港股",
-            trade_date=trade_date,
-        )
-
-    def update_us_hot_stock(
-        self,
-        trade_date: date | datetime | str | None = None,
-    ) -> int:
-        """获取并保存指定交易日的问财美股热度榜。"""
-
-        return self._update_hot_stock(
-            repository=self.us_stock_hot_repository,
-            fetch_method_name="fetch_us_hot_rank",
-            market_name="美股",
-            trade_date=trade_date,
-        )
-
-    def _update_hot_stock(
-        self,
-        repository: StockHotDailyRepository | None,
-        fetch_method_name: str,
-        market_name: str,
-        trade_date: date | datetime | str | None,
-    ) -> int:
-        """获取、格式化并保存一个市场的股票热度榜。"""
-
-        if self.iwencai_provider is None or repository is None:
-            raise RuntimeError("未配置问财 Provider 或股票热度 Repository")
-
-        if trade_date is None:
-            trade_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-
-        try:
-            # API 请求数据
-            result = getattr(self.iwencai_provider, fetch_method_name)()
-            # 格式化清洗数据
-            hot_rows = self.format_hot_stock(result, trade_date)
-            # 存到数据库
-            affected_rows = repository.upsert_stock_hot_daily(hot_rows)
-        except Exception as error:
-            print(f"{market_name}热度更新失败: {error}")
-            raise
-
-        print(f"{market_name}热度更新成功，共写入 {affected_rows} 条")
-        return affected_rows
-
-    def get_hot_stock(
-        self,
-        request_time: datetime | None = None,
-    ) -> pd.DataFrame:
-        """返回最新 A 股热度榜，缓存超过两小时时先同步数据。"""
-
-        return self._get_hot_stock(
-            repository=self.stock_hot_repository,
-            update=self.update_hot_stock,
-            sync_lock=self._hot_stock_sync_lock,
-            request_time=request_time,
-        )
-
-    def get_hk_hot_stock(
-        self,
-        request_time: datetime | None = None,
-    ) -> pd.DataFrame:
-        """返回最新港股热度榜，缓存超过两小时时先同步数据。"""
-
-        return self._get_hot_stock(
-            repository=self.hk_stock_hot_repository,
-            update=self.update_hk_hot_stock,
-            sync_lock=self._hk_hot_stock_sync_lock,
-            request_time=request_time,
-        )
-
-    def get_us_hot_stock(
-        self,
-        request_time: datetime | None = None,
-    ) -> pd.DataFrame:
-        """返回最新美股热度榜，缓存超过两小时时先同步数据。"""
-
-        return self._get_hot_stock(
-            repository=self.us_stock_hot_repository,
-            update=self.update_us_hot_stock,
-            sync_lock=self._us_hot_stock_sync_lock,
-            request_time=request_time,
-        )
-
-    def _get_hot_stock(
-        self,
-        repository: StockHotDailyRepository | None,
-        update: Callable[[date], int],
-        sync_lock: threading.Lock,
-        request_time: datetime | None,
-    ) -> pd.DataFrame:
-        """读取一个市场的最新热度榜，并在缓存过期时同步。"""
-
-        if repository is None:
-            raise RuntimeError("未配置股票热度 Repository")
-
-        current_time = request_time or datetime.now(ZoneInfo("Asia/Shanghai"))
-        latest_update_time = repository.get_latest_update_time()
-
-        if not self._is_hot_stock_fresh(latest_update_time, current_time):
-            # 路由是同步接口，可能被多个工作线程同时调用。锁内再次检查，
-            # 确保缓存过期时只发起一次问财同步。
-            with sync_lock:
-                latest_update_time = repository.get_latest_update_time()
-                if not self._is_hot_stock_fresh(latest_update_time, current_time):
-                    trade_date = self._to_shanghai_naive(current_time).date()
-                    update(trade_date)
-
-        return repository.get_latest()
-
-    def _is_hot_stock_fresh(
-        self,
-        latest_update_time: datetime | None,
-        request_time: datetime,
-    ) -> bool:
-        """判断热度数据距请求时间是否严格不足两小时。"""
-
-        if latest_update_time is None:
-            return False
-
-        latest = self._to_shanghai_naive(latest_update_time)
-        requested_at = self._to_shanghai_naive(request_time)
-        return requested_at - latest < self.HOT_STOCK_CACHE_TTL
-
-    @staticmethod
-    def _to_shanghai_naive(value: datetime) -> datetime:
-        """将时间统一为上海时区的无时区时间，兼容 DuckDB TIMESTAMP。"""
-
-        if value.tzinfo is None:
-            return value
-        return value.astimezone(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
 
     def update_stocks_list(self):
         """获取股票列表数据"""

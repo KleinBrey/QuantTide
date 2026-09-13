@@ -120,7 +120,8 @@ export default function HotRankingsDashboard() {
               <RankingTable
                 rows={ranking.rows}
                 loading={rankingLoading}
-                showKline={isFullscreen && market.id === 'a-share'}
+                marketId={market.id}
+                showKline={isFullscreen}
               />
             </div>
           </section>

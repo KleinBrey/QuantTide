@@ -14,7 +14,7 @@
 得到候选股票
 ```
 
-代码刻意保持简单。前 8 节使用本目录的迷你 CSV，不联网，也不修改项目数据；第 9 节开始以只读方式访问项目现有的 `data/market.duckdb`。
+代码刻意保持简单。前 8 节使用本目录的迷你 CSV，不联网，也不修改项目数据；第 9 节开始以只读方式访问项目现有的 `data/cn_market.duckdb`。
 
 ## 运行环境
 
@@ -55,9 +55,9 @@ python -m pip install pandas duckdb
 
 项目目前有两套代码：
 
-- `backend/app` 使用 `data/market.duckdb`，日 K 日期列叫 `date`。
+- `backend/app` 使用 `data/cn_market.duckdb`，日 K 日期列叫 `date`。
 
-本教程贴合当前的 `backend/app` 和它的放量策略，所以第 8～10 节读取 `market.duckdb`，并统一使用日 K 的 `date` 字段。
+本教程贴合当前的 `backend/app` 和它的放量策略，所以第 8～10 节读取 `cn_market.duckdb`，并统一使用日 K 的 `date` 字段。
 
 ## 推荐练习
 

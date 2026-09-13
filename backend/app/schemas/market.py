@@ -8,7 +8,15 @@ class Stock(BaseModel):
     name: str
     exchange: str
     market: str
-    type: str
+    source: str
+    update_time: datetime
+
+
+class GlobalStock(BaseModel):
+    """港股和美股股票池中的一条记录。"""
+
+    symbol: str
+    name: str
     source: str
     update_time: datetime
 

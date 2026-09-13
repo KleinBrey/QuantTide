@@ -3,7 +3,7 @@
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
 from backend.app.repository import StockDailyBasicRepository
-from backend.app.services import Service
+from backend.app.services import CNMarketService
 
 
 def sync_stock_daily_basic() -> int:
@@ -12,11 +12,11 @@ def sync_stock_daily_basic() -> int:
     database = DuckDBDatabase()
     database.initialize()
 
-    service = Service(
+    cn_market_service = CNMarketService(
         tushare_provider=TushareProvider(),
         stock_daily_basic_repository=StockDailyBasicRepository(database),
     )
-    return service.update_stock_daily_basic()
+    return cn_market_service.update_stock_daily_basic()
 
 
 def main() -> None:

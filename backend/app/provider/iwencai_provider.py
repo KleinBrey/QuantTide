@@ -201,6 +201,11 @@ class IwencaiProvider:
             }
         )
 
+        # 有时候港股数据没有 price 或 change_pct 字段，补充为缺失值。
+        for col in ["price", "change_pct"]:
+            if col not in frame.columns:
+                frame[col] = pd.NA
+
         return frame
 
     def fetch_us_hot_rank(self) -> pd.DataFrame:

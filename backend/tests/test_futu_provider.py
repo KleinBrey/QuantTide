@@ -12,6 +12,7 @@ class FakeQuoteContext:
         self.options = kwargs
         self.closed = False
         self.history_calls: list[dict] = []
+        self.snapshot_calls: list[list[str]] = []
 
     def close(self) -> None:
         self.closed = True
@@ -26,7 +27,10 @@ class FakeQuoteContext:
         )
 
     def get_market_snapshot(self, code_list):
-        return 0, pd.DataFrame({"code": code_list, "last_price": [1500.0]})
+        self.snapshot_calls.append(code_list)
+        return 0, pd.DataFrame(
+            {"code": code_list, "last_price": [1500.0] * len(code_list)}
+        )
 
     def get_hot_list(self, **kwargs):
         return 0, (
@@ -102,6 +106,40 @@ class FutuProviderTests(unittest.TestCase):
         self.assertEqual(result[0]["source"], "Futu")
         self.assertTrue(self.contexts[-1].closed)
 
+    def test_fetch_snapshot_supports_mixed_markets_and_code_styles(self) -> None:
+        result = self.provider.fetch_snapshot(
+            ["HK.00700", "00700.HK", "US.AAPL", "AAPL", "600519"]
+        )["data"]["item"]
+
+        self.assertEqual(
+            self.contexts[-1].snapshot_calls,
+            [["HK.00700", "US.AAPL", "SH.600519"]],
+        )
+        self.assertEqual(
+            [row["code"] for row in result],
+            ["HK.00700", "US.AAPL", "SH.600519"],
+        )
+
+    def test_fetch_snapshot_rejects_more_than_400_unique_codes(self) -> None:
+        codes = [f"US.TEST{index}" for index in range(401)]
+
+        with self.assertRaisesRegex(ValueError, "400"):
+            self.provider.fetch_snapshot(codes)
+
+        self.assertEqual(self.contexts, [])
+
+    def test_fetch_snapshot_rejects_invalid_market_code(self) -> None:
+        with self.assertRaisesRegex(ValueError, "美股代码格式"):
+            self.provider.fetch_snapshot("not a code")
+
+        self.assertEqual(self.contexts, [])
+
+    def test_fetch_snapshot_does_not_treat_other_markets_as_us_codes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "SG 市场"):
+            self.provider.fetch_snapshot("SG.D05")
+
+        self.assertEqual(self.contexts, [])
+
     def test_fetch_hot_list_returns_total_and_frame(self) -> None:
         all_count, frame = self.provider.fetch_hot_list(market="us", count=1)
 
@@ -126,6 +164,32 @@ class FutuProviderTests(unittest.TestCase):
             self.contexts[-1].history_calls[1]["page_req_key"], b"next"
         )
         self.assertTrue(self.contexts[-1].closed)
+
+    def test_fetch_historical_supports_hk_and_us_symbols(self) -> None:
+        for symbol, expected_code in [
+            ("00700.HK", "HK.00700"),
+            ("AAPL", "US.AAPL"),
+        ]:
+            with self.subTest(symbol=symbol):
+                self.provider.fetch_historical(
+                    symbol,
+                    1_787_846_400_000,
+                    1_788_105_600_000,
+                )
+                self.assertEqual(
+                    self.contexts[-1].history_calls[0]["code"],
+                    expected_code,
+                )
+
+    def test_session_reuses_one_quote_context(self) -> None:
+        with self.provider.session():
+            self.provider.fetch_snapshot("00700.HK")
+            self.provider.fetch_snapshot("AAPL")
+
+            self.assertEqual(len(self.contexts), 1)
+            self.assertFalse(self.contexts[0].closed)
+
+        self.assertTrue(self.contexts[0].closed)
 
     def test_api_error_closes_context(self) -> None:
         context = FakeQuoteContext()

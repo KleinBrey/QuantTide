@@ -7,6 +7,18 @@ import { useTradingCalendar } from '@/contexts';
 const historyCache = new Map();
 const pendingRequests = new Map();
 
+function buildKlineData(historyRows, todaySnapshot, latestTradingDay) {
+  const latestDatabaseTradingDay = historyRows.at(-1).date;
+
+  return {
+    dataSource: '本地历史 + 同花顺快照',
+    adjustLabel: '前复权',
+    rows: latestDatabaseTradingDay === latestTradingDay
+      ? historyRows
+      : mergeAShareStockHistoryWithSnapshot(historyRows, todaySnapshot)
+  };
+}
+
 export function useAShareStockKline() {
   const { getLatestTradingDay } = useTradingCalendar();
 
@@ -24,11 +36,8 @@ export function useAShareStockKline() {
     const cachedRows = historyCache.get(symbol);
 
     if (cachedRows) {
-      setData({
-        dataSource: '本地历史 + 同花顺快照',
-        adjustLabel: '前复权',
-        rows: mergeAShareStockHistoryWithSnapshot(cachedRows, todaySnapshot)
-      });
+      setData(buildKlineData(cachedRows, todaySnapshot, latestTradingDay));
+
       setError('');
       setLoading(false);
       return;
@@ -56,21 +65,7 @@ export function useAShareStockKline() {
 
       if (requestId !== requestIdRef.current) return;
 
-      const latestDatabaseTradingDay = historyRows.at(-1).date;
-
-      if (latestDatabaseTradingDay === latestTradingDay) {
-        setData({
-          dataSource: '本地历史 + 同花顺快照',
-          adjustLabel: '前复权',
-          rows: historyRows
-        });
-      } else {
-        setData({
-          dataSource: '本地历史 + 同花顺快照',
-          adjustLabel: '前复权',
-          rows: mergeAShareStockHistoryWithSnapshot(historyRows, todaySnapshot)
-        });
-      }
+      setData(buildKlineData(historyRows, todaySnapshot, latestTradingDay));
     } catch (requestError) {
       pendingRequests.delete(symbol);
       if (requestId !== requestIdRef.current) return;

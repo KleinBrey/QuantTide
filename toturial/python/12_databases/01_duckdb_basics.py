@@ -15,7 +15,7 @@ except ImportError:
 else:
     # :memory: 表示创建内存数据库。
     # 数据只存在于程序运行期间，程序结束后会自动消失。
-    # 如果需要保存到硬盘，可以改成 duckdb.connect("market.duckdb")。
+    # 如果需要保存到硬盘，可以改成 duckdb.connect("cn_market.duckdb")。
     connection = duckdb.connect(database=":memory:")
 
     try:

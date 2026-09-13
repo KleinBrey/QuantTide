@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATABASE_PATH = PROJECT_ROOT / "data" / "market.duckdb"
+DATABASE_PATH = PROJECT_ROOT / "data" / "cn_market.duckdb"
 
 
 class Stock(BaseModel):
@@ -103,7 +103,7 @@ app = FastAPI(title="本地 A 股行情 API", version="1.0.0")
 
 
 def normalize_symbol(value: str) -> str:
-    """market.duckdb 使用六位代码，所以完整 thscode 只保留点号前部分。"""
+    """cn_market.duckdb 使用六位代码，所以完整 thscode 只保留点号前部分。"""
 
     symbol = value.strip().upper().split(".")[0]
     if len(symbol) != 6 or not symbol.isdigit():

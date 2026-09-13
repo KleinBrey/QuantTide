@@ -5,7 +5,7 @@ import threading
 import time
 from datetime import date
 from datetime import datetime
-from typing import Annotated, Callable
+from typing import Annotated, Callable, Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -19,21 +19,25 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.app.repository import (
     DailyBarRepository,
+    HKDailyBarRepository,
     HKStockHotDailyRepository,
+    HKStockRepository,
     StockHotDailyRepository,
     StockDailyBasicRepository,
     StockRepository,
+    USDailyBarRepository,
     USStockHotDailyRepository,
+    USStockRepository,
 )
-from backend.app.schemas import DailyBar, HotStock, Stock
-from backend.app.services import Service
+from backend.app.schemas import DailyBar, HotStock, GlobalStock, Stock
+from backend.app.services import CNMarketService, HKMarketService, USMarketService
 from backend.app.strategy.registry import (
     STRATEGY_EXECUTORS,
     execute_strategy,
     strategy_list,
 )
 from backend.app.strategy.result import format_strategy_result
-from backend.app.utils.symbol import validate_symbol
+from backend.app.utils.symbol import normalize_daily_bar_symbol
 from backend.scripts.sync_daily_k_db import sync_daily_k
 from backend.scripts.sync_hot_stock_db import sync_stock_hot
 from backend.scripts.sync_stock_daily_basic_db import sync_stock_daily_basic
@@ -41,12 +45,18 @@ from backend.scripts.sync_stock_list_db import sync_stock_list
 
 from .dependencies import (
     get_daily_repository,
+    get_cn_market_service,
+    get_hk_daily_repository,
+    get_hk_market_service,
+    get_hk_stock_repository,
     get_hk_stock_hot_repository,
-    get_service,
     get_stock_daily_basic_repository,
     get_stock_hot_repository,
     get_stock_repository,
+    get_us_market_service,
+    get_us_stock_repository,
     get_us_stock_hot_repository,
+    get_us_daily_repository,
 )
 
 router = APIRouter()
@@ -57,7 +67,23 @@ database_sync_lock = threading.Lock()
 
 # 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
 StockListRepository = Annotated[StockRepository, Depends(get_stock_repository)]
+HKStockListRepository = Annotated[
+    HKStockRepository,
+    Depends(get_hk_stock_repository),
+]
+USStockListRepository = Annotated[
+    USStockRepository,
+    Depends(get_us_stock_repository),
+]
 DailyRepository = Annotated[DailyBarRepository, Depends(get_daily_repository)]
+HKDailyRepository = Annotated[
+    HKDailyBarRepository,
+    Depends(get_hk_daily_repository),
+]
+USDailyRepository = Annotated[
+    USDailyBarRepository,
+    Depends(get_us_daily_repository),
+]
 StockDailyBasicRepo = Annotated[
     StockDailyBasicRepository,
     Depends(get_stock_daily_basic_repository),
@@ -74,7 +100,18 @@ USStockHotRepository = Annotated[
     USStockHotDailyRepository,
     Depends(get_us_stock_hot_repository),
 ]
-dbService = Annotated[Service, Depends(get_service)]
+CNMarketServiceDep = Annotated[
+    CNMarketService,
+    Depends(get_cn_market_service),
+]
+HKMarketServiceDep = Annotated[
+    HKMarketService,
+    Depends(get_hk_market_service),
+]
+USMarketServiceDep = Annotated[
+    USMarketService,
+    Depends(get_us_market_service),
+]
 
 
 async def _run_database_sync(
@@ -191,11 +228,30 @@ def stocks(
     return stock_list
 
 
+@router.get("/market-stocks", response_model=list[GlobalStock])
+def market_stocks(
+    hk_repository: HKStockListRepository,
+    us_repository: USStockListRepository,
+    market: Annotated[
+        Literal["hk-share", "us-share"],
+        Query(description="股票池所在的市场数据库"),
+    ],
+) -> list[dict]:
+    """返回港股或美股数据库 ``stocks`` 表的全部记录。"""
+
+    repositories = {
+        "hk-share": hk_repository,
+        "us-share": us_repository,
+    }
+    stock_table = repositories[market].get_table_data()
+    return stock_table.to_dict(orient="records")
+
+
 @router.post("/stocks-list")
-def update_stocks_list(service: dbService) -> dict[str, str]:
+def update_stocks_list(cn_market_service: CNMarketServiceDep) -> dict[str, str]:
     """从数据源获取最新股票列表，并保存到本地数据库。"""
 
-    service.update_stocks_list()
+    cn_market_service.update_stocks_list()
 
     # 只有上面的更新操作没有抛出异常时，才会执行到这里。
     return {
@@ -205,10 +261,10 @@ def update_stocks_list(service: dbService) -> dict[str, str]:
 
 
 @router.get("/hot-stock", response_model=list[HotStock])
-def hot_stock(service: dbService, count: int = 100) -> list[dict]:
+def hot_stock(cn_market_service: CNMarketServiceDep, count: int = 100) -> list[dict]:
     """返回最新 A 股热度榜；数据库缓存超过两小时时自动同步。"""
 
-    hot_stock_table = service.get_hot_stock().head(count)
+    hot_stock_table = cn_market_service.get_hot_stock().head(count)
     # 将 pandas 的 NaN/NaT 转为 None，确保可选字段能被 JSON 正确编码。
     hot_stock_table = hot_stock_table.astype(object).where(
         pd.notna(hot_stock_table),
@@ -218,10 +274,10 @@ def hot_stock(service: dbService, count: int = 100) -> list[dict]:
 
 
 @router.get("/hk-hot-stock", response_model=list[HotStock])
-def hk_hot_stock(service: dbService, count: int = 50) -> list[dict]:
+def hk_hot_stock(hk_market_service: HKMarketServiceDep, count: int = 50) -> list[dict]:
     """返回最新港股热度榜；数据库缓存超过两小时时自动同步。"""
 
-    hot_stock_table = service.get_hk_hot_stock().head(count)
+    hot_stock_table = hk_market_service.get_hot_stock().head(count)
     hot_stock_table = hot_stock_table.astype(object).where(
         pd.notna(hot_stock_table),
         None,
@@ -230,10 +286,10 @@ def hk_hot_stock(service: dbService, count: int = 50) -> list[dict]:
 
 
 @router.get("/us-hot-stock", response_model=list[HotStock])
-def us_hot_stock(service: dbService, count: int = 50) -> list[dict]:
+def us_hot_stock(us_market_service: USMarketServiceDep, count: int = 50) -> list[dict]:
     """返回最新美股热度榜；数据库缓存超过两小时时自动同步。"""
 
-    hot_stock_table = service.get_us_hot_stock().head(count)
+    hot_stock_table = us_market_service.get_hot_stock().head(count)
     hot_stock_table = hot_stock_table.astype(object).where(
         pd.notna(hot_stock_table),
         None,
@@ -244,9 +300,11 @@ def us_hot_stock(service: dbService, count: int = 50) -> list[dict]:
 @router.get("/daily-bars", response_model=list[DailyBar])
 def daily_bars(
     repository: DailyRepository,
+    hk_repository: HKDailyRepository,
+    us_repository: USDailyRepository,
     symbol: Annotated[
         str,
-        Query(description="股票代码，例如 600519 或 600519.SH"),
+        Query(description="股票代码，例如 600519.SH、0700.HK 或 NVDA.O"),
     ],
     start: Annotated[
         date,
@@ -256,18 +314,27 @@ def daily_bars(
         date,
         Query(description="结束日期，格式 YYYY-MM-DD，包含当天"),
     ],
+    market: Annotated[
+        Literal["a-share", "hk-share", "us-share"],
+        Query(description="日 K 所在市场数据库"),
+    ] = "a-share",
 ) -> list[dict]:
-    """从本地数据库查询指定股票、指定日期范围内的日 K 线。"""
+    """按市场从对应 DuckDB 查询指定日期范围内的日 K 线。"""
 
     if start > end:
         raise HTTPException(status_code=422, detail="开始日期不能晚于结束日期")
 
     try:
-        normalized_symbol = validate_symbol(symbol)
+        normalized_symbol = normalize_daily_bar_symbol(symbol, market)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    daily_bar_table = repository.get_by_symbol_and_date_range(
+    repositories = {
+        "a-share": repository,
+        "hk-share": hk_repository,
+        "us-share": us_repository,
+    }
+    daily_bar_table = repositories[market].get_by_symbol_and_date_range(
         normalized_symbol,
         start,
         end,

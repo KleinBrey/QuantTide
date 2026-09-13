@@ -10,6 +10,8 @@ const iconById = {
   'hot-rankings': Flame,
   'strategy-signals': ChartNoAxesCombined,
   'a-share-market': ChartCandlestick,
+  'hk-share-market': ChartCandlestick,
+  'us-share-market': ChartCandlestick,
   'data-sources': DatabaseBackup
 };
 

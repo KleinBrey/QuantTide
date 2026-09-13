@@ -7,7 +7,7 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATABASE_PATH = PROJECT_ROOT / "data" / "market.duckdb"
+DATABASE_PATH = PROJECT_ROOT / "data" / "cn_market.duckdb"
 
 RECENT_DAYS = 5
 PREVIOUS_DAYS = 20

@@ -24,7 +24,9 @@ quanttide/
 │   ├── tests/               # 后端测试
 │   └── run.py               # API 快捷启动入口
 ├── data/
-│   └── market.duckdb
+│   ├── cn_market.duckdb       # A 股
+│   ├── hk_market.duckdb       # 港股
+│   └── us_market.duckdb       # 美股
 ├── frontend/
 ├── pyproject.toml
 └── README.md
@@ -54,12 +56,14 @@ echo $VIRTUAL_ENV
 
 ## 初始化和同步
 
-同步脚本会自动初始化 `data/market.duckdb` 和所需数据表。依次同步股票列表、日 K 和当日股票热度：
+同步脚本会自动初始化三个市场数据库和所需数据表。`cn_market.duckdb` 只保存 A 股数据，港股和美股分别保存在 `hk_market.duckdb` 与 `us_market.duckdb`。依次同步股票列表、日 K 和当日股票热度：
 
 ```bash
 uv run python -m backend.scripts.sync_stock_list_db
+uv run python -m backend.scripts.init_hk_us_stock_pools
 uv run quant-sync
-uv run python -m backend.scripts.sync_stock_hot_db
+uv run python -m backend.scripts.sync_hk_us_daily_k_db
+uv run python -m backend.scripts.sync_hot_stock_db
 ```
 
 `quant-sync` 会显示交互式菜单，可选择：
@@ -67,6 +71,10 @@ uv run python -m backend.scripts.sync_stock_hot_db
 - 最近 3 个自然日，每批 100 只；
 - 最近 60 个自然日，每批 50 只；
 - 最近 365 个自然日，每批 10 只。
+
+港股和美股日 K 同步脚本同样提供 3、60、365 个自然日选项；它会从两个
+市场各自的 `stocks` 表读取股票，并通过本机 Futu OpenD 写入对应的
+`daily_bars` 表。
 
 ## 启动 API
 

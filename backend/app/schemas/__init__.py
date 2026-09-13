@@ -1,3 +1,3 @@
-from .market import DailyBar, HotStock, Stock
+from .market import DailyBar, HotStock, GlobalStock, Stock
 
-__all__ = ["DailyBar", "HotStock", "Stock"]
+__all__ = ["DailyBar", "HotStock", "GlobalStock", "Stock"]

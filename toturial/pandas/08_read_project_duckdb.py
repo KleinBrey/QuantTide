@@ -6,7 +6,7 @@ import duckdb
 
 
 project_root = Path(__file__).resolve().parents[2]
-database_path = project_root / "data" / "market.duckdb"
+database_path = project_root / "data" / "cn_market.duckdb"
 symbols = ["600519", "000001", "300750"]
 
 if not database_path.exists():

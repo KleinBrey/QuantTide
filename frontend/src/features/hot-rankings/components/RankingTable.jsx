@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ClientSideRowModelModule, colorSchemeDark, themeQuartz } from 'ag-grid-community';
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import StockKlinePanel from './StockKlinePanel.jsx';
@@ -19,11 +19,12 @@ function stockSymbol(stock) {
 
 function RankingKlineRow({ data }) {
   const stock = data.stock;
+  const marketId = data.marketId;
   const { data: klineData, loading, error, loadKline } = useStockKline();
 
   useEffect(() => {
-    loadKline(stockSymbol(stock));
-  }, [loadKline, stock]);
+    loadKline(stockSymbol(stock), marketId);
+  }, [loadKline, marketId, stock]);
 
   return (
     <div className={styles.klineRow}>
@@ -76,7 +77,7 @@ const COLUMN_DEFS = [
   { headerName: '热度', field: 'hot_value', flex: 1 }
 ];
 
-export default function RankingTable({ rows, loading, showKline = false }) {
+export default function RankingTable({ rows, loading, marketId = 'a-share', showKline = false }) {
   // 普通状态只展示股票行；榜单进入全屏后，才为每只股票插入对应的 K 线行。
   const rowData = useMemo(
     () =>
@@ -96,11 +97,12 @@ export default function RankingTable({ rows, loading, showKline = false }) {
             rowType: 'kline',
             rowId: `kline-${rowKey}`,
             parentRowId: stockRowId,
+            marketId,
             stock: row
           }
         ];
       }),
-    [rows, showKline]
+    [marketId, rows, showKline]
   );
 
   return (

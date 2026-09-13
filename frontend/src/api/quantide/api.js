@@ -5,6 +5,11 @@ export function getStocksListApi(params = {}) {
   return request.get('/api/stocks-list', params);
 }
 
+// 获取港股或美股数据库中的股票池
+export function getMarketStocksApi(params = {}) {
+  return request.get('/api/market-stocks', params);
+}
+
 // 更新股票标的列表
 export function updateStocksListApi(params = {}) {
   return request.post('/api/stocks-list', params);

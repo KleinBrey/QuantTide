@@ -39,6 +39,19 @@ class FutuProvider:
         "hfq": "hfq",
     }
     _CODE_PATTERN = re.compile(r"^(?:(SH|SZ)\.)?(\d{6})(?:\.(SH|SZ))?$")
+    _SNAPSHOT_MARKETS = ("SH", "SZ", "HK", "US")
+    _OTHER_FUTU_MARKETS = (
+        "HK_FUTURE",
+        "SG",
+        "JP",
+        "AU",
+        "MY",
+        "CA",
+        "FX",
+        "CC",
+        "EC",
+    )
+    _US_CODE_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]*$")
 
     def __init__(
         self,
@@ -57,10 +70,45 @@ class FutuProvider:
         self.port = port
         self.is_encrypt = is_encrypt
         self._context_factory = context_factory
+        self._active_quote_context: Any | None = None
+
+    @staticmethod
+    def set_console_logging(enabled: bool) -> None:
+        """控制 Futu SDK 是否向当前进程的控制台输出日志。"""
+
+        from futu import SysConfig
+
+        SysConfig.enable_console_log(enabled)
+
+    @contextmanager
+    def session(self) -> Iterator[FutuProvider]:
+        """在多个 Provider 请求之间复用同一个 Futu 行情连接。"""
+
+        if self._active_quote_context is not None:
+            yield self
+            return
+
+        with self._new_quote_context() as quote_context:
+            self._active_quote_context = quote_context
+            try:
+                yield self
+            finally:
+                self._active_quote_context = None
 
     @contextmanager
     def _quote_context(self) -> Iterator[Any]:
-        """按请求创建并可靠关闭行情连接。"""
+        """优先复用会话连接，否则为单次请求创建连接。"""
+
+        if self._active_quote_context is not None:
+            yield self._active_quote_context
+            return
+
+        with self._new_quote_context() as quote_context:
+            yield quote_context
+
+    @contextmanager
+    def _new_quote_context(self) -> Iterator[Any]:
+        """创建并可靠关闭一个新的行情连接。"""
 
         factory = self._context_factory
         if factory is None:
@@ -97,6 +145,70 @@ class FutuProvider:
         if market not in cls._A_SHARE_MARKETS:
             raise ValueError(f"Futu Provider 暂不支持该 A 股市场: {market}")
         return f"{market}.{code}"
+
+    @classmethod
+    def _market_code(cls, value: object) -> str:
+        """将项目代码转换为 Futu 行情接口使用的市场前缀格式。"""
+
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("Futu 股票代码不能为空")
+
+        unsupported_market = next(
+            (
+                market
+                for market in cls._OTHER_FUTU_MARKETS
+                if normalized.startswith(f"{market}.")
+                or normalized.endswith(f".{market}")
+            ),
+            None,
+        )
+        if unsupported_market:
+            raise ValueError(f"Futu Provider 暂不支持 {unsupported_market} 市场")
+
+        prefix_market = next(
+            (
+                market
+                for market in cls._SNAPSHOT_MARKETS
+                if normalized.startswith(f"{market}.")
+            ),
+            None,
+        )
+        suffix_market = next(
+            (
+                market
+                for market in cls._SNAPSHOT_MARKETS
+                if normalized.endswith(f".{market}")
+            ),
+            None,
+        )
+        if prefix_market and suffix_market:
+            raise ValueError(f"股票代码不能同时包含市场前缀和后缀: {value!r}")
+
+        if prefix_market:
+            market = prefix_market
+            code = normalized[len(prefix_market) + 1 :]
+        elif suffix_market:
+            market = suffix_market
+            code = normalized[: -(len(suffix_market) + 1)]
+        elif normalized.isdigit() and len(normalized) == 6:
+            return cls._futu_code(normalized)
+        elif normalized.isdigit() and len(normalized) <= 5:
+            market = "HK"
+            code = normalized.zfill(5)
+        else:
+            market = "US"
+            code = normalized
+
+        if market in cls._A_SHARE_MARKETS:
+            return cls._futu_code(f"{market}.{code}")
+        if market == "HK":
+            if not code.isdigit() or not 1 <= len(code) <= 5:
+                raise ValueError(f"不支持的港股代码格式: {value!r}")
+            return f"HK.{code.zfill(5)}"
+        if not cls._US_CODE_PATTERN.fullmatch(code):
+            raise ValueError(f"不支持的美股代码格式: {value!r}")
+        return f"US.{code}"
 
     @staticmethod
     def _check_result(operation: str, ret_code: int, data: Any) -> pd.DataFrame:
@@ -171,14 +283,16 @@ class FutuProvider:
         self,
         thscode: str | Iterable[str],
     ) -> dict[str, dict[str, list[dict[str, Any]]]]:
-        """获取最多 400 只沪深 A 股的市场快照。"""
+        """获取最多 400 个 A 股、港股或美股标的的市场快照。"""
 
         values = [thscode] if isinstance(thscode, str) else list(thscode)
-        codes = [self._futu_code(value) for value in values]
+        # Futu 接口要求 MARKET.CODE 格式，并对重复代码自动去重。
+        # 在这里先做同样的去重，避免重复输入误触 400 个标的限制。
+        codes = list(dict.fromkeys(self._market_code(value) for value in values))
         if not codes:
             return {"data": {"item": []}}
         if len(codes) > 400:
-            raise ValueError("Futu 单次快照最多支持 400 只股票")
+            raise ValueError("Futu 单次快照最多支持 400 个标的")
 
         with self._quote_context() as quote_context:
             ret_code, data = quote_context.get_market_snapshot(codes)
@@ -186,6 +300,9 @@ class FutuProvider:
 
         if frame.empty:
             return {"data": {"item": []}}
+
+        if "code" not in frame.columns:
+            raise FutuProviderError("Futu 市场快照缺少字段: code")
 
         frame["source"] = self.source
         return {"data": {"item": frame.to_dict(orient="records")}}
@@ -232,7 +349,7 @@ class FutuProvider:
         adjust: str = "forward",
         offset: int = 0,
     ) -> dict[str, dict[str, list[dict[str, Any]]]]:
-        """分页获取历史 K 线，并返回现有 Service 可格式化的字段。"""
+        """分页获取 A 股、港股或美股历史 K 线。"""
 
         if offset < 0:
             raise ValueError("offset 不能小于 0")
@@ -248,7 +365,7 @@ class FutuProvider:
         except KeyError as error:
             raise ValueError(f"Futu 不支持复权方式: {adjust!r}") from error
 
-        code = self._futu_code(thscode)
+        code = self._market_code(thscode)
         start_date = self._timestamp_to_date(start)
         end_date = self._timestamp_to_date(end)
         page_req_key = None

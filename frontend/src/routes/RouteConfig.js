@@ -24,6 +24,18 @@ export const dashboardGroups = [
         path: '/a-share-market',
         title: 'A股',
         description: 'A股市场'
+      },
+      {
+        id: 'hk-share-market',
+        path: '/hk-share-market',
+        title: '港股',
+        description: '港股市场'
+      },
+      {
+        id: 'us-share-market',
+        path: '/us-share-market',
+        title: '美股',
+        description: '美股市场'
       }
     ]
   },
