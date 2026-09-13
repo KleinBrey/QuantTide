@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { BookOpenText, ChevronRight, Loader2, Maximize2, Minimize2, RefreshCcw } from 'lucide-react';
+import { BookOpenText, ChevronRight, Loader2, RefreshCcw } from 'lucide-react';
 import moment from 'moment';
+import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
+import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import StrategyResultsTable from './StrategyResultsTable.jsx';
@@ -13,27 +14,10 @@ function formatTimestamp(value) {
 }
 
 export default function StrategySignalsView({ state }) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, targetClassName, toggleFullscreen } = useWindowFullscreen();
   const { strategies, activeStrategyId, result, columnDefs, loading, error, selectStrategy, refresh } = state;
   const activeStrategy = result?.strategy || strategies.find(strategy => strategy.id === activeStrategyId);
   const rows = result?.items || [];
-
-  useEffect(() => {
-    if (!isFullscreen) return undefined;
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') setIsFullscreen(false);
-    }
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullscreen]);
-
-  function toggleFullscreen() {
-    setIsFullscreen(current => !current);
-  }
 
   return (
     <div className={cn('dashboard-content', styles.root)}>
@@ -67,14 +51,7 @@ export default function StrategySignalsView({ state }) {
         </nav>
       </aside>
 
-      <section
-        className={cn(
-          'dashboard-panel',
-          'dashboard-table-panel',
-          styles.resultPanel,
-          isFullscreen && styles.windowFullscreen
-        )}
-      >
+      <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.resultPanel, targetClassName)}>
         <div className={cn('dashboard-panel-header', styles.resultHeader)}>
           <div className={styles.headerContent}>
             <div className={styles.strategyHeading}>
@@ -94,18 +71,7 @@ export default function StrategySignalsView({ state }) {
             </div>
           </div>
           <div className={styles.headerActions}>
-            <Button
-              type="button"
-              className={cn('dashboard-ghost-button', styles.fullscreenButton)}
-              variant="outline"
-              size="icon-lg"
-              onClick={toggleFullscreen}
-              aria-label={isFullscreen ? '退出窗口全屏' : '在当前窗口中全屏显示策略结果'}
-              aria-pressed={isFullscreen}
-              title={isFullscreen ? '退出窗口全屏' : '在当前窗口中全屏显示策略结果'}
-            >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </Button>
+            <FullscreenButton isFullscreen={isFullscreen} mode={FULLSCREEN_MODE.WINDOW} onToggle={toggleFullscreen} />
             <Button
               type="button"
               className="dashboard-ghost-button"
@@ -120,7 +86,7 @@ export default function StrategySignalsView({ state }) {
         </div>
 
         {error ? <div className={styles.errorNotice}>{error}</div> : null}
-        <div className={styles.tableWrap}>
+        <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>
           <StrategyResultsTable rows={rows} columnDefs={columnDefs} loading={loading} />
         </div>
       </section>

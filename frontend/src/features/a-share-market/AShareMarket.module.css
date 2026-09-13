@@ -10,21 +10,7 @@
   /* min-height: 640px; */
 }
 
-.fullscreenButton {
-  color: #d4d4d8;
-}
-
-.panel:fullscreen {
-  background: var(--background);
-  border: 0;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-}
-
-.panel:fullscreen .tableWrap {
+.fullscreenTableWrap {
   flex: 1;
   height: auto;
   min-height: 0;

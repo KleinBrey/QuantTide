@@ -1,38 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 
+import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
 import AShareMarketTable from '@/features/a-share-market/components/AShareMarketTable.jsx';
 import styles from '@/features/a-share-market/AShareMarket.module.css';
 import { useAShareMarketRanking } from '@/features/a-share-market/hooks/useAShareMarketRanking.js';
-import { Loader2, Maximize2, Minimize2, RefreshCcw } from 'lucide-react';
+import { useBrowserFullscreen } from '@/hooks/useFullscreen.js';
+import { Loader2, RefreshCcw } from 'lucide-react';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import moment from 'moment';
 
 export default function AShareMarket() {
   const panelRef = useRef(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, targetClassName, toggleFullscreen } = useBrowserFullscreen(panelRef);
   const { ranking, loading: rankingLoading, error: rankingError, refresh } = useAShareMarketRanking();
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === panelRef.current);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  async function toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else {
-        await panelRef.current?.requestFullscreen();
-      }
-    } catch (fullscreenError) {
-      console.error('切换热榜全屏失败', fullscreenError);
-    }
-  }
 
   function formatTimestamp(timestamp) {
     if (!timestamp) return '未刷新';
@@ -45,25 +26,14 @@ export default function AShareMarket() {
 
   return (
     <div className="dashboard-content">
-      <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.panel)} ref={panelRef}>
+      <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.panel, targetClassName)} ref={panelRef}>
         <div className="dashboard-panel-header">
           <div>
             <h2>{ranking.title}</h2>
             <span>{rankingError || formatTimestamp(ranking.timestamp)}</span>
           </div>
           <div className={styles.headerActions}>
-            <Button
-              aria-label={isFullscreen ? '退出全屏' : '全屏显示热榜'}
-              aria-pressed={isFullscreen}
-              className={cn('dashboard-ghost-button', styles.fullscreenButton)}
-              onClick={toggleFullscreen}
-              size="icon-lg"
-              title={isFullscreen ? '退出全屏' : '全屏显示热榜'}
-              type="button"
-              variant="outline"
-            >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </Button>
+            <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
             <Button
               type="button"
               className="dashboard-ghost-button"
@@ -76,7 +46,7 @@ export default function AShareMarket() {
             </Button>
           </div>
         </div>
-        <div className={styles.tableWrap}>
+        <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>
           <AShareMarketTable rows={ranking.rows} loading={rankingLoading} />
         </div>
       </section>
