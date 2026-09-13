@@ -3,7 +3,7 @@ import { ClientSideRowModelModule, CellStyleModule, colorSchemeDark, themeQuartz
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import moment from 'moment';
 import { getDailyBarsApi } from '@/api/quantide/api.js';
-import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
+import StockKlineChart from '@/components/tradingView/StockKlineChart.jsx';
 import styles from './StrategyResultsTable.module.css';
 import { transformHistory } from '../utils/tableColumns.jsx';
 

@@ -59,7 +59,7 @@ function formatChangePercent(value) {
 
 function ChangePercentCell(params) {
   // 涨跌幅使用快照最新值
-  const change = Number(params.data.change_pct);
+  const change = params.data.change_pct;
   const color = change > 0 ? '#f04451' : change < 0 ? '#24bd7a' : undefined;
   return <span style={{ color }}>{formatChangePercent(change)}</span>;
 }
