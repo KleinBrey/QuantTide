@@ -147,6 +147,15 @@ class BacktestResult:
             "closed_trade_count": metrics.closed_trade_count,
             "win_rate": metrics.win_rate,
             "signal_days": self.metadata.get("signal_days", 0),
+            "qualified_signal_count": self.metadata.get(
+                "qualified_signal_count", 0
+            ),
+            "executed_signal_count": self.metadata.get(
+                "executed_signal_count", 0
+            ),
+            "skipped_full_position_count": self.metadata.get(
+                "skipped_full_position_count", 0
+            ),
             "open_positions": len(self.final_positions),
         }
 

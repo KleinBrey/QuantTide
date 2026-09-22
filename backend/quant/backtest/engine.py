@@ -3,7 +3,8 @@
 回测约定：
 
 - 第一日出现放量上涨设置，第二日小阳线确认；
-- 确认日按收盘价等权买入，数量按 100 股整手向下取整；
+- 确认日按收盘价买入，单仓上限为当日账户权益的 1 / 最大持仓数；
+- 持仓未满时按信号排名补仓，数量按 100 股整手向下取整；
 - 止损价为设置日前一交易日收盘价，止盈价为买入价上方 2 倍风险距离；
 - 遵守 A 股 T+1，买入当日不卖出；
 - 日 K 同时触发止损和止盈时，保守地按止损先成交；
@@ -78,6 +79,17 @@ class BacktestConfig:
             raise ValueError("费率与最低佣金不能为负")
 
 
+@dataclass(frozen=True, slots=True)
+class BuyExecutionStats:
+    """单个交易日的买入信号执行统计。"""
+
+    executed: int = 0
+    skipped_full: int = 0
+    skipped_already_held: int = 0
+    skipped_unexecutable: int = 0
+    skipped_insufficient_cash: int = 0
+
+
 class ConfirmedVolumeBreakoutBacktest:
     """只服务于放量突破次日确认策略的回测。"""
 
@@ -110,10 +122,12 @@ class ConfirmedVolumeBreakoutBacktest:
             heat["trade_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
 
         for trade_date in calendar:
-            signal_date = bars.loc[bars["trade_date"] < trade_date, "trade_date"].max()
+            breakout_date = bars.loc[
+                bars["trade_date"] < trade_date, "trade_date"
+            ].max()
             day_heat = heat
             if "trade_date" in heat.columns:
-                day_heat = heat[heat["trade_date"] == signal_date]
+                day_heat = heat[heat["trade_date"] == breakout_date]
 
             selected = self.strategy.select(
                 trade_date,
@@ -141,14 +155,19 @@ class ConfirmedVolumeBreakoutBacktest:
             .sort_index()
         )
         signals_by_date = {
-            signal_date: group.sort_values(["selection_rank", "symbol"])
-            for signal_date, group in signals.groupby("entry_date", sort=True)
+            confirm_date: group.sort_values(["selection_rank", "symbol"])
+            for confirm_date, group in signals.groupby("confirm_date", sort=True)
         }
 
         account = Account(self.config.initial_cash)
         trade_rows: list[dict[str, Any]] = []
         equity_rows: list[dict[str, Any]] = []
         last_close_prices: dict[str, float] = {}
+        executed_signal_count = 0
+        skipped_full_position_count = 0
+        skipped_already_held_count = 0
+        skipped_unexecutable_count = 0
+        skipped_insufficient_cash_count = 0
 
         for trade_date in calendar:
             day_quotes = quotes.loc[trade_date]
@@ -164,17 +183,20 @@ class ConfirmedVolumeBreakoutBacktest:
             )
 
             candidates = signals_by_date.get(trade_date)
-            if (
-                not account.positions
-                and candidates is not None
-                and not candidates.empty
-            ):
-                self._execute_close_buys(
+            if candidates is not None and not candidates.empty:
+                buy_stats = self._execute_close_buys(
                     account=account,
                     trade_date=trade_date.date(),
                     day_quotes=day_quotes,
-                    candidates=candidates.head(self.config.max_positions),
+                    candidates=candidates,
                     trade_rows=trade_rows,
+                )
+                executed_signal_count += buy_stats.executed
+                skipped_full_position_count += buy_stats.skipped_full
+                skipped_already_held_count += buy_stats.skipped_already_held
+                skipped_unexecutable_count += buy_stats.skipped_unexecutable
+                skipped_insufficient_cash_count += (
+                    buy_stats.skipped_insufficient_cash
                 )
 
             last_close_prices.update(day_quotes["close"].to_dict())
@@ -220,7 +242,13 @@ class ConfirmedVolumeBreakoutBacktest:
             "start_date": calendar[0].date().isoformat(),
             "end_date": calendar[-1].date().isoformat(),
             "max_positions": self.config.max_positions,
-            "signal_days": int(signals["entry_date"].nunique()),
+            "signal_days": int(signals["confirm_date"].nunique()),
+            "qualified_signal_count": len(signals),
+            "executed_signal_count": executed_signal_count,
+            "skipped_full_position_count": skipped_full_position_count,
+            "skipped_already_held_count": skipped_already_held_count,
+            "skipped_unexecutable_count": skipped_unexecutable_count,
+            "skipped_insufficient_cash_count": skipped_insufficient_cash_count,
             "hot_data_start": (
                 hot_dates.min().date().isoformat() if not hot_dates.empty else None
             ),
@@ -229,7 +257,8 @@ class ConfirmedVolumeBreakoutBacktest:
             ),
             "assumptions": [
                 "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
-                "等权、100 股整手、只做多、单批次持仓",
+                "单仓上限为当日账户权益的 1 / 最大持仓数",
+                "持仓未满时按信号排名补仓，100 股整手，只做多",
                 "买入当日不卖，从下一交易日起检查止损和止盈",
                 "日内同时触发止损和止盈时按止损先成交",
                 "历史热度缺失时仍产生信号，按放量强度排序",
@@ -400,11 +429,18 @@ class ConfirmedVolumeBreakoutBacktest:
         day_quotes: pd.DataFrame,
         candidates: pd.DataFrame,
         trade_rows: list[dict[str, Any]],
-    ) -> None:
+    ) -> BuyExecutionStats:
         executable: list[dict[str, Any]] = []
+        skipped_already_held = 0
+        skipped_unexecutable = 0
+        seen_symbols = set(account.positions)
         for signal in candidates.to_dict(orient="records"):
             symbol = str(signal["symbol"])
+            if symbol in seen_symbols:
+                skipped_already_held += 1
+                continue
             if symbol not in day_quotes.index:
+                skipped_unexecutable += 1
                 continue
             close_price = float(day_quotes.loc[symbol, "close"])
             stop_price = float(signal["stop_loss_price"])
@@ -412,16 +448,41 @@ class ConfirmedVolumeBreakoutBacktest:
             if 0 < stop_price < close_price < target_price:
                 signal["execution_price"] = close_price
                 executable.append(signal)
+                seen_symbols.add(symbol)
+            else:
+                skipped_unexecutable += 1
 
         if not executable:
-            return
+            return BuyExecutionStats(
+                skipped_already_held=skipped_already_held,
+                skipped_unexecutable=skipped_unexecutable,
+            )
 
-        starting_cash = account.cash
-        target_budget = starting_cash / len(executable)
+        available_slots = max(
+            0,
+            self.config.max_positions - len(account.positions),
+        )
+        if available_slots == 0:
+            return BuyExecutionStats(
+                skipped_full=len(executable),
+                skipped_already_held=skipped_already_held,
+                skipped_unexecutable=skipped_unexecutable,
+            )
+
+        close_prices = day_quotes["close"].astype(float).to_dict()
+        portfolio_equity = account.total_equity(close_prices)
+        target_budget = portfolio_equity / self.config.max_positions
+        executed = 0
+        skipped_full = 0
+        skipped_insufficient_cash = 0
         for signal in executable:
+            if len(account.positions) >= self.config.max_positions:
+                skipped_full += 1
+                continue
             symbol = str(signal["symbol"])
             price = float(signal["execution_price"])
-            quantity = self._affordable_quantity(target_budget, price)
+            budget = min(target_budget, account.cash)
+            quantity = self._affordable_quantity(budget, price)
             while quantity > 0:
                 gross_amount = quantity * price
                 fee = self._transaction_fee(gross_amount, side="BUY")
@@ -429,6 +490,7 @@ class ConfirmedVolumeBreakoutBacktest:
                     break
                 quantity -= self.config.lot_size
             if quantity <= 0:
+                skipped_insufficient_cash += 1
                 continue
 
             gross_amount = quantity * price
@@ -441,7 +503,7 @@ class ConfirmedVolumeBreakoutBacktest:
                 fee=fee,
                 stop_loss_price=float(signal["stop_loss_price"]),
                 take_profit_price=float(signal["take_profit_price"]),
-                signal_date=pd.Timestamp(signal["signal_date"]).date(),
+                signal_date=pd.Timestamp(signal["breakout_date"]).date(),
                 trade_date=trade_date,
             )
             trade_rows.append(
@@ -454,7 +516,7 @@ class ConfirmedVolumeBreakoutBacktest:
                     "price": price,
                     "quantity": quantity,
                     "gross_amount": gross_amount,
-                    "position_pct": gross_amount / starting_cash,
+                    "position_pct": gross_amount / portfolio_equity,
                     "stop_loss_price": position.stop_loss_price,
                     "take_profit_price": position.take_profit_price,
                     "fee": fee,
@@ -464,6 +526,15 @@ class ConfirmedVolumeBreakoutBacktest:
                     "reason": "confirm_buy",
                 }
             )
+            executed += 1
+
+        return BuyExecutionStats(
+            executed=executed,
+            skipped_full=skipped_full,
+            skipped_already_held=skipped_already_held,
+            skipped_unexecutable=skipped_unexecutable,
+            skipped_insufficient_cash=skipped_insufficient_cash,
+        )
 
     def _affordable_quantity(self, budget: float, price: float) -> int:
         if budget <= 0 or price <= 0:
@@ -531,6 +602,12 @@ def _render_result(result: BacktestResult) -> None:
     table.add_row("最大回撤", f"{summary['max_drawdown']:.2%}")
     table.add_row("Sharpe", f"{summary['sharpe_ratio']:.3f}")
     table.add_row("有效信号日", str(summary["signal_days"]))
+    table.add_row("合格信号数", str(summary["qualified_signal_count"]))
+    table.add_row("成交数（买入）", str(summary["executed_signal_count"]))
+    table.add_row(
+        "因满仓跳过数",
+        str(summary["skipped_full_position_count"]),
+    )
     table.add_row("交易记录", str(summary["trade_count"]))
     table.add_row("已平仓股票", str(summary["closed_trade_count"]))
     table.add_row("胜率", f"{summary['win_rate']:.2%}")

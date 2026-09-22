@@ -28,12 +28,12 @@ console = Console()
 # 突破阶段的纯行情指标；固定列顺序便于空结果也保持稳定的数据结构。
 BREAKOUT_INDICATOR_COLUMNS = [
     "symbol",
-    "latest_date",
-    "latest_close",
-    "latest_volume",
-    "previous_10d_avg_volume",
-    "volume_ratio",
-    "latest_1d_pct",
+    "breakout_date",
+    "breakout_close",
+    "breakout_volume",
+    "breakout_previous_10d_avg_volume",
+    "breakout_volume_ratio",
+    "breakout_return_1d_pct",
 ]
 
 # 突破指标与股票基本信息、热度信息合并后的中间结果。
@@ -42,12 +42,12 @@ BREAKOUT_RESULT_COLUMNS = [
     "name",
     "exchange",
     "market_cap",
-    "latest_date",
-    "latest_close",
-    "latest_volume",
-    "previous_10d_avg_volume",
-    "volume_ratio",
-    "latest_1d_pct",
+    "breakout_date",
+    "breakout_close",
+    "breakout_volume",
+    "breakout_previous_10d_avg_volume",
+    "breakout_volume_ratio",
+    "breakout_return_1d_pct",
     "hot_rank",
     "hot_value",
 ]
@@ -58,15 +58,15 @@ RESULT_COLUMNS = [
     "name",
     "exchange",
     "market_cap",
-    "signal_date",
-    "entry_date",
-    "volume_ratio",
-    "return_1d_pct",
-    "confirmation_body_pct",
-    "lower_wick_ratio",
-    "upper_wick_ratio",
-    "volume_retention_ratio",
-    "entry_price",
+    "breakout_date",
+    "confirm_date",
+    "breakout_volume_ratio",
+    "breakout_return_1d_pct",
+    "confirm_body_pct",
+    "confirm_lower_wick_ratio",
+    "confirm_upper_wick_ratio",
+    "confirm_volume_ratio",
+    "confirm_close",
     "stop_loss_price",
     "take_profit_price",
     "risk_per_share",
@@ -87,9 +87,9 @@ class BreakoutStrategyConfig:
     # 用突破日之前的 10 个交易日计算基准成交量。
     previous_volume_days: int = 10
     # 突破日成交量至少达到基准均量的 2 倍。
-    min_volume_ratio: float = 2.0
+    min_breakout_volume_ratio: float = 2.0
     # 突破日必须收涨；比例使用小数表示，0.03 代表 3%。
-    min_return_1d_pct: float = 0.0
+    min_breakout_return_1d_pct: float = 0.0
 
     @property
     def required_trading_days(self) -> int:
@@ -102,13 +102,13 @@ class TodayConfirmedBreakoutStrategy:
     """先计算前一交易日突破股，再用 trade_date 当日 K 线确认。"""
 
     # 确认日阳线实体涨幅不能超过 3%，避免追入大阳线。
-    max_body_pct = 0.03
+    max_confirm_body_pct = 0.03
     # 下影线至少占整根 K 线振幅的 10%。
-    min_lower_wick_ratio = 0.10
+    min_confirm_lower_wick_ratio = 0.10
     # 上影线最多占整根 K 线振幅的 15%。
-    max_upper_wick_ratio = 0.15
+    max_confirm_upper_wick_ratio = 0.15
     # 确认日成交量至少保留突破日成交量的 70%。
-    min_volume_retention_ratio = 0.70
+    min_confirm_volume_ratio = 0.70
     # 止盈距离为每股风险的 2 倍，即目标盈亏比 2:1。
     risk_reward_ratio = 2.0
 
@@ -126,52 +126,53 @@ class TodayConfirmedBreakoutStrategy:
         """返回在 trade_date 当天通过二次确认的股票。"""
 
         # 统一到零点，避免输入含时分秒时无法与日频数据正确匹配。
-        trade_date = pd.Timestamp(trade_date).normalize()
+        confirm_date = pd.Timestamp(trade_date).normalize()
         bars = daily_bars.copy()
         bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
 
         # 1. 突破阶段只能看到确认日以前的数据，防止使用未来行情。
-        history = bars[bars["trade_date"] < trade_date]
+        history = bars[bars["trade_date"] < confirm_date]
         if history.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
         # 全市场确认日前最后一个有行情的日期就是预期突破日。
-        signal_date = history["trade_date"].max()
+        breakout_date = history["trade_date"].max()
 
         # 2. 基于历史行情计算放量上涨候选股。
-        signal_stocks = self._select_breakout_candidates(
+        breakout_stocks = self._select_breakout_candidates(
             stocks,
             history,
             hot_stocks,
             stock_daily_basic,
         )
         # 个股可能停牌；剔除最后一根 K 线早于全市场突破日的股票。
-        signal_stocks = signal_stocks[
-            pd.to_datetime(signal_stocks["latest_date"]).dt.normalize() == signal_date
+        breakout_stocks = breakout_stocks[
+            pd.to_datetime(breakout_stocks["breakout_date"]).dt.normalize()
+            == breakout_date
         ]
-        if signal_stocks.empty:
+        if breakout_stocks.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
         # 3. 只读取候选股的确认日 K 线，减少后续合并的数据量。
-        today_bars = bars[
-            (bars["trade_date"] == trade_date)
-            & (bars["symbol"].isin(signal_stocks["symbol"]))
+        confirm_bars = bars[
+            (bars["trade_date"] == confirm_date)
+            & (bars["symbol"].isin(breakout_stocks["symbol"]))
         ][["symbol", "open", "high", "low", "close", "volume"]].copy()
-        if today_bars.empty:
+        if confirm_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        # 增加 confirmation_ 前缀，避免与突破日字段混淆或合并时产生后缀。
-        today_bars = today_bars.rename(
+        # 增加 confirm_ 前缀，避免与突破日字段混淆或合并时产生后缀。
+        confirm_bars = confirm_bars.rename(
             columns={
-                "open": "confirmation_open",
-                "high": "confirmation_high",
-                "low": "confirmation_low",
-                "close": "confirmation_close",
-                "volume": "confirmation_volume",
+                "open": "confirm_open",
+                "high": "confirm_high",
+                "low": "confirm_low",
+                "close": "confirm_close",
+                "volume": "confirm_volume",
             }
         )
-        result = signal_stocks.merge(today_bars, on="symbol", how="inner")
-        return self._confirm(result, trade_date)
+        result = breakout_stocks.merge(confirm_bars, on="symbol", how="inner")
+        return self._confirm(result, confirm_date)
 
     def _select_breakout_candidates(
         self,
@@ -195,8 +196,8 @@ class TodayConfirmedBreakoutStrategy:
 
         # 先做硬性量价过滤，最后用热度决定候选股顺序。
         result = stocks.merge(daily_bars, on="symbol", how="inner")
-        result = self._filter_volume_ratio(result)
-        result = self._filter_return(result)
+        result = self._filter_breakout_volume_ratio(result)
+        result = self._filter_breakout_return(result)
         return self._sort_filter_by_hot(result, hot_stocks)
 
     @staticmethod
@@ -242,7 +243,7 @@ class TodayConfirmedBreakoutStrategy:
         self,
         bars: pd.DataFrame,
     ) -> pd.DataFrame:
-        """计算最新交易日量比和涨幅。"""
+        """计算突破日的量比和单日涨幅。"""
 
         rows: list[dict[str, object]] = []
         # 默认窗口为“前 10 日基准 + 最近 1 个突破日”。
@@ -263,36 +264,47 @@ class TodayConfirmedBreakoutStrategy:
             previous = window.iloc[:-recent_days]
             recent = window.iloc[-recent_days:]
             previous_avg_volume = previous["volume"].mean()
-            latest_volume = recent["volume"].iloc[-1]
+            breakout_volume = recent["volume"].iloc[-1]
 
             # 放量倍数 = 突破日成交量 / 此前 10 日平均成交量。
-            volume_ratio = latest_volume / previous_avg_volume
+            breakout_volume_ratio = breakout_volume / previous_avg_volume
             # pct_change 的等价写法；最后一个值就是突破日单日涨幅。
-            recent_1d_pct = window["close"] / window["close"].shift(1) - 1
+            breakout_return_1d_pct = (
+                window["close"] / window["close"].shift(1) - 1
+            )
 
             rows.append(
                 {
                     "symbol": symbol,
-                    "latest_date": recent["trade_date"].iloc[-1],
-                    "latest_close": recent["close"].iloc[-1],
-                    "latest_volume": latest_volume,
-                    "previous_10d_avg_volume": previous_avg_volume,
-                    "volume_ratio": volume_ratio,
-                    "latest_1d_pct": recent_1d_pct.iloc[-1],
+                    "breakout_date": recent["trade_date"].iloc[-1],
+                    "breakout_close": recent["close"].iloc[-1],
+                    "breakout_volume": breakout_volume,
+                    "breakout_previous_10d_avg_volume": previous_avg_volume,
+                    "breakout_volume_ratio": breakout_volume_ratio,
+                    "breakout_return_1d_pct": breakout_return_1d_pct.iloc[-1],
                 }
             )
 
         return pd.DataFrame(rows, columns=BREAKOUT_INDICATOR_COLUMNS)
 
-    def _filter_volume_ratio(self, result: pd.DataFrame) -> pd.DataFrame:
-        """保留最新成交量至少是此前 10 日均量 2 倍的股票。"""
+    def _filter_breakout_volume_ratio(
+        self,
+        result: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """保留突破日成交量至少是此前 10 日均量 2 倍的股票。"""
 
-        return result[result["volume_ratio"] >= self.breakout_config.min_volume_ratio]
+        return result[
+            result["breakout_volume_ratio"]
+            >= self.breakout_config.min_breakout_volume_ratio
+        ]
 
-    def _filter_return(self, result: pd.DataFrame) -> pd.DataFrame:
-        """保留最新交易日涨幅大于 0 的股票。"""
+    def _filter_breakout_return(self, result: pd.DataFrame) -> pd.DataFrame:
+        """保留突破日涨幅大于 0 的股票。"""
 
-        return result[result["latest_1d_pct"] > self.breakout_config.min_return_1d_pct]
+        return result[
+            result["breakout_return_1d_pct"]
+            > self.breakout_config.min_breakout_return_1d_pct
+        ]
 
     @staticmethod
     def _sort_filter_by_hot(
@@ -309,7 +321,7 @@ class TodayConfirmedBreakoutStrategy:
             # 历史热度可能缺失，此时不丢弃信号，改按放量强度降序排列。
             result["hot_rank"] = pd.NA
             result["hot_value"] = pd.NA
-            return result.sort_values("volume_ratio", ascending=False)[
+            return result.sort_values("breakout_volume_ratio", ascending=False)[
                 BREAKOUT_RESULT_COLUMNS
             ].reset_index(drop=True)
 
@@ -324,7 +336,7 @@ class TodayConfirmedBreakoutStrategy:
                 how="left",
             )
             .sort_values(
-                ["hot_rank", "volume_ratio"],
+                ["hot_rank", "breakout_volume_ratio"],
                 ascending=[True, False],
                 na_position="last",
             )[BREAKOUT_RESULT_COLUMNS]
@@ -334,58 +346,58 @@ class TodayConfirmedBreakoutStrategy:
     def _confirm(
         self,
         result: pd.DataFrame,
-        trade_date: pd.Timestamp,
+        confirm_date: pd.Timestamp,
     ) -> pd.DataFrame:
         """检查小阳线、上下影线和量能。"""
 
         # 整根 K 线振幅是两个影线比例的分母，必须严格大于 0。
-        candle_range = result["confirmation_high"] - result["confirmation_low"]
+        candle_range = result["confirm_high"] - result["confirm_low"]
         # 阳线实体涨幅，以确认日开盘价为基准。
-        result["confirmation_body_pct"] = (
-            result["confirmation_close"] / result["confirmation_open"] - 1
+        result["confirm_body_pct"] = (
+            result["confirm_close"] / result["confirm_open"] - 1
         )
         # 策略只接受阳线，因此开盘价是实体下沿、收盘价是实体上沿。
-        result["lower_wick_ratio"] = (
-            result["confirmation_open"] - result["confirmation_low"]
+        result["confirm_lower_wick_ratio"] = (
+            result["confirm_open"] - result["confirm_low"]
         ) / candle_range
-        result["upper_wick_ratio"] = (
-            result["confirmation_high"] - result["confirmation_close"]
+        result["confirm_upper_wick_ratio"] = (
+            result["confirm_high"] - result["confirm_close"]
         ) / candle_range
         # 确认日量能相对于突破日量能的保留比例。
-        result["volume_retention_ratio"] = (
-            result["confirmation_volume"] / result["latest_volume"]
+        result["confirm_volume_ratio"] = (
+            result["confirm_volume"] / result["breakout_volume"]
         )
 
         # 必须同时满足：有效振幅、小阳线、影线形态和量能保持。
         result = result[
             (candle_range > 0)
-            & (result["confirmation_close"] > result["confirmation_open"])
-            & (result["confirmation_body_pct"] <= self.max_body_pct)
-            & (result["lower_wick_ratio"] >= self.min_lower_wick_ratio)
-            & (result["upper_wick_ratio"] <= self.max_upper_wick_ratio)
-            & (result["volume_retention_ratio"] >= self.min_volume_retention_ratio)
+            & (result["confirm_close"] > result["confirm_open"])
+            & (result["confirm_body_pct"] <= self.max_confirm_body_pct)
+            & (
+                result["confirm_lower_wick_ratio"]
+                >= self.min_confirm_lower_wick_ratio
+            )
+            & (
+                result["confirm_upper_wick_ratio"]
+                <= self.max_confirm_upper_wick_ratio
+            )
+            & (result["confirm_volume_ratio"] >= self.min_confirm_volume_ratio)
         ].copy()
 
         # 突破日产生信号，确认日收盘价作为回测入场价。
-        result["signal_date"] = pd.to_datetime(result["latest_date"])
-        result["entry_date"] = trade_date
-        result["entry_price"] = result["confirmation_close"]
+        result["breakout_date"] = pd.to_datetime(result["breakout_date"])
+        result["confirm_date"] = confirm_date
 
-        # latest_close / (1 + latest_1d_pct) 可还原突破日前一日收盘价。
-        result["stop_loss_price"] = result["latest_close"] / (
-            1 + result["latest_1d_pct"]
+        # breakout_close / (1 + breakout_return_1d_pct) 可还原突破日前收盘价。
+        result["stop_loss_price"] = result["breakout_close"] / (
+            1 + result["breakout_return_1d_pct"]
         )
         # 每股风险决定仓位的止盈距离；非正风险说明价格关系不成立。
-        result["risk_per_share"] = result["entry_price"] - result["stop_loss_price"]
+        result["risk_per_share"] = result["confirm_close"] - result["stop_loss_price"]
         result = result[result["risk_per_share"] > 0].copy()
         # 2:1 盈亏比：止盈价 = 入场价 + 2 × 每股风险。
-        result["take_profit_price"] = result["entry_price"] + (
+        result["take_profit_price"] = result["confirm_close"] + (
             result["risk_per_share"] * self.risk_reward_ratio
-        )
-        result = result.rename(
-            columns={
-                "latest_1d_pct": "return_1d_pct",
-            }
         )
         # 沿用此前热度/量比顺序，生成稳定的候选排名。
         result["selection_rank"] = range(1, len(result) + 1)
@@ -458,11 +470,11 @@ if __name__ == "__main__":
                 [
                     "symbol",
                     "name",
-                    "signal_date",
-                    "entry_date",
-                    "volume_ratio",
-                    "volume_retention_ratio",
-                    "entry_price",
+                    "breakout_date",
+                    "confirm_date",
+                    "breakout_volume_ratio",
+                    "confirm_volume_ratio",
+                    "confirm_close",
                     "stop_loss_price",
                     "take_profit_price",
                 ]

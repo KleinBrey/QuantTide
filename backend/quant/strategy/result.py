@@ -30,10 +30,11 @@ def format_strategy_result(
     )
 
     # 获取最新日期
+    # 两阶段策略优先使用确认日；其他策略仍使用 latest_date。
     date_column = (
-        "latest_date"
-        if "latest_date" in limited_stocks.columns
-        else "entry_date"
+        "confirm_date"
+        if "confirm_date" in limited_stocks.columns
+        else "latest_date"
     )
     latest_date = (
         limited_stocks[date_column].max().date().isoformat()
