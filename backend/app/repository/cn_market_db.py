@@ -329,6 +329,24 @@ class StockHotDailyRepository(BaseRepository):
                 ORDER BY hot_value DESC, symbol
                 """).df()
 
+    def get_table_data(self) -> pd.DataFrame:
+        """获取全部历史股票热度，供回测按日使用。"""
+
+        with self.db.connection(read_only=True) as connection:
+            return connection.execute(f"""
+                SELECT
+                    trade_date,
+                    symbol,
+                    name,
+                    price,
+                    change_pct,
+                    hot_value,
+                    source,
+                    update_time
+                FROM {self.table_name}
+                ORDER BY trade_date, hot_value DESC, symbol
+                """).df()
+
     def get_by_trade_date(self, trade_date: object) -> pd.DataFrame:
         """按交易日获取股票热度列表，并按热度从高到低排列。"""
 

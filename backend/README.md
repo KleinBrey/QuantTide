@@ -133,6 +133,21 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 预留股票池定义和通用股票过滤逻辑，分别放在 `universe.py` 与 `filter.py`。
 
+### `quant/backtest/`
+
+保存 A 股日频回测 MVP，当前跑通 `confirmed_volume_breakout`：放量
+阳线后次日量能维持并收小阳线时，按确认日收盘价等权买入。止损价为放量
+突破日前一交易日的收盘价，止盈价为 2 倍盈亏比，从买入后下一交易日起执行。
+默认回测结束日期往前两个月、100 万初始资金、最多 10 只股票：
+
+```bash
+uv run quant-backtest
+uv run quant-backtest --months 6 --max-positions 5
+```
+
+结果直接输出期末资产、累计/年化收益、最大回撤、Sharpe、胜率和最近交易
+记录。历史热度只用于同日候选股排序；缺失时按放量强度排序，不影响信号产生。
+
 ## 外层同步脚本
 
 ```bash
@@ -158,9 +173,11 @@ uv run python -m backend.scripts.sync_hot_stock_db
 uv run python -m backend.quant.strategy.implementations.breakout_pullback_n
 uv run python -m backend.quant.strategy.implementations.panic_reversal_v
 uv run python -m backend.quant.strategy.implementations.recent_volume_breakout
+uv run python -m backend.quant.strategy.implementations.today_confirmed_volume_breakout
+uv run python -m backend.quant.strategy.implementations.today_confirmed_volume_breakout --trade-date 2025-09-11
 ```
 
-六个策略文件分别保留自己的数据读取、Rich 终端展示和 `__main__` 入口。
+各策略文件分别保留自己的数据读取、Rich 终端展示和 `__main__` 入口。
 
 ## 命令入口
 
@@ -174,6 +191,7 @@ uv run python -m backend.quant.strategy.implementations.recent_volume_breakout
 ```bash
 uv run quant-api
 uv run quant-sync
+uv run quant-backtest
 ```
 
 ## 新功能放置位置

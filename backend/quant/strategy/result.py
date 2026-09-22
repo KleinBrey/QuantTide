@@ -30,9 +30,14 @@ def format_strategy_result(
     )
 
     # 获取最新日期
+    date_column = (
+        "latest_date"
+        if "latest_date" in limited_stocks.columns
+        else "entry_date"
+    )
     latest_date = (
-        limited_stocks["latest_date"].max().date().isoformat()
-        if not limited_stocks.empty
+        limited_stocks[date_column].max().date().isoformat()
+        if not limited_stocks.empty and date_column in limited_stocks.columns
         else None
     )
 

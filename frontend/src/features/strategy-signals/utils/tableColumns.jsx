@@ -1,4 +1,59 @@
 export const columnDefs = {
+  confirmed_volume_breakout: [
+    { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
+    { headerName: '代码', field: 'symbol', minWidth: 110, flex: 1 },
+    { headerName: '突破日', field: 'signal_date', minWidth: 112, flex: 0.9 },
+    { headerName: '确认日', field: 'entry_date', minWidth: 112, flex: 0.9 },
+    {
+      headerName: '买入价',
+      field: 'entry_price',
+      minWidth: 92,
+      flex: 0.7,
+      valueFormatter: params => formatNumber(params.value)
+    },
+    {
+      headerName: '止损价',
+      field: 'stop_loss_price',
+      minWidth: 92,
+      flex: 0.7,
+      valueFormatter: params => formatNumber(params.value)
+    },
+    {
+      headerName: '止盈价',
+      field: 'take_profit_price',
+      minWidth: 92,
+      flex: 0.7,
+      valueFormatter: params => formatNumber(params.value)
+    },
+    {
+      headerName: '突破量比',
+      field: 'volume_ratio',
+      minWidth: 104,
+      flex: 0.8,
+      valueFormatter: params => `${formatNumber(params.value)}x`
+    },
+    {
+      headerName: '确认日量能',
+      field: 'volume_retention_ratio',
+      minWidth: 112,
+      flex: 0.8,
+      valueFormatter: params => `${formatNumber(params.value)}x`
+    },
+    {
+      headerName: '市值(亿)',
+      field: 'market_cap',
+      minWidth: 104,
+      flex: 0.8,
+      valueFormatter: params => formatMarketCap(params.value)
+    },
+    {
+      headerName: '热度排名',
+      field: 'hot_rank',
+      minWidth: 100,
+      flex: 0.7,
+      valueFormatter: params => (params.value ? `${params.value}` : '-')
+    }
+  ],
   recent_volume_breakout: [
     { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
     { headerName: '代码', field: 'symbol', minWidth: 110, flex: 1 },

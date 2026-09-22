@@ -10,6 +10,9 @@ from .implementations.breakout_pullback_n import (
 from .implementations.today_emotion_reversal import (
     run_strategy as run_today_emotion_reversal,
 )
+from .implementations.today_confirmed_breakout import (
+    run_strategy as run_confirmed_volume_breakout,
+)
 from .implementations.today_volume_breakout import (
     run_strategy as run_today_volume_breakout,
 )
@@ -29,6 +32,7 @@ STRATEGY_EXECUTORS = {
     "recent_volume_breakout": run_recent_volume_breakout,
     "today_volume_breakout": run_today_volume_breakout,
     "today_emotion_reversal": run_today_emotion_reversal,
+    "confirmed_volume_breakout": run_confirmed_volume_breakout,
 }
 
 
