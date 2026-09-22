@@ -55,7 +55,7 @@ uvicorn --app-dir toturial/fastapi 00_first_api:app \
 | `06_dependency_injection.py` | `Depends`、Repository、测试替换依赖 | `api/dependencies.py` |
 | `07_lifespan_and_state.py` | lifespan、`app.state`、资源初始化和清理 | `backend/app/main.py` |
 | `08_background_tasks.py` | 202 响应和 `BackgroundTasks` | `/jobs/run` |
-| `09_testing_with_testclient.py` | TestClient、pytest、成功和失败用例 | `backend/tests` |
+| `09_testing_with_testclient.py` | TestClient、pytest、成功和失败用例 | 独立课程示例 |
 | `10_stock_api_project.py` | 综合应用：查询真实本地股票与日 K | `data/cn_market.duckdb` |
 
 ## 推荐学习方法

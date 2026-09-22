@@ -190,4 +190,3 @@ uv run quant-sync
 | 增加因子 | `quant/factor/` |
 | 增加策略 | `quant/strategy/` |
 | 增加股票池或通用过滤 | `quant/stock/` |
-| 增加测试 | `backend/tests/` |

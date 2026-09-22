@@ -21,7 +21,6 @@ quanttide/
 │   │   ├── view/            # Rich 命令行展示
 │   │   └── main.py          # FastAPI 入口
 │   ├── scripts/             # 股票列表、日 K、热度同步脚本
-│   ├── tests/               # 后端测试
 │   └── run.py               # API 快捷启动入口
 ├── data/
 │   ├── cn_market.duckdb       # A 股
