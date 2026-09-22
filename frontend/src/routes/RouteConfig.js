@@ -13,6 +13,12 @@ export const dashboardGroups = [
         path: '/strategy-signals',
         title: '策略信号',
         description: 'Python 量化策略与最新选股信号'
+      },
+      {
+        id: 'strategy-backtests',
+        path: '/strategy-backtests',
+        title: '策略回测',
+        description: '策略绩效与逐笔交易记录'
       }
     ]
   },

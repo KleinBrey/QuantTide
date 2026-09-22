@@ -1,0 +1,174 @@
+.root {
+  align-items: stretch;
+  display: grid;
+  min-height: calc(100vh - 72px);
+}
+
+.summaryPanel {
+  overflow: visible;
+}
+
+.summaryHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+
+.summaryHeader > div:first-child {
+  min-width: 0;
+}
+
+.heading {
+  align-items: baseline;
+  display: flex;
+  gap: 14px;
+}
+
+.heading h2 {
+  color: #fafafa;
+  font-size: 18px;
+}
+
+.heading span {
+  color: #71717a;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: #a1a1aa;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px 22px;
+  margin-top: 12px;
+}
+
+.meta strong {
+  color: #fafafa;
+  margin-left: 5px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.metric {
+  border-right: 1px solid #27272a;
+  min-width: 0;
+  padding: 14px 18px;
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metric span,
+.metric strong {
+  display: block;
+}
+
+.metric span {
+  color: #71717a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.metric strong {
+  color: #f4f4f5;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric strong.positive {
+  color: #ef4444;
+}
+
+.metric strong.negative {
+  color: #22c55e;
+}
+
+.tradesPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 720px;
+}
+
+.tableHeader {
+  flex: 0 0 auto;
+}
+
+.tableWrap {
+  flex: 1;
+  height: calc(100vh - 386px);
+  min-height: 620px;
+}
+
+.fullscreenTableWrap {
+  height: auto;
+  min-height: 0;
+}
+
+.errorNotice {
+  background: #260b13;
+  border-bottom: 1px solid #7f1d34;
+  color: #fecdd3;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 18px;
+}
+
+@media (max-width: 1100px) {
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric:nth-child(3) {
+    border-right: 0;
+  }
+
+  .metric:nth-child(-n + 3) {
+    border-bottom: 1px solid #27272a;
+  }
+}
+
+@media (max-width: 720px) {
+  .summaryHeader,
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .heading {
+    gap: 6px;
+  }
+
+  .heading span {
+    white-space: normal;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric:nth-child(3) {
+    border-right: 1px solid #27272a;
+  }
+
+  .metric:nth-child(even) {
+    border-right: 0;
+  }
+
+  .metric:nth-child(-n + 4) {
+    border-bottom: 1px solid #27272a;
+  }
+}

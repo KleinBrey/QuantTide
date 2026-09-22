@@ -34,8 +34,14 @@ from backend.app.services import CNMarketService, HKMarketService, USMarketServi
 from backend.quant.strategy.registry import (
     STRATEGY_EXECUTORS,
     execute_strategy,
+    find_strategy,
     strategy_list,
 )
+from backend.quant.backtest.engine import (
+    BacktestConfig,
+    ConfirmedVolumeBreakoutBacktest,
+)
+from backend.quant.backtest.result import format_backtest_result
 from backend.quant.strategy.result import format_strategy_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
 from backend.scripts.sync_daily_k_db import sync_daily_k
@@ -382,3 +388,54 @@ def strategy_signals(
         ) from error
 
     return format_strategy_result(strategy_id, selected_stocks, limit=limit)
+
+
+@router.get("/backtests/confirmed_volume_breakout")
+async def confirmed_volume_breakout_backtest(
+    stock_repository: StockListRepository,
+    daily_repository: DailyRepository,
+    stock_daily_basic_repository: StockDailyBasicRepo,
+    stock_hot_repository: StockHotRepository,
+    start_date: Annotated[
+        date | None,
+        Query(description="回测开始日期，默认按回看月数计算"),
+    ] = None,
+    end_date: Annotated[
+        date | None,
+        Query(description="回测结束日期，默认使用最新交易日"),
+    ] = None,
+    lookback_months: Annotated[int, Query(ge=1, le=60)] = 2,
+    max_positions: Annotated[int, Query(ge=1, le=100)] = 10,
+    initial_cash: Annotated[float, Query(gt=0)] = 1_000_000.0,
+) -> dict[str, object]:
+    """执行放量突破次日确认回测，返回绩效和逐笔交易记录。"""
+
+    config = BacktestConfig(
+        initial_cash=initial_cash,
+        start_date=start_date,
+        end_date=end_date,
+        lookback_months=lookback_months,
+        max_positions=max_positions,
+    )
+
+    def run_backtest():
+        return ConfirmedVolumeBreakoutBacktest(config).run(
+            stocks=stock_repository.get_table_data(),
+            daily_bars=daily_repository.get_table_data(),
+            hot_stocks=stock_hot_repository.get_table_data(),
+            stock_daily_basic=stock_daily_basic_repository.get_table_data(),
+        )
+
+    try:
+        result = await run_in_threadpool(run_backtest)
+    except Exception as error:
+        logger.exception("执行回测 confirmed_volume_breakout 失败")
+        raise HTTPException(
+            status_code=500,
+            detail=f"策略回测失败：{error}",
+        ) from error
+
+    return format_backtest_result(
+        result,
+        strategy=find_strategy("confirmed_volume_breakout"),
+    )

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Loader2, RefreshCcw } from 'lucide-react';
 
-import StockKlineChart from '@/components/tradingView/StockKlineChart.jsx';
+import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import { useMarketStockKline } from '../hooks/useMarketStockKline.js';

@@ -1,7 +1,15 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
 import logoUrl from '@/assets/branding/logo.png';
 import React from 'react';
-import { ChartNoAxesCombined, LayoutDashboard, ChartCandlestick, DatabaseBackup, Flame, Server } from 'lucide-react';
+import {
+  ChartNoAxesCombined,
+  LayoutDashboard,
+  ChartCandlestick,
+  DatabaseBackup,
+  Flame,
+  History,
+  Server
+} from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { dashboardGroups } from '../routes/RouteConfig.js';
 import style from './Sidebar.module.css';
@@ -9,6 +17,7 @@ import style from './Sidebar.module.css';
 const iconById = {
   'hot-rankings': Flame,
   'strategy-signals': ChartNoAxesCombined,
+  'strategy-backtests': History,
   'a-share-market': ChartCandlestick,
   'hk-share-market': ChartCandlestick,
   'us-share-market': ChartCandlestick,

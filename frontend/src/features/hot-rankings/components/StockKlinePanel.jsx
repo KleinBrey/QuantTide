@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import StockKlineChart from '@/components/tradingView/StockKlineChart.jsx';
+import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
 
 export default function StockKlinePanel({ stock, data, loading, error, enableMouseWheelZoom = true }) {
   const [period, setPeriod] = useState('daily');

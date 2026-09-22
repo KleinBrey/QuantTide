@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from math import sqrt
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -183,3 +186,47 @@ def build_trade_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     """组装字段稳定的交易记录。"""
 
     return pd.DataFrame(rows, columns=TRADE_COLUMNS)
+
+
+def _frame_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """把 DataFrame 转成浏览器友好的 JSON 记录，并统一空值和日期。"""
+
+    records = json.loads(
+        frame.to_json(
+            orient="records",
+            date_format="iso",
+            date_unit="s",
+            double_precision=15,
+        )
+    )
+    date_fields = {
+        column
+        for column in frame.columns
+        if column.endswith("_date") or column == "opened_at"
+    }
+    for record in records:
+        for field_name in date_fields:
+            value = record.get(field_name)
+            if isinstance(value, str):
+                record[field_name] = value[:10]
+    return records
+
+
+def format_backtest_result(
+    result: BacktestResult,
+    *,
+    strategy: dict[str, object],
+) -> dict[str, object]:
+    """组装回测页面需要的摘要、交易流水和图表数据。"""
+
+    return {
+        "strategy": strategy,
+        "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
+            timespec="seconds"
+        ),
+        "summary": result.summary(),
+        "trades": _frame_records(result.trades),
+        "equity_curve": _frame_records(result.equity_curve),
+        "final_positions": _frame_records(result.final_positions),
+        "metadata": result.metadata,
+    }

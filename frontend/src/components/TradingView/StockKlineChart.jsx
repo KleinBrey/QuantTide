@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/shadcn/components/ui/button.jsx';
+import { TradeMarkerPrimitive } from '@/components/tradingView/TradeMarkerPrimitive.js';
 import styles from './StockKlineChart.module.css';
 
 const periodOptions = [
@@ -89,6 +90,35 @@ function aggregateRows(rows, period) {
   return Array.from(groups.values());
 }
 
+function markerGroupKey(time, period) {
+  if (period === 'weekly') return weekKey(time);
+  if (period === 'monthly') return String(time).slice(0, 7);
+  return String(time);
+}
+
+function normalizeMarkers(markers, period, rows) {
+  if (!Array.isArray(markers) || !markers.length || !rows.length) return [];
+
+  const chartTimeByGroup = new Map(rows.map(row => [markerGroupKey(row.time, period), row.time]));
+  return markers
+    .flatMap(marker => {
+      const sourceTime = marker?.time || marker?.date || marker?.trade_date;
+      const price = Number(marker?.price);
+      if (!sourceTime || !Number.isFinite(price)) return [];
+      const time = chartTimeByGroup.get(markerGroupKey(sourceTime, period));
+      if (!time) return [];
+      const isBuy = String(marker.side).toUpperCase() === 'BUY';
+      return [
+        {
+          time,
+          price,
+          side: isBuy ? 'BUY' : 'SELL'
+        }
+      ];
+    })
+    .sort((left, right) => String(left.time).localeCompare(String(right.time)));
+}
+
 function calculateMA(rows, dayCount) {
   let rollingTotal = 0;
   return rows.flatMap((row, index) => {
@@ -161,6 +191,7 @@ export default function StockKlineChart({
   error,
   period,
   onPeriodChange,
+  markers = [],
   enableMouseWheelZoom = true
 }) {
   const chartRef = useRef(null);
@@ -168,6 +199,7 @@ export default function StockKlineChart({
   const resetViewRef = useRef(() => {});
   const dailyRows = useMemo(() => chartRows(data), [data]);
   const rows = useMemo(() => aggregateRows(dailyRows, period), [dailyRows, period]);
+  const seriesMarkers = useMemo(() => normalizeMarkers(markers, period, rows), [markers, period, rows]);
   const stockName = stock?.name;
   const stockCode = stock?.symbol || stock?.code || stock?.thscode;
   const [activeBar, setActiveBar] = useState(() => rowSummary(rows.at(-1), rows.at(-2)));
@@ -293,6 +325,8 @@ export default function StockKlineChart({
         close
       }))
     );
+    const tradeMarkerPrimitive = seriesMarkers.length ? new TradeMarkerPrimitive(seriesMarkers) : null;
+    if (tradeMarkerPrimitive) candleSeries.attachPrimitive(tradeMarkerPrimitive);
 
     movingAverages.forEach(({ days, color }) => {
       const series = chart.addSeries(LineSeries, {
@@ -345,9 +379,10 @@ export default function StockKlineChart({
     return () => {
       resetViewRef.current = () => {};
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      if (tradeMarkerPrimitive) candleSeries.detachPrimitive(tradeMarkerPrimitive);
       chart.remove();
     };
-  }, [enableMouseWheelZoom, rows]);
+  }, [enableMouseWheelZoom, rows, seriesMarkers]);
 
   const handleContextMenu = event => {
     event.preventDefault();
