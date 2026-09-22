@@ -4,11 +4,11 @@ import unittest
 
 import pandas as pd
 
-from backend.app.strategy.implementations.today_volume_breakout import (
+from backend.quant.strategy.implementations.today_volume_breakout import (
     RESULT_COLUMNS,
     TodayVolumeBreakoutStrategy,
 )
-from backend.app.strategy.registry import execute_strategy, find_strategy
+from backend.quant.strategy.registry import execute_strategy, find_strategy
 
 
 class FakeStockDailyBasicRepository:

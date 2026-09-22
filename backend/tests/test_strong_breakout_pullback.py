@@ -4,12 +4,12 @@ import unittest
 
 import pandas as pd
 
-from backend.app.strategy.implementations.breakout_pullback_n import (
+from backend.quant.strategy.implementations.breakout_pullback_n import (
     RESULT_COLUMNS,
     StrategyConfig,
     run_strong_breakout_pullback_strategy,
 )
-from backend.app.strategy.registry import execute_strategy, find_strategy
+from backend.quant.strategy.registry import execute_strategy, find_strategy
 
 
 class FakeStockDailyBasicRepository:

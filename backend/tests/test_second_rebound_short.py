@@ -4,13 +4,13 @@ import unittest
 
 import pandas as pd
 
-from backend.app.strategy.implementations.second_rebound_short import (
+from backend.quant.strategy.implementations.second_rebound_short import (
     RESULT_COLUMNS,
     StrategyConfig,
     latest_filter_counts,
     run_second_rebound_short_strategy,
 )
-from backend.app.strategy.registry import execute_strategy, find_strategy
+from backend.quant.strategy.registry import execute_strategy, find_strategy
 
 
 class FakeStockDailyBasicRepository:

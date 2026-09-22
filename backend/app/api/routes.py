@@ -31,12 +31,12 @@ from backend.app.repository import (
 )
 from backend.app.schemas import DailyBar, HotStock, GlobalStock, Stock
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
-from backend.app.strategy.registry import (
+from backend.quant.strategy.registry import (
     STRATEGY_EXECUTORS,
     execute_strategy,
     strategy_list,
 )
-from backend.app.strategy.result import format_strategy_result
+from backend.quant.strategy.result import format_strategy_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
 from backend.scripts.sync_daily_k_db import sync_daily_k
 from backend.scripts.sync_hot_stock_db import sync_stock_hot

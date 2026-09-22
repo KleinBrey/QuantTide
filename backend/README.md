@@ -1,6 +1,6 @@
 # 后端说明
 
-后端主应用统一位于 `backend/app`。A 股数据保存到 `data/cn_market.duckdb`，港股与美股分别保存到 `data/hk_market.duckdb` 和 `data/us_market.duckdb`。
+后端应用层位于 `backend/app`，纯量化计算引擎位于 `backend/quant`。A 股数据保存到 `data/cn_market.duckdb`，港股与美股分别保存到 `data/hk_market.duckdb` 和 `data/us_market.duckdb`。
 
 ## 调用关系
 
@@ -8,17 +8,15 @@
 FastAPI / APScheduler / 命令行脚本
                  │
                  ▼
-          Market Services
-          数据格式化与同步编排
+        app（接口、数据与存储）
             │           │
             ▼           ▼
-        Provider     Repository
-        外部数据源    DuckDB 读写
-                          │
-                          ▼
-                  data/cn_market.duckdb (A股)
-                  data/hk_market.duckdb (港股)
-                  data/us_market.duckdb (美股)
+        Provider     Repository ──提供 DataFrame──┐
+        外部数据源    DuckDB 读写                  │
+            │           │                         ▼
+            └───────────┴────────────────── quant（纯量化计算）
+                                                 │
+                                      因子 → 策略 → 结果
 ```
 
 ## 应用目录
@@ -109,18 +107,31 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 每个任务设置 `max_instances=1` 和 `coalesce=True`，避免同一任务重复运行。
 
-### `app/strategy/`
-
-包含股票热度与量价突破策略，使用股票基础信息、日 K、每日市值和问财热度进行筛选。
-
-策略的名称、说明和规则集中配置在 `app/strategy/strategies.json`。新增策略时，
-在该文件增加一个唯一的 `id`，并在 `app/strategy/registry.py` 的
-`STRATEGY_EXECUTORS` 中登记对应执行函数。
-
 ### `app/utils/` 和 `app/view/`
 
 - `utils/`：日期、交易所和股票代码处理；
 - `view/`：Rich 命令行展示示例。
+
+## 量化计算目录
+
+### `quant/factor/`
+
+保存收益率、成交量、动量、波动率和技术指标等纯因子计算。统一入口
+`calculate_basic_factors` 只接收 DataFrame，不访问数据库或外部数据源。
+
+### `quant/strategy/`
+
+保存策略注册、结果格式化和具体策略实现。策略计算入口消费股票基础信息、日 K、
+市值和热度 DataFrame；每个实现文件的 `__main__` 入口会从 `app` 数据层读取本地数据，
+用于独立运行和查看结果。
+
+策略的名称、说明和规则集中配置在 `quant/strategy/strategies.json`。新增策略时，
+在该文件增加唯一 `id`，并在 `quant/strategy/registry.py` 的
+`STRATEGY_EXECUTORS` 中登记执行函数。
+
+### `quant/stock/`
+
+预留股票池定义和通用股票过滤逻辑，分别放在 `universe.py` 与 `filter.py`。
 
 ## 外层同步脚本
 
@@ -140,6 +151,16 @@ uv run python -m backend.scripts.sync_hot_stock_db
 ```
 
 上述脚本都位于外层 `backend/scripts/`，同步脚本会在写入前自动初始化数据库。
+
+每个策略实现文件都可以单独运行并查看本地结果，例如：
+
+```bash
+uv run python -m backend.quant.strategy.implementations.breakout_pullback_n
+uv run python -m backend.quant.strategy.implementations.panic_reversal_v
+uv run python -m backend.quant.strategy.implementations.recent_volume_breakout
+```
+
+六个策略文件分别保留自己的数据读取、Rich 终端展示和 `__main__` 入口。
 
 ## 命令入口
 
@@ -166,5 +187,7 @@ uv run quant-sync
 | 增加 HTTP 接口 | `app/api/` 与 `app/schemas/` |
 | 增加定时任务 | `app/jobs/` |
 | 增加数据同步脚本 | `backend/scripts/` |
-| 增加策略 | `app/strategy/` |
+| 增加因子 | `quant/factor/` |
+| 增加策略 | `quant/strategy/` |
+| 增加股票池或通用过滤 | `quant/stock/` |
 | 增加测试 | `backend/tests/` |

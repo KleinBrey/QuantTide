@@ -4,12 +4,12 @@ import unittest
 
 import pandas as pd
 
-from backend.app.strategy.implementations.panic_reversal_v import (
+from backend.quant.strategy.implementations.panic_reversal_v import (
     RESULT_COLUMNS,
     PanicReversalVStrategy,
 )
-from backend.app.strategy.registry import execute_strategy
-from backend.app.strategy.result import format_strategy_result
+from backend.quant.strategy.registry import execute_strategy
+from backend.quant.strategy.result import format_strategy_result
 
 
 def make_bars(

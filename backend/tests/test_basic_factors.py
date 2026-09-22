@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from backend.app.strategy.basic_factors import (
+from backend.quant.factor import (
     FACTOR_COLUMNS,
     calculate_basic_factors,
 )
