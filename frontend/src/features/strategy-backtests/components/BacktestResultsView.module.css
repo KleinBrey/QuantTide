@@ -1,7 +1,16 @@
 .root {
   align-items: stretch;
   display: grid;
-  min-height: calc(100vh - 72px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.overviewColumn {
+  display: grid;
+  gap: 18px;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
 }
 
 .summaryPanel {
@@ -56,17 +65,25 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .metric {
   border-right: 1px solid #27272a;
   min-width: 0;
-  padding: 14px 18px;
+  padding: 14px;
 }
 
 .metric:last-child {
   border-right: 0;
+}
+
+.metric:nth-child(3) {
+  border-right: 0;
+}
+
+.metric:nth-child(-n + 3) {
+  border-bottom: 1px solid #27272a;
 }
 
 .metric span,
@@ -97,10 +114,88 @@
   color: #22c55e;
 }
 
+.equityPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.equityHeader {
+  min-height: 72px;
+}
+
+.equitySnapshot {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+  gap: 9px 12px;
+  justify-content: flex-end;
+}
+
+.equitySnapshot > span {
+  align-items: center;
+  color: #a1a1aa;
+  display: flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 7px;
+}
+
+.equitySnapshot i {
+  background: #f59e0b;
+  border-radius: 999px;
+  display: block;
+  height: 7px;
+  box-shadow: 0 0 10px rgb(245 158 11 / 55%);
+  width: 7px;
+}
+
+.equitySnapshot strong {
+  color: #f4f4f5;
+  font-size: 16px;
+}
+
+.equitySnapshot em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.equitySnapshot em.positive {
+  color: #ef4444;
+}
+
+.equitySnapshot em.negative {
+  color: #22c55e;
+}
+
+.equityChartWrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.equityChart {
+  height: 100%;
+  width: 100%;
+}
+
+.chartState {
+  align-items: center;
+  color: #71717a;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+}
+
 .tradesPanel {
   display: flex;
   flex-direction: column;
-  min-height: 720px;
+  min-height: 0;
 }
 
 .tableHeader {
@@ -109,8 +204,8 @@
 
 .tableWrap {
   flex: 1;
-  height: calc(100vh - 386px);
-  min-height: 620px;
+  min-height: 0;
+  height: calc(100vh - 300px);
 }
 
 .fullscreenTableWrap {
@@ -128,6 +223,27 @@
 }
 
 @media (max-width: 1100px) {
+  .root {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: calc(100vh - 50px);
+    overflow: visible;
+  }
+
+  .overviewColumn {
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+
+  .equityChartWrap {
+    flex: 0 0 250px;
+    min-height: 0;
+  }
+
+  .equityPanel {
+    min-height: 320px;
+  }
+
   .metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -138,6 +254,11 @@
 
   .metric:nth-child(-n + 3) {
     border-bottom: 1px solid #27272a;
+  }
+
+  .tradesPanel {
+    height: max(720px, calc(100vh - 116px));
+    min-height: 720px;
   }
 }
 
@@ -171,4 +292,18 @@
   .metric:nth-child(-n + 4) {
     border-bottom: 1px solid #27272a;
   }
+
+  .equityHeader {
+    align-items: flex-start;
+  }
+
+  .equitySnapshot {
+    justify-content: flex-start;
+  }
+}
+
+.tradesPanel.fullscreenPanel {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
 }

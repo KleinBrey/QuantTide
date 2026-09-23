@@ -5,6 +5,7 @@ import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import { formatNumber, formatPercent } from '../utils/backtestFormatters.jsx';
+import BacktestEquityChart from './BacktestEquityChart.jsx';
 import BacktestTradesTable from './BacktestTradesTable.jsx';
 import styles from './BacktestResultsView.module.css';
 
@@ -32,35 +33,51 @@ export default function BacktestResultsView({ state }) {
 
   return (
     <div className={cn('dashboard-content', styles.root)}>
-      <section className={cn('dashboard-panel', styles.summaryPanel)}>
-        <div className={styles.summaryHeader}>
-          <div>
-            <div className={styles.heading}>
-              <h2>{strategy?.name ? `${strategy.name}回测` : '策略回测'}</h2>
-              {strategy?.description ? <span>{strategy.description}</span> : null}
+      <div className={styles.overviewColumn}>
+        <section className={cn('dashboard-panel', styles.summaryPanel)}>
+          <div className={styles.summaryHeader}>
+            <div>
+              <div className={styles.heading}>
+                <h2>{strategy?.name ? `${strategy.name}回测` : '策略回测'}</h2>
+                {strategy?.description ? <span>{strategy.description}</span> : null}
+              </div>
+              <div className={styles.meta}>
+                <span>最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong></span>
+                <span>回测区间 <strong>{summary ? `${summary.start_date} ~ ${summary.end_date}` : '-'}</strong></span>
+                <span>交易记录 <strong>{summary?.trade_count ?? '-'}</strong></span>
+              </div>
             </div>
-            <div className={styles.meta}>
-              <span>最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong></span>
-              <span>回测区间 <strong>{summary ? `${summary.start_date} ~ ${summary.end_date}` : '-'}</strong></span>
-              <span>交易记录 <strong>{summary?.trade_count ?? '-'}</strong></span>
-            </div>
+            <Button type="button" className="dashboard-ghost-button" onClick={refresh} disabled={loading} variant="outline">
+              {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
+              <span>{loading ? '回测中' : '重新运行'}</span>
+            </Button>
           </div>
-          <Button type="button" className="dashboard-ghost-button" onClick={refresh} disabled={loading} variant="outline">
-            {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
-            <span>{loading ? '回测中' : '重新运行'}</span>
-          </Button>
-        </div>
-        <div className={styles.metrics}>
-          <Metric label="初始资金" value={formatNumber(summary?.initial_cash)} />
-          <Metric label="期末资产" value={formatNumber(summary?.final_equity)} />
-          <Metric label="累计收益" value={formatPercent(summary?.total_return)} tone={returnTone} />
-          <Metric label="最大回撤" value={formatPercent(summary?.max_drawdown)} tone="negative" />
-          <Metric label="夏普比率" value={formatNumber(summary?.sharpe_ratio, 3)} />
-          <Metric label="胜率" value={formatPercent(summary?.win_rate)} />
-        </div>
-      </section>
+          <div className={styles.metrics}>
+            <Metric label="初始资金" value={formatNumber(summary?.initial_cash)} />
+            <Metric label="期末资产" value={formatNumber(summary?.final_equity)} />
+            <Metric label="累计收益" value={formatPercent(summary?.total_return)} tone={returnTone} />
+            <Metric label="最大回撤" value={formatPercent(summary?.max_drawdown)} tone="negative" />
+            <Metric label="夏普比率" value={formatNumber(summary?.sharpe_ratio, 3)} />
+            <Metric label="胜率" value={formatPercent(summary?.win_rate)} />
+          </div>
+        </section>
 
-      <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.tradesPanel, targetClassName)}>
+        <BacktestEquityChart
+          equityCurve={result?.equity_curve}
+          initialCash={summary?.initial_cash}
+          loading={loading}
+        />
+      </div>
+
+      <section
+        className={cn(
+          'dashboard-panel',
+          'dashboard-table-panel',
+          styles.tradesPanel,
+          isFullscreen && styles.fullscreenPanel,
+          targetClassName
+        )}
+      >
         <div className={cn('dashboard-panel-header', styles.tableHeader)}>
           <div>
             <h2>交易记录</h2>

@@ -96,7 +96,7 @@ class StrategyConfig:
     min_breakout_return_1d_pct = 0.0
     # 近一周按 5 个交易日计算，累计涨幅必须严格小于 20%。
     weekly_return_days = 5
-    max_breakout_return_5d_pct = 0.20
+    max_breakout_return_5d_pct = 0.10
     # 短期与长期收盘价均线窗口；突破日要求 20 日线严格大于 10 日线。
     short_ma_days = 10
     long_ma_days = 20

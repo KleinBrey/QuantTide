@@ -4,7 +4,7 @@
   border-bottom: 1px solid #27272a;
   display: flex;
   gap: 18px;
-  min-height: 72px;
+  min-height: 50px;
   padding: 0 22px;
   position: sticky;
   top: 0;
@@ -30,4 +30,8 @@
   display: block;
   font-size: 12px;
   margin-top: 3px;
+}
+
+main {
+  flex: 1;
 }

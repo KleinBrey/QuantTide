@@ -3,7 +3,7 @@
 资金与成交约定：
 
 - 只做多，最多同时持有 ``max_positions`` 只股票，同一股票不重复买入；
-- 每只新仓的目标资金预算为买入前账户总权益的 ``1 / max_positions``；
+- 每只新仓的资金预算不超过买入前账户总权益的 ``max_position_pct``；
 - 实际买入预算取目标资金预算与可用现金的较小值，不融资、不重新平衡旧仓；
 - 按当日信号排名依次买入，持仓达到上限后忽略剩余信号；
 - 买入数量按 ``lot_size`` 向下取整，并为佣金预留现金；不足一手则跳过；
@@ -64,6 +64,8 @@ class BacktestConfig:
     initial_cash: float = 1_000_000.0
     # 账户允许同时持有的最大股票数量。
     max_positions: int = 20
+    # 单只股票的建仓金额最多占买入前账户总权益的 5%。
+    max_position_pct: float = 0.05
     # 每手股票的股数，买入数量按此整数倍向下取整。
     lot_size: int = 100
     # 买卖佣金费率，使用小数表示，例如 0.0003 代表万分之三。
@@ -204,6 +206,7 @@ class ConfirmedVolumeBreakoutBacktest:
             "start_date": calendar[0].date().isoformat(),
             "end_date": calendar[-1].date().isoformat(),
             "max_positions": self.config.max_positions,
+            "max_position_pct": self.config.max_position_pct,
             "signal_days": int(signals["confirm_date"].nunique()),
             "qualified_signal_count": len(signals),
             "executed_signal_count": executed_signal_count,
@@ -219,7 +222,7 @@ class ConfirmedVolumeBreakoutBacktest:
             ),
             "assumptions": [
                 "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
-                "单仓上限为当日账户权益的 1 / 最大持仓数",
+                f"单只股票建仓上限为当日账户权益的 {self.config.max_position_pct:.0%}",
                 f"持仓未满时按信号排名补仓，{self.config.lot_size} 股整手，只做多",
                 "买入当日不卖，从下一交易日起检查止损和止盈",
                 "所有卖出条件均按收盘价判断并按收盘价成交",
@@ -532,8 +535,8 @@ class ConfirmedVolumeBreakoutBacktest:
 
         close_prices = day_quotes["close"].astype(float).to_dict()
         portfolio_equity = account.total_equity(close_prices)
-        # 每只股票使用相同目标预算，不把剩余现金重新分摊给其他候选股。
-        target_budget = portfolio_equity / self.config.max_positions
+        # 单股预算独立于最大持仓数，始终按账户总权益的固定比例计算。
+        target_budget = portfolio_equity * self.config.max_position_pct
         executed = 0
         skipped_full = 0
         skipped_insufficient_cash = 0
@@ -686,7 +689,7 @@ def _render_result(result: BacktestResult) -> None:
 def main() -> None:
     """从本地数据库运行默认回测。"""
 
-    config = BacktestConfig(max_positions=10)
+    config = BacktestConfig()
     with console.status("[bold green]正在读取本地数据并回测..."):
         result = run_from_database(config)
     _render_result(result)

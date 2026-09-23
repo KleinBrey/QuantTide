@@ -50,6 +50,7 @@ h3 {
   display: grid;
   gap: 18px;
   padding: 22px;
+  height: 100%;
 }
 
 .dashboard-metric-grid {

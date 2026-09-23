@@ -6,7 +6,7 @@
 
 .tableWrap {
   display: block;
-  height: calc(100vh - 190px);
+  height: 100%;
   /* min-height: 640px; */
 }
 

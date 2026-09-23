@@ -11,7 +11,7 @@ export default function Layout({ children }) {
           <SidebarTrigger />
           <div className={style.headerTitle}>
             <div>
-              <h1>交易投研系统</h1>
+              <h1></h1>
             </div>
           </div>
         </header>
