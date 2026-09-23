@@ -27,6 +27,7 @@ const movingAverages = [
 ];
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const EMPTY_MARKERS = [];
 
 function timeKey(value) {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -97,7 +98,7 @@ function markerGroupKey(time, period) {
 }
 
 function normalizeMarkers(markers, period, rows) {
-  if (!Array.isArray(markers) || !markers.length || !rows.length) return [];
+  if (!Array.isArray(markers) || !markers.length || !rows.length) return EMPTY_MARKERS;
 
   const chartTimeByGroup = new Map(rows.map(row => [markerGroupKey(row.time, period), row.time]));
   return markers
@@ -191,7 +192,7 @@ export default function StockKlineChart({
   error,
   period,
   onPeriodChange,
-  markers = [],
+  markers = EMPTY_MARKERS,
   enableMouseWheelZoom = true
 }) {
   const chartRef = useRef(null);

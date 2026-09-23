@@ -1,22 +1,25 @@
-"""放量突破次日确认策略的 A 股日频回测 MVP。
+"""放量突破次日确认策略的 A 股日频回测执行器。
 
-回测约定：
+资金与成交约定：
 
-- 第一日出现放量上涨设置，第二日小阳线确认；
-- 确认日按收盘价买入，单仓上限为当日账户权益的 1 / 最大持仓数；
-- 持仓未满时按信号排名补仓，数量按 100 股整手向下取整；
-- 止损价为设置日前一交易日收盘价，止盈价为买入价上方 2 倍风险距离；
-- 遵守 A 股 T+1，买入当日不卖出；
-- 日 K 同时触发止损和止盈时，保守地按止损先成交；
-- 个股热度只用于排序，缺失时按放量强度排序。
+- 只做多，最多同时持有 ``max_positions`` 只股票，同一股票不重复买入；
+- 每只新仓的目标资金预算为买入前账户总权益的 ``1 / max_positions``；
+- 实际买入预算取目标资金预算与可用现金的较小值，不融资、不重新平衡旧仓；
+- 按当日信号排名依次买入，持仓达到上限后忽略剩余信号；
+- 买入数量按 ``lot_size`` 向下取整，并为佣金预留现金；不足一手则跳过；
+- 信号仅在确认日按收盘价尝试成交，未成交信号不会顺延到下一交易日；
+- 遵守 A 股 T+1，买入当日不卖出；满足任一卖出条件时整仓卖出；
+- 所有卖出条件均在收盘后判断并按收盘价成交，不使用日内最高价或最低价；
+- 止盈止损均未触发时，较前收跌幅大于 5% 则按收盘价卖出；
+- 连续 3 根阴线且每根实体跌幅大于 2% 时，按第三根阴线收盘价卖出；
+- 每日收盘后按最新可用收盘价计算持仓市值与账户权益。
 """
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from datetime import date
-from math import floor, isfinite
+from math import floor
 from typing import Any
 
 import pandas as pd
@@ -39,7 +42,6 @@ from backend.quant.backtest.result import (
 )
 from backend.quant.strategy.implementations.today_confirmed_breakout import (
     TodayConfirmedBreakoutStrategy,
-    RESULT_COLUMNS,
 )
 
 console = Console()
@@ -47,36 +49,36 @@ console = Console()
 
 @dataclass(frozen=True, slots=True)
 class BacktestConfig:
-    """放量突破次日确认回测参数。"""
+    """回测时间、账户和卖出条件。"""
 
-    initial_cash: float = 1_000_000.0
+    # 时间范围
+    # 回测开始日期；未指定时按 lookback_months 从结束日期向前推算。
     start_date: str | date | None = None
+    # 回测结束日期；未指定时使用行情中的最新交易日。
     end_date: str | date | None = None
-    lookback_months: int = 2
-    max_positions: int = 10
-    lot_size: int = 100
-    commission_rate: float = 0.0
-    minimum_commission: float = 0.0
-    sell_tax_rate: float = 0.0
+    # 未指定开始日期时向前回看的自然月数。
+    lookback_months: int = 6
 
-    def __post_init__(self) -> None:
-        if not isfinite(self.initial_cash) or self.initial_cash <= 0:
-            raise ValueError("initial_cash 必须大于 0")
-        if self.lookback_months <= 0:
-            raise ValueError("lookback_months 必须大于 0")
-        if self.max_positions <= 0:
-            raise ValueError("max_positions 必须大于 0")
-        if self.lot_size <= 0:
-            raise ValueError("lot_size 必须大于 0")
-        if (
-            min(
-                self.commission_rate,
-                self.minimum_commission,
-                self.sell_tax_rate,
-            )
-            < 0
-        ):
-            raise ValueError("费率与最低佣金不能为负")
+    # 交易账户
+    # 回测初始资金，单位为元。
+    initial_cash: float = 1_000_000.0
+    # 账户允许同时持有的最大股票数量。
+    max_positions: int = 20
+    # 每手股票的股数，买入数量按此整数倍向下取整。
+    lot_size: int = 100
+    # 买卖佣金费率，使用小数表示，例如 0.0003 代表万分之三。
+    commission_rate: float = 0.0005
+    # 每笔交易的最低佣金，单位为元。
+    minimum_commission: float = 5
+    # 卖出时收取的税率，使用小数表示；买入时不收取。
+    sell_tax_rate: float = 0.006
+
+    # 卖出条件
+    # 当日收盘价较前一交易日收盘价跌幅严格大于 5% 时卖出。
+    previous_close_decline_exit_pct: float = 0.05
+    # 连续 3 根阴线且每根实体跌幅严格大于 2% 时卖出。
+    consecutive_bearish_candle_count: int = 3
+    consecutive_bearish_body_pct: float = 0.02
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,62 +115,41 @@ class ConfirmedVolumeBreakoutBacktest:
     ) -> BacktestResult:
         """执行回测并返回净值、交易记录和期末持仓。"""
 
+        # 1. 准备回测区间、交易日历、行情和策略信号。
         bars = self._prepare_bars(daily_bars)
         start_date, end_date = self._resolve_period(bars)
         calendar = self._trading_calendar(bars, start_date, end_date)
-        signal_frames = []
         heat = hot_stocks.copy()
         if "trade_date" in heat.columns:
             heat["trade_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
 
-        for trade_date in calendar:
-            breakout_date = bars.loc[
-                bars["trade_date"] < trade_date, "trade_date"
-            ].max()
-            day_heat = heat
-            if "trade_date" in heat.columns:
-                day_heat = heat[heat["trade_date"] == breakout_date]
-
-            selected = self.strategy.select(
-                trade_date,
-                stocks,
-                bars,
-                day_heat,
-                stock_daily_basic,
-            )
-            if not selected.empty:
-                signal_frames.append(selected)
-
-        signals = (
-            pd.concat(signal_frames, ignore_index=True)
-            if signal_frames
-            else pd.DataFrame(columns=RESULT_COLUMNS)
+        signals = self.strategy.select_range(
+            calendar,
+            stocks,
+            bars,
+            heat,
+            stock_daily_basic,
         )
 
-        quotes = (
-            bars.loc[
-                bars["trade_date"].between(start_date, end_date),
-                ["trade_date", "symbol", "open", "high", "low", "close"],
-            ]
-            .drop_duplicates(["trade_date", "symbol"], keep="last")
-            .set_index(["trade_date", "symbol"])
-            .sort_index()
-        )
+        quotes = self._prepare_quotes(bars, start_date, end_date)
         signals_by_date = {
             confirm_date: group.sort_values(["selection_rank", "symbol"])
             for confirm_date, group in signals.groupby("confirm_date", sort=True)
         }
 
+        # 2. 初始化账户、每日状态和回测统计。
         account = Account(self.config.initial_cash)
         trade_rows: list[dict[str, Any]] = []
         equity_rows: list[dict[str, Any]] = []
         last_close_prices: dict[str, float] = {}
+        bearish_candle_streaks: dict[str, int] = {}
         executed_signal_count = 0
         skipped_full_position_count = 0
         skipped_already_held_count = 0
         skipped_unexecutable_count = 0
         skipped_insufficient_cash_count = 0
 
+        # 3. 按交易日依次执行卖出、买入和收盘估值。
         for trade_date in calendar:
             day_quotes = quotes.loc[trade_date]
             if isinstance(day_quotes, pd.Series):
@@ -179,9 +160,12 @@ class ConfirmedVolumeBreakoutBacktest:
                 account=account,
                 trade_date=trade_date.date(),
                 day_quotes=day_quotes,
+                previous_close_prices=last_close_prices,
+                bearish_candle_streaks=bearish_candle_streaks,
                 trade_rows=trade_rows,
             )
 
+            # 先卖后买，释放的现金和仓位可以用于当天的新信号。
             candidates = signals_by_date.get(trade_date)
             if candidates is not None and not candidates.empty:
                 buy_stats = self._execute_close_buys(
@@ -195,9 +179,7 @@ class ConfirmedVolumeBreakoutBacktest:
                 skipped_full_position_count += buy_stats.skipped_full
                 skipped_already_held_count += buy_stats.skipped_already_held
                 skipped_unexecutable_count += buy_stats.skipped_unexecutable
-                skipped_insufficient_cash_count += (
-                    buy_stats.skipped_insufficient_cash
-                )
+                skipped_insufficient_cash_count += buy_stats.skipped_insufficient_cash
 
             last_close_prices.update(day_quotes["close"].to_dict())
             market_value = account.market_value(last_close_prices)
@@ -210,28 +192,8 @@ class ConfirmedVolumeBreakoutBacktest:
                 }
             )
 
-        final_positions = pd.DataFrame(
-            [
-                {
-                    "symbol": position.symbol,
-                    "name": position.name,
-                    "quantity": position.quantity,
-                    "entry_price": position.entry_price,
-                    "cost_price": position.cost_price,
-                    "stop_loss_price": position.stop_loss_price,
-                    "take_profit_price": position.take_profit_price,
-                    "signal_date": position.signal_date,
-                    "opened_at": position.opened_at,
-                    "last_price": last_close_prices.get(
-                        position.symbol, position.entry_price
-                    ),
-                    "market_value": position.market_value(
-                        last_close_prices.get(position.symbol, position.entry_price)
-                    ),
-                }
-                for position in account.positions.values()
-            ]
-        )
+        # 4. 组装期末持仓和结果摘要。
+        final_positions = self._build_final_positions(account, last_close_prices)
 
         hot_dates = pd.to_datetime(
             hot_stocks.get("trade_date", pd.Series(dtype="datetime64[ns]")),
@@ -258,12 +220,21 @@ class ConfirmedVolumeBreakoutBacktest:
             "assumptions": [
                 "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
                 "单仓上限为当日账户权益的 1 / 最大持仓数",
-                "持仓未满时按信号排名补仓，100 股整手，只做多",
+                f"持仓未满时按信号排名补仓，{self.config.lot_size} 股整手，只做多",
                 "买入当日不卖，从下一交易日起检查止损和止盈",
-                "日内同时触发止损和止盈时按止损先成交",
+                "所有卖出条件均按收盘价判断并按收盘价成交",
+                (
+                    "较前一交易日收盘跌幅大于 "
+                    f"{self.config.previous_close_decline_exit_pct:.0%} 时卖出"
+                ),
+                (
+                    f"连续 {self.config.consecutive_bearish_candle_count} 根阴线且"
+                    "每根实体跌幅大于 "
+                    f"{self.config.consecutive_bearish_body_pct:.0%} 时卖出"
+                ),
                 "历史热度缺失时仍产生信号，按放量强度排序",
-                "市值过滤使用当前 stock_daily_basic 快照",
-                "默认不计佣金、印花税、滑点、涨跌停和复权影响",
+                "市值过滤使用确认日当日或此前最近可用的历史市值",
+                "佣金和卖出税率按配置计算，不计滑点、涨跌停和复权影响",
             ],
         }
         return BacktestResult(
@@ -278,7 +249,36 @@ class ConfirmedVolumeBreakoutBacktest:
         )
 
     @staticmethod
+    def _build_final_positions(
+        account: Account,
+        last_close_prices: dict[str, float],
+    ) -> pd.DataFrame:
+        """按最后可用收盘价整理期末持仓。"""
+
+        rows: list[dict[str, Any]] = []
+        for position in account.positions.values():
+            last_price = last_close_prices.get(position.symbol, position.entry_price)
+            rows.append(
+                {
+                    "symbol": position.symbol,
+                    "name": position.name,
+                    "quantity": position.quantity,
+                    "entry_price": position.entry_price,
+                    "cost_price": position.cost_price,
+                    "stop_loss_price": position.stop_loss_price,
+                    "take_profit_price": position.take_profit_price,
+                    "signal_date": position.signal_date,
+                    "opened_at": position.opened_at,
+                    "last_price": last_price,
+                    "market_value": position.market_value(last_price),
+                }
+            )
+        return pd.DataFrame(rows)
+
+    @staticmethod
     def _prepare_bars(daily_bars: pd.DataFrame) -> pd.DataFrame:
+        """清洗日 K，并保证每只股票每天只有一条有效行情。"""
+
         required = {
             "symbol",
             "trade_date",
@@ -313,7 +313,26 @@ class ConfirmedVolumeBreakoutBacktest:
             .reset_index(drop=True)
         )
 
+    @staticmethod
+    def _prepare_quotes(
+        bars: pd.DataFrame,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+    ) -> pd.DataFrame:
+        """生成按日期和股票索引的回测成交行情。"""
+
+        return (
+            bars.loc[
+                bars["trade_date"].between(start_date, end_date),
+                ["trade_date", "symbol", "open", "close"],
+            ]
+            .set_index(["trade_date", "symbol"])
+            .sort_index()
+        )
+
     def _resolve_period(self, bars: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """根据配置和行情可用范围确定实际回测区间。"""
+
         if bars.empty:
             raise ValueError("日 K 数据为空，无法回测")
 
@@ -342,6 +361,8 @@ class ConfirmedVolumeBreakoutBacktest:
         start_date: pd.Timestamp,
         end_date: pd.Timestamp,
     ) -> pd.DatetimeIndex:
+        """提取回测区间内的交易日。"""
+
         dates = bars.loc[
             bars["trade_date"].between(start_date, end_date), "trade_date"
         ].drop_duplicates()
@@ -357,12 +378,32 @@ class ConfirmedVolumeBreakoutBacktest:
         trade_date: date,
         day_quotes: pd.DataFrame,
         trade_rows: list[dict[str, Any]],
+        previous_close_prices: dict[str, float] | None = None,
+        bearish_candle_streaks: dict[str, int] | None = None,
     ) -> None:
+        """检查已有持仓的卖出条件，并记录实际成交。"""
+
+        previous_close_prices = previous_close_prices or {}
+        if bearish_candle_streaks is None:
+            bearish_candle_streaks = {}
+
         for symbol, position in list(account.positions.items()):
+            # A 股 T+1：买入当天不允许卖出；停牌无行情时也无法成交。
             if position.opened_at >= trade_date or symbol not in day_quotes.index:
                 continue
+
             quote = day_quotes.loc[symbol]
-            decision = self._exit_decision(position, quote)
+            bearish_candle_streaks[symbol] = self._next_bearish_streak(
+                quote,
+                bearish_candle_streaks.get(symbol, 0),
+            )
+
+            decision = self._exit_decision(
+                position,
+                quote,
+                previous_close=previous_close_prices.get(symbol),
+                consecutive_bearish_count=bearish_candle_streaks[symbol],
+            )
             if decision is None:
                 continue
 
@@ -374,6 +415,7 @@ class ConfirmedVolumeBreakoutBacktest:
                 price=exit_price,
                 fee=fee,
             )
+            bearish_candle_streaks.pop(symbol, None)
             trade_rows.append(
                 {
                     "trade_date": trade_date,
@@ -395,31 +437,51 @@ class ConfirmedVolumeBreakoutBacktest:
                 }
             )
 
-    @staticmethod
     def _exit_decision(
+        self,
         position: Position,
         quote: pd.Series,
+        previous_close: float | None = None,
+        consecutive_bearish_count: int = 0,
     ) -> tuple[float, str] | None:
-        open_price = float(quote["open"])
-        high_price = float(quote["high"])
-        low_price = float(quote["low"])
+        """按优先级返回收盘卖出价格和原因；无需卖出时返回 None。"""
+
+        close_price = float(quote["close"])
         stop_price = position.stop_loss_price
         target_price = position.take_profit_price
 
-        if open_price <= stop_price:
-            return open_price, "stop_loss_gap"
-        if open_price >= target_price:
-            return open_price, "take_profit_gap"
+        # 止损和止盈优先于其他收盘风控条件。
+        if close_price <= stop_price:
+            return close_price, "stop_loss"
+        if close_price >= target_price:
+            return close_price, "take_profit"
 
-        hit_stop = low_price <= stop_price
-        hit_target = high_price >= target_price
-        if hit_stop and hit_target:
-            return stop_price, "stop_loss_same_day_ambiguous"
-        if hit_stop:
-            return stop_price, "stop_loss"
-        if hit_target:
-            return target_price, "take_profit"
+        if previous_close is not None and previous_close > 0:
+            previous_close_decline_pct = (previous_close - close_price) / previous_close
+            if previous_close_decline_pct > self.config.previous_close_decline_exit_pct:
+                return close_price, "previous_close_decline"
+
+        if consecutive_bearish_count >= self.config.consecutive_bearish_candle_count:
+            return close_price, "consecutive_bearish_candles"
+
         return None
+
+    def _next_bearish_streak(
+        self,
+        quote: pd.Series,
+        current_streak: int,
+    ) -> int:
+        """更新连续大阴线计数；当前 K 线不满足条件时归零。"""
+
+        open_price = float(quote["open"])
+        close_price = float(quote["close"])
+        body_decline_pct = (open_price - close_price) / open_price
+        if (
+            close_price < open_price
+            and body_decline_pct > self.config.consecutive_bearish_body_pct
+        ):
+            return current_streak + 1
+        return 0
 
     def _execute_close_buys(
         self,
@@ -430,6 +492,9 @@ class ConfirmedVolumeBreakoutBacktest:
         candidates: pd.DataFrame,
         trade_rows: list[dict[str, Any]],
     ) -> BuyExecutionStats:
+        """按信号顺序在收盘价买入，并返回执行统计。"""
+
+        # 先剔除已持仓、缺少行情或价格关系无效的信号。
         executable: list[dict[str, Any]] = []
         skipped_already_held = 0
         skipped_unexecutable = 0
@@ -458,11 +523,7 @@ class ConfirmedVolumeBreakoutBacktest:
                 skipped_unexecutable=skipped_unexecutable,
             )
 
-        available_slots = max(
-            0,
-            self.config.max_positions - len(account.positions),
-        )
-        if available_slots == 0:
+        if len(account.positions) >= self.config.max_positions:
             return BuyExecutionStats(
                 skipped_full=len(executable),
                 skipped_already_held=skipped_already_held,
@@ -471,6 +532,7 @@ class ConfirmedVolumeBreakoutBacktest:
 
         close_prices = day_quotes["close"].astype(float).to_dict()
         portfolio_equity = account.total_equity(close_prices)
+        # 每只股票使用相同目标预算，不把剩余现金重新分摊给其他候选股。
         target_budget = portfolio_equity / self.config.max_positions
         executed = 0
         skipped_full = 0
@@ -537,6 +599,8 @@ class ConfirmedVolumeBreakoutBacktest:
         )
 
     def _affordable_quantity(self, budget: float, price: float) -> int:
+        """在预算内计算可买的整手股数，并预留买入佣金。"""
+
         if budget <= 0 or price <= 0:
             return 0
         gross_budget = budget
@@ -553,6 +617,8 @@ class ConfirmedVolumeBreakoutBacktest:
         return lots * self.config.lot_size
 
     def _transaction_fee(self, gross_amount: float, *, side: str) -> float:
+        """计算单笔交易的佣金和卖出税费。"""
+
         commission = 0.0
         if self.config.commission_rate > 0:
             commission = max(
@@ -590,8 +656,10 @@ def run_from_database(config: BacktestConfig | None = None) -> BacktestResult:
 
 
 def _render_result(result: BacktestResult) -> None:
+    """在终端输出回测核心指标。"""
+
     summary = result.summary()
-    table = Table(title="放量突破次日确认回测 MVP")
+    table = Table(title="放量突破次日确认回测")
     table.add_column("指标")
     table.add_column("结果", justify="right")
     table.add_row("回测区间", f"{summary['start_date']} ~ {summary['end_date']}")
@@ -614,49 +682,11 @@ def _render_result(result: BacktestResult) -> None:
     table.add_row("期末未平仓", str(summary["open_positions"]))
     console.print(table)
 
-    if not result.trades.empty:
-        console.print("\n[bold]交易记录[/bold]")
-        columns = [
-            "trade_date",
-            "symbol",
-            "name",
-            "side",
-            "price",
-            "quantity",
-            "position_pct",
-            "stop_loss_price",
-            "take_profit_price",
-            "realized_pnl",
-            "return_pct",
-            "reason",
-        ]
-        console.print(result.trades[columns].to_string(index=False))
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="A 股放量突破次日确认回测 MVP")
-    parser.add_argument("--start-date", help="开始日期 YYYY-MM-DD")
-    parser.add_argument("--end-date", help="结束日期 YYYY-MM-DD")
-    parser.add_argument(
-        "--months",
-        type=int,
-        default=2,
-        help="未指定开始日期时回看月数（默认 2）",
-    )
-    parser.add_argument("--max-positions", type=int, default=10, help="等权持仓数")
-    parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
-    return parser.parse_args()
-
 
 def main() -> None:
-    args = _parse_args()
-    config = BacktestConfig(
-        initial_cash=args.initial_cash,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        lookback_months=args.months,
-        max_positions=args.max_positions,
-    )
+    """从本地数据库运行默认回测。"""
+
+    config = BacktestConfig(max_positions=10)
     with console.status("[bold green]正在读取本地数据并回测..."):
         result = run_from_database(config)
     _render_result(result)

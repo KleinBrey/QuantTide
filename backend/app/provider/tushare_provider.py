@@ -7,6 +7,7 @@ Tushare 官方地址。Token 只从构造参数或 ``backend/.env`` / 环境变�
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 
@@ -132,12 +133,14 @@ class TushareProvider:
 
         return result
 
-    def fetch_daily_basic(self) -> pd.DataFrame:
-        """获取最新交易日动态每日指标，包含市值、市盈率等。"""
+    def fetch_daily_basic(self, trade_date: date | None = None) -> pd.DataFrame:
+        """获取指定交易日的每日指标；未指定日期时获取最新数据。"""
 
-        result = self.pro.daily_basic(
-            fields="ts_code,trade_date,total_mv",
-        )
+        parameters = {"fields": "ts_code,trade_date,total_mv"}
+        if trade_date is not None:
+            parameters["trade_date"] = trade_date.strftime("%Y%m%d")
+
+        result = self.pro.daily_basic(**parameters)
         if result is None or result.empty:
             return pd.DataFrame(columns=["symbol", "trade_date", "market_cap"])
 
@@ -155,7 +158,7 @@ class TushareProvider:
             # 去掉 market_cap 字段没有值的
             # 去重 symbol 字段的值，有重复的用最后一个
             result.dropna(subset=["trade_date", "market_cap"])
-            .drop_duplicates(subset="symbol", keep="last")[
+            .drop_duplicates(subset=["symbol", "trade_date"], keep="last")[
                 ["symbol", "trade_date", "market_cap"]
             ]
             .reset_index(drop=True)

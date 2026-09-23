@@ -101,7 +101,7 @@ def load_market_data() -> tuple[
     stocks = StockRepository(database).get_table_data()
     daily_bars = DailyBarRepository(database).get_table_data()
     hot_stocks = StockHotDailyRepository(database).get_latest()
-    stock_daily_basic = StockDailyBasicRepository(database).get_table_data()
+    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
     return stocks, daily_bars, hot_stocks, stock_daily_basic
 
 

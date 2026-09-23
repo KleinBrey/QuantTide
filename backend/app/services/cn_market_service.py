@@ -6,6 +6,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
 
 import pandas as pd
 from tqdm.auto import tqdm
@@ -156,14 +157,89 @@ class CNMarketService(HotStockService):
         else:
             print("股票列表更新成功!")
 
-    def update_stock_daily_basic(self) -> int:
-        """获取并保存最新交易日的股票每日指标。"""
+    def update_stock_daily_basic(
+        self,
+        lookback_days: int | None = None,
+        max_workers: int = 10,
+    ) -> int:
+        """按日期并发获取股票每日指标，并在主线程中依次写入数据库。"""
 
-        daily_basic = self.tushare_provider.fetch_daily_basic()
-        affected_rows = self.stock_daily_basic_repository.upsert_stock_daily_basic(
-            daily_basic
+        if lookback_days is None:
+            dates: list[date | None] = [None]
+        else:
+            if lookback_days <= 0:
+                raise ValueError("lookback_days 必须大于 0")
+
+            end_date = date.today()
+            start_date = end_date - timedelta(days=lookback_days - 1)
+            dates = [
+                start_date + timedelta(days=offset)
+                for offset in range(lookback_days)
+            ]
+
+        if max_workers <= 0:
+            raise ValueError("max_workers 必须大于 0")
+
+        affected_rows = 0
+        failed_dates: list[date | None] = []
+
+        # daily_basic 单次最多返回 6000 条，因此每个日期作为一个并发请求任务。
+        request_lock = threading.Lock()
+        last_request_time = 0.0
+
+        def fetch_date(trade_date: date | None) -> pd.DataFrame:
+            nonlocal last_request_time
+
+            with request_lock:
+                now = time.monotonic()
+                interval = random.uniform(0.5, 1.0)
+                wait_time = interval - (now - last_request_time)
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                last_request_time = time.monotonic()
+
+            return self.tushare_provider.fetch_daily_basic(trade_date)
+
+        worker_count = min(max_workers, len(dates))
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="daily-basic",
+        ) as executor:
+            futures = {
+                executor.submit(fetch_date, trade_date): trade_date
+                for trade_date in dates
+            }
+
+            progress = tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="同步股票每日指标",
+                unit="日",
+            )
+            for future in progress:
+                trade_date = futures[future]
+                try:
+                    daily_basic = future.result()
+                except Exception as error:
+                    failed_dates.append(trade_date)
+                    date_text = trade_date.isoformat() if trade_date else "最新交易日"
+                    tqdm.write(f"{date_text} 每日指标获取失败: {error}")
+                    continue
+
+                # DuckDB 写入集中在主线程，避免多个连接并发写同一张表。
+                affected_rows += (
+                    self.stock_daily_basic_repository.upsert_stock_daily_basic(
+                        daily_basic
+                    )
+                )
+                progress.set_postfix(写入=affected_rows, 失败=len(failed_dates))
+
+        range_text = (
+            "最新交易日" if lookback_days is None else f"最近 {lookback_days} 日"
         )
-        print(f"股票每日指标更新成功，共写入 {affected_rows} 条")
+        print(f"股票每日指标更新成功（{range_text}），共写入 {affected_rows} 条")
+        if failed_dates:
+            print(f"获取失败日期数量: {len(failed_dates)}")
         return affected_rows
 
     def update_daily_bar(

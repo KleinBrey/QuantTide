@@ -81,7 +81,7 @@ def load_market_data() -> tuple[
     hot_stocks = StockHotDailyRepository(database).get_latest()
 
     # 股票最新动态指标
-    stock_daily_basic = StockDailyBasicRepository(database).get_table_data()
+    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
 
     return stocks, daily_bars, hot_stocks, stock_daily_basic
 

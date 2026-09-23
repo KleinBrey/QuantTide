@@ -129,25 +129,39 @@ class StockDailyBasicRepository(BaseRepository):
         return row[0] if row and row[0] is not None else None
 
     def get_table_data(self) -> pd.DataFrame:
-        """获取每只股票最新交易日的每日指标。"""
-
+        """获取全部股票每日指标历史数据，供回测按日使用。"""
         with self.db.connection(read_only=True) as connection:
-            return connection.execute(
-                """
+            return connection.execute("""
                 SELECT *
                 FROM stock_daily_basic
+                ORDER BY trade_date, symbol
+                """).df()
+
+    def get_latest_data(self) -> pd.DataFrame:
+        """获取每只股票最近交易日的每日指标快照。"""
+
+        with self.db.connection(read_only=True) as connection:
+            return connection.execute("""
+                SELECT symbol, trade_date, market_cap, update_time
+                FROM stock_daily_basic
+                WHERE trade_date = (
+                    SELECT MAX(trade_date) FROM stock_daily_basic
+                )
                 ORDER BY symbol
-                """
-            ).df()
+                """).df()
 
     def upsert_stock_daily_basic(self, rows: pd.DataFrame) -> int:
-        """新增或更新股票最新每日指标，返回处理的行数。"""
+        """新增或更新股票每日指标，返回处理的行数。"""
 
         if rows.empty:
             return 0
 
         _require_columns(rows, STOCK_DAILY_BASIC_COLUMNS)
-        daily_basic = rows[STOCK_DAILY_BASIC_COLUMNS].copy()
+        daily_basic = (
+            rows[STOCK_DAILY_BASIC_COLUMNS]
+            .drop_duplicates(subset=["symbol", "trade_date"], keep="last")
+            .copy()
+        )
         with self.db.connection() as connection:
             connection.register("incoming_stock_daily_basic", daily_basic)
             connection.execute("""
@@ -161,8 +175,7 @@ class StockDailyBasicRepository(BaseRepository):
                     trade_date,
                     market_cap
                 FROM incoming_stock_daily_basic
-                ON CONFLICT (symbol) DO UPDATE SET
-                    trade_date = excluded.trade_date,
+                ON CONFLICT (symbol, trade_date) DO UPDATE SET
                     market_cap = excluded.market_cap,
                     update_time = now()
                 """)

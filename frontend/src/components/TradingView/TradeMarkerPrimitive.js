@@ -1,7 +1,7 @@
 // 买卖标记徽章的边长，单位为 CSS 像素，绘制时会按设备像素比缩放。
 const BADGE_SIZE = 22;
 // 价格锚点到徽章近端边缘的目标距离。
-const STEM_LENGTH = 46;
+const STEM_LENGTH = 40;
 // K 线价格位置上锚点圆圈的半径。
 const ANCHOR_RADIUS = 3;
 

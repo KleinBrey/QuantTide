@@ -20,10 +20,9 @@ export function formatPercent(value) {
 const reasonLabels = {
   confirm_buy: '确认买入',
   stop_loss: '止损',
-  stop_loss_gap: '跳空止损',
-  stop_loss_same_day_ambiguous: '同日触发止损',
   take_profit: '止盈',
-  take_profit_gap: '跳空止盈'
+  previous_close_decline: '较前收跌超5%',
+  consecutive_bearish_candles: '连续三根阴线'
 };
 
 export function TradeSideCell({ value }) {

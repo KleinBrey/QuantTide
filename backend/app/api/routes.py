@@ -378,7 +378,7 @@ def strategy_signals(
             stocks=stock_repository.get_table_data(),
             daily_bars=daily_repository.get_table_data(),
             hot_stocks=stock_hot_repository.get_latest(),
-            stock_daily_basic=stock_daily_basic_repository.get_table_data(),
+            stock_daily_basic=stock_daily_basic_repository.get_latest_data(),
         )
     except Exception as error:
         logger.exception("执行策略 %s 失败", strategy_id)
@@ -404,7 +404,7 @@ async def confirmed_volume_breakout_backtest(
         date | None,
         Query(description="回测结束日期，默认使用最新交易日"),
     ] = None,
-    lookback_months: Annotated[int, Query(ge=1, le=60)] = 2,
+    lookback_months: Annotated[int, Query(ge=1, le=60)] = 6,
     max_positions: Annotated[int, Query(ge=1, le=100)] = 10,
     initial_cash: Annotated[float, Query(gt=0)] = 1_000_000.0,
 ) -> dict[str, object]:
