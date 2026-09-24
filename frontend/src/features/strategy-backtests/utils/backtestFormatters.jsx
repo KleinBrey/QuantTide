@@ -100,6 +100,7 @@ export const tradeColumnDefs = [
     field: 'reason',
     minWidth: 200,
     flex: 0.9,
+    cellStyle: { color: '#d8dfe7', fontWeight: 700 },
     valueFormatter: params => reasonLabels[params.value] || params.value || '-'
   }
 ];
