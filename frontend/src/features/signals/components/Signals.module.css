@@ -6,7 +6,7 @@
   min-height: calc(100vh - 72px);
 }
 
-.strategySidebar {
+.signalSidebar {
   align-self: stretch;
   min-height: calc(100vh - 116px);
 }
@@ -36,13 +36,13 @@
   padding: 0 7px;
 }
 
-.strategyList {
+.signalList {
   display: grid;
   gap: 8px;
   padding: 12px;
 }
 
-.strategyItem {
+.signalItem {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
@@ -59,18 +59,18 @@
   width: 100%;
 }
 
-.strategyItem:hover {
+.signalItem:hover {
   background: #202024;
   color: #d4d4d8;
 }
 
-.strategyItemActive {
+.signalItemActive {
   background: #27272a;
   border-color: #3f3f46;
   color: #fafafa;
 }
 
-.strategyIcon {
+.signalIcon {
   align-items: center;
   background: #3f3f46;
   border-radius: 8px;
@@ -81,30 +81,30 @@
   width: 34px;
 }
 
-.strategyText {
+.signalText {
   min-width: 0;
 }
 
-.strategyText strong,
-.strategyText small {
+.signalText strong,
+.signalText small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.strategyText strong {
+.signalText strong {
   font-size: 13px;
   font-weight: 750;
 }
 
-.strategyText small {
+.signalText small {
   color: #71717a;
   font-size: 11px;
   margin-top: 4px;
 }
 
-.noStrategy {
+.noSignal {
   color: #71717a;
   font-size: 12px;
   padding: 20px 8px;
@@ -128,13 +128,13 @@
   min-width: 0;
 }
 
-.strategyHeading {
+.signalHeading {
   align-items: baseline;
   display: flex;
   gap: 14px;
 }
 
-.strategyHeading span {
+.signalHeading span {
   color: #71717a;
   font-size: 12px;
   overflow: hidden;
@@ -197,11 +197,11 @@
     grid-template-columns: 1fr;
   }
 
-  .strategySidebar {
+  .signalSidebar {
     min-height: auto;
   }
 
-  .strategyList {
+  .signalList {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 }

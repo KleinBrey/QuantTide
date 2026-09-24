@@ -62,11 +62,11 @@ class BacktestConfig:
 
     # 交易账户
     # 回测初始资金，单位为元。
-    initial_cash: float = 1_000_000.0
+    initial_cash: float = 1_000_000_000_000.0
     # 账户允许同时持有的最大股票数量。
-    max_positions: int = 20
-    # 单只股票的建仓金额最多占买入前账户总权益的 5%。
-    max_position_pct: float = 0.05
+    max_positions: int = 100
+    # 单只股票的建仓金额最多占买入前账户总权益的 1%。
+    max_position_pct: float = 0.01
     # 每手股票的股数，买入数量按此整数倍向下取整。
     lot_size: int = 100
     # 买卖佣金费率，使用小数表示，例如 0.0003 代表万分之三。

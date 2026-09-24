@@ -1,9 +1,8 @@
-"""最新交易日情绪反转策略实现。
+"""识别最新交易日成交量 2 倍放量突破信号。
 
 总市值大于100亿,ST股除外,科创板除外,北交所除外,
-前一交易日涨跌幅：-5% ~ 0%
-最新交易日高开幅度：> 3%
-最新交易日涨幅：≥ 3%
+最新交易日涨幅大于0,
+最新交易日成交量 / 前10个交易日均成交量 >= 2,
 按现在个股热度排序
 
 """
@@ -25,7 +24,6 @@ from backend.app.repository import (
 )
 
 console = Console()
-PCT_EPSILON = 1e-12
 
 # 让中文对齐正确
 pd.set_option("display.unicode.east_asian_width", True)
@@ -37,10 +35,10 @@ pd.set_option("display.unicode.ambiguous_as_wide", True)
 INDICATOR_COLUMNS = [
     "symbol",
     "latest_date",
-    "latest_open",
     "latest_close",
-    "previous_1d_pct",
-    "latest_open_gap_pct",
+    "latest_volume",
+    "previous_10d_avg_volume",
+    "volume_ratio",
     "latest_1d_pct",
 ]
 
@@ -51,10 +49,10 @@ RESULT_COLUMNS = [
     "exchange",
     "market_cap",
     "latest_date",
-    "latest_open",
     "latest_close",
-    "previous_1d_pct",
-    "latest_open_gap_pct",
+    "latest_volume",
+    "previous_10d_avg_volume",
+    "volume_ratio",
     "latest_1d_pct",
     "hot_rank",
     "hot_value",
@@ -87,31 +85,32 @@ def load_market_data() -> tuple[
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数"""
+class PatternConfig:
+    """形态识别参数。"""
 
-    # 最小市值 100亿（策略要求严格大于）
+    # 最小市值 100 亿（信号条件要求严格大于）。
     min_market_cap: float = 10_000_000_000
-    # 前一交易日涨跌幅范围（含边界）
-    min_previous_return_1d_pct: float = -0.05
-    max_previous_return_1d_pct: float = 0.0
-    # 最新交易日高开幅度严格大于 3%
-    min_open_gap_pct: float = 0.03
-    # 最新交易日涨幅大于等于 3%
-    min_return_1d_pct: float = 0.03
+    # 最新1个交易日的成交量
+    recent_volume_days: int = 1
+    # 前10个交易日的成交量
+    previous_volume_days: int = 10
+    # 最新交易日成交量/前10个交易日均成交量大于等于2
+    min_volume_ratio: float = 2.0
+    # 最新交易日涨幅大于0
+    min_return_1d_pct: float = 0.0
 
     @property
     def required_trading_days(self) -> int:
-        # 计算昨日涨跌幅需要最近 3 个交易日的数据
-        return 3
+        # 一共需要11天的数据
+        return self.recent_volume_days + self.previous_volume_days
 
 
-class TodayEmotionReversalStrategy:
+class TodayVolumeBreakoutPattern:
 
     def __init__(self):
-        self.config = StrategyConfig()
+        self.config = PatternConfig()
 
-    def select(
+    def scan(
         self,
         stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
@@ -122,11 +121,6 @@ class TodayEmotionReversalStrategy:
 
         if stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
-
-        # 获取最新历史交易日
-        latest_trade_date = (
-            pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y%m%d")
-        )
 
         # 合并股票市值动态字段
         stocks = self.merge_stock_basic(stocks, stock_daily_basic)
@@ -140,10 +134,8 @@ class TodayEmotionReversalStrategy:
 
         # 筛选过滤排序
         result = stocks.merge(daily_bars, on="symbol", how="inner")
-        result = result[result["latest_date"] == pd.to_datetime(latest_trade_date)]
-        result = self._filter_previous_return(result)
-        result = self._filter_open_gap(result)
-        result = self._filter_latest_return(result)
+        result = self._filter_volume_ratio(result)
+        result = self._filter_return(result)
         return self._sort_filter_by_hot(result, hot_stocks)
 
     @staticmethod
@@ -183,19 +175,22 @@ class TodayEmotionReversalStrategy:
         bars = bars[bars["symbol"].isin(symbols)]
         # 格式化
         bars["trade_date"] = pd.to_datetime(bars["trade_date"], errors="coerce")
-        bars["open"] = pd.to_numeric(bars["open"], errors="coerce")
         bars["close"] = pd.to_numeric(bars["close"], errors="coerce")
+        bars["volume"] = pd.to_numeric(bars["volume"], errors="coerce")
         # 去空
-        bars = bars.dropna(subset=["trade_date", "open", "close"])
-        bars = bars[(bars["open"] > 0) & (bars["close"] > 0)]
+        bars = bars.dropna(subset=["trade_date", "close", "volume"])
+        bars = bars[(bars["close"] > 0) & (bars["volume"] > 0)]
 
         return bars
 
     def calculate_indicators(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """计算前一日涨幅、最新交易日高开幅度和涨幅。"""
+        """计算最新交易日量比和涨幅。"""
 
         rows: list[dict[str, object]] = []
+        # 一共需要11个交易日
         required_days = self.config.required_trading_days
+        # 最新1个交易日
+        recent_days = self.config.recent_volume_days
 
         for symbol, symbol_bars in bars.groupby("symbol", sort=False):
             window = (
@@ -206,54 +201,41 @@ class TodayEmotionReversalStrategy:
             if len(window) < required_days:
                 continue
 
-            before_previous = window.iloc[-3]
-            previous = window.iloc[-2]
-            latest = window.iloc[-1]
+            # 从0到倒数第1条数据，获取前10日数据
+            previous = window.iloc[:-recent_days]
+            # 取最后1条数据，获取最新交易日数据
+            recent = window.iloc[-recent_days:]
 
-            previous_1d_pct = previous["close"] / before_previous["close"] - 1
-            latest_open_gap_pct = latest["open"] / previous["close"] - 1
-            latest_1d_pct = latest["close"] / previous["close"] - 1
+            previous_avg_volume = previous["volume"].mean()
+            latest_volume = recent["volume"].iloc[-1]
+            volume_ratio = latest_volume / previous_avg_volume
+
+            recent_1d_pct = window["close"] / window["close"].shift(1) - 1
+            latest_1d_pct = recent_1d_pct.iloc[-1]
 
             rows.append(
                 {
                     "symbol": symbol,
-                    "latest_date": latest["trade_date"],
-                    "latest_open": latest["open"],
-                    "latest_close": latest["close"],
-                    "previous_1d_pct": previous_1d_pct,
-                    "latest_open_gap_pct": latest_open_gap_pct,
+                    "latest_date": recent["trade_date"].iloc[-1],
+                    "latest_close": recent["close"].iloc[-1],
+                    "latest_volume": latest_volume,
+                    "previous_10d_avg_volume": previous_avg_volume,
+                    "volume_ratio": volume_ratio,
                     "latest_1d_pct": latest_1d_pct,
                 }
             )
 
         return pd.DataFrame(rows, columns=INDICATOR_COLUMNS)
 
-    def _filter_previous_return(self, result: pd.DataFrame) -> pd.DataFrame:
-        """保留前一交易日涨跌幅在 -5% 到 0% 之间的股票。"""
+    def _filter_volume_ratio(self, result: pd.DataFrame) -> pd.DataFrame:
+        """保留最新成交量至少是此前 10 日均量 2 倍的股票。"""
 
-        return result[
-            result["previous_1d_pct"].between(
-                self.config.min_previous_return_1d_pct - PCT_EPSILON,
-                self.config.max_previous_return_1d_pct + PCT_EPSILON,
-                inclusive="both",
-            )
-        ]
+        return result[result["volume_ratio"] >= self.config.min_volume_ratio]
 
-    def _filter_open_gap(self, result: pd.DataFrame) -> pd.DataFrame:
-        """保留最新交易日高开幅度严格大于 3% 的股票。"""
+    def _filter_return(self, result: pd.DataFrame) -> pd.DataFrame:
+        """保留最新交易日涨幅大于 0 的股票。"""
 
-        return result[
-            result["latest_open_gap_pct"]
-            > self.config.min_open_gap_pct + PCT_EPSILON
-        ]
-
-    def _filter_latest_return(self, result: pd.DataFrame) -> pd.DataFrame:
-        """保留最新交易日涨幅大于等于 3% 的股票。"""
-
-        return result[
-            result["latest_1d_pct"]
-            >= self.config.min_return_1d_pct - PCT_EPSILON
-        ]
+        return result[result["latest_1d_pct"] > self.config.min_return_1d_pct]
 
     @staticmethod
     def _sort_filter_by_hot(
@@ -274,16 +256,16 @@ class TodayEmotionReversalStrategy:
         )
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
 ) -> pd.DataFrame:
-    """供 API 调用的策略入口。"""
+    """供信号 API 调用的形态识别入口。"""
 
-    return TodayEmotionReversalStrategy().select(
+    return TodayVolumeBreakoutPattern().scan(
         stocks,
         daily_bars,
         hot_stocks,
@@ -299,7 +281,7 @@ if __name__ == "__main__":
             pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y-%m-%d")
         )
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
-        selected_stocks = TodayEmotionReversalStrategy().select(
+        selected_stocks = TodayVolumeBreakoutPattern().scan(
             stocks,
             daily_bars,
             hot_stocks,
@@ -307,13 +289,11 @@ if __name__ == "__main__":
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:
-        print("没有股票符合策略条件")
+        print("没有股票符合信号条件")
     else:
         # 不显示整列为空的可选字段（例如当前数据没有 heat）。
         display = selected_stocks.dropna(axis="columns", how="all")
         display["market_cap"] = (display["market_cap"] / 1e8).round(2)
-        display["previous_1d_pct"] = display["previous_1d_pct"] * 100
-        display["latest_open_gap_pct"] = display["latest_open_gap_pct"] * 100
         display["latest_1d_pct"] = display["latest_1d_pct"] * 100
         console.print(
             display[
@@ -321,8 +301,9 @@ if __name__ == "__main__":
                     "symbol",
                     "name",
                     "market_cap",
-                    "previous_1d_pct",
-                    "latest_open_gap_pct",
+                    "latest_volume",
+                    "previous_10d_avg_volume",
+                    "volume_ratio",
                     "latest_1d_pct",
                     "hot_rank",
                 ]
@@ -331,8 +312,9 @@ if __name__ == "__main__":
                     "symbol": "股票代码",
                     "name": "股票名称",
                     "market_cap": "市值(亿)",
-                    "previous_1d_pct": "前一交易日涨跌幅(%)",
-                    "latest_open_gap_pct": "最新交易日高开幅度(%)",
+                    "latest_volume": "最新交易日成交量",
+                    "previous_10d_avg_volume": "前10日均量",
+                    "volume_ratio": "量比",
                     "latest_1d_pct": "最新交易日涨幅(%)",
                     "hot_rank": "热度排名",
                 }

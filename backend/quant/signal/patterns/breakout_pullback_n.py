@@ -1,4 +1,4 @@
-"""强势突破后缩量回调，再放量上涨企稳的选股策略。"""
+"""识别强势突破后缩量回调，再放量上涨企稳的选股信号。"""
 
 from __future__ import annotations
 
@@ -56,8 +56,8 @@ RESULT_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数"""
+class PatternConfig:
+    """形态识别参数。"""
 
     # 突破前高的观察天数。
     prior_high_days: int = 20
@@ -86,7 +86,7 @@ class StrategyConfig:
         return self.prior_high_days + self.breakout_days + self.max_pullback_days + 1
 
 
-DEFAULT_CONFIG = StrategyConfig()
+DEFAULT_CONFIG = PatternConfig()
 
 
 def load_market_data() -> tuple[
@@ -107,7 +107,7 @@ def load_market_data() -> tuple[
 
 def find_latest_signal(
     bars: pd.DataFrame,
-    config: StrategyConfig,
+    config: PatternConfig,
 ) -> dict[str, object] | None:
     """判断单只股票的最新交易日是否完成三阶段形态。"""
 
@@ -189,9 +189,9 @@ def find_latest_signal(
     return None
 
 
-def run_strong_breakout_pullback_strategy(
+def detect_strong_breakout_pullback(
     df: pd.DataFrame,
-    config: StrategyConfig = DEFAULT_CONFIG,
+    config: PatternConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """按股票分组，返回最新交易日形成放量企稳信号的股票。"""
 
@@ -226,20 +226,20 @@ def run_strong_breakout_pullback_strategy(
     return result[result["date"] == bars["date"].max()].reset_index(drop=True)
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
-    config: StrategyConfig = DEFAULT_CONFIG,
+    config: PatternConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """计算最新交易日的突破回调企稳信号。"""
 
     if daily_bars.empty:
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
-    signals = run_strong_breakout_pullback_strategy(
+    signals = detect_strong_breakout_pullback(
         daily_bars.rename(columns={"trade_date": "date"}),
         config=config,
     ).rename(
@@ -280,13 +280,13 @@ def run_strategy(
 
 
 if __name__ == "__main__":
-    with console.status("[bold green]正在读取本地数据并计算突破回调策略..."):
+    with console.status("[bold green]正在读取本地数据并识别突破回调信号..."):
         stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
         )
-        selected_stocks = run_strategy(
+        selected_stocks = run_signal(
             stocks=stocks,
             daily_bars=daily_bars,
             hot_stocks=hot_stocks,
@@ -294,7 +294,7 @@ if __name__ == "__main__":
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
-    console.print("[green]✓ 策略计算完成[/green]")
+    console.print("[green]✓ 信号识别完成[/green]")
 
     if selected_stocks.empty:
         console.print("[yellow]当前交易日没有突破回调企稳信号。[/yellow]")

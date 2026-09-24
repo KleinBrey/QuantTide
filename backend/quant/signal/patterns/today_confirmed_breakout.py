@@ -1,13 +1,12 @@
-"""前一交易日放量突破、当前交易日小阳线确认策略。
+"""识别前一交易日放量突破、当前交易日小阳线确认形态。
 
-策略分为两个阶段：
+信号分为两个阶段：
 
 1. 突破日（确认日之前最近一个全市场交易日）：放量、收涨、短期涨幅有限、
    20 日线在 10 日线之上、离 20 日低点不远；
-2. 确认日：小阳线、影线受控、量能保持，并生成入场与风控价格。
+2. 确认日：小阳线、影线受控、量能保持。
 
-`select`（单日）与 `select_range`（多日）共用同一条向量化流水线：
-`select` 只是 `select_range` 传入一个日期的特例，因此两者不会再出现口径不一致。
+`scan`（单日）与 `scan_range`（多日）共用同一条向量化流水线。
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ console = Console()
 
 DateLike = Union[date, str, pd.Timestamp]
 
-# 策略最终向 API 和回测引擎暴露的字段。
+# 形态识别最终向信号 API 暴露的字段，不包含买卖规则。
 RESULT_COLUMNS = [
     "symbol",
     "name",
@@ -49,19 +48,11 @@ RESULT_COLUMNS = [
     "confirm_upper_wick_ratio",
     "confirm_volume_ratio",
     "confirm_close",
-    "stop_loss_price",
-    "take_profit_price",
-    "risk_per_share",
+    "breakout_prev_close",
     "hot_rank",
     "hot_value",
     "selection_rank",
 ]
-
-# find_exits 返回的字段。
-EXIT_COLUMNS = ["symbol", "entry_date", "exit_date", "exit_reason", "exit_close"]
-
-EXIT_REASON_CLOSE_DROP = "close_drop"
-EXIT_REASON_DECLINE_STREAK = "decline_streak"
 
 # 突破日需要从行情表带出的列。
 _BREAKOUT_SOURCE_COLUMNS = [
@@ -81,8 +72,8 @@ _BREAKOUT_SOURCE_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数。比例一律用小数表示，0.03 代表 3%。"""
+class PatternConfig:
+    """形态识别参数。比例一律用小数表示，0.03 代表 3%。"""
 
     # ---- 突破日条件 ----
     # 总市值必须大于该值（元）。
@@ -112,16 +103,6 @@ class StrategyConfig:
     max_confirm_upper_wick_ratio: float = 0.4
     # 确认日成交量至少保留突破日成交量的比例。
     min_confirm_volume_ratio: float = 0.70
-    # 止盈距离为每股风险的倍数（盈亏比）。
-    risk_reward_ratio: float = 2.0
-
-    # ---- 卖出条件（收盘后判断，见 find_exits）----
-    # 当日收盘价较前一交易日收盘价跌幅严格大于该值时卖出。
-    previous_close_decline_exit_pct: float = 0.05
-    # 连续 N 个交易日的当日跌幅（相对前收）严格大于阈值时卖出。
-    consecutive_decline_day_count: int = 3
-    consecutive_decline_pct: float = 0.02
-
     @property
     def warmup_days(self) -> int:
         """计算一个突破信号所需的最少历史交易日数量。"""
@@ -139,16 +120,16 @@ def _empty_result() -> pd.DataFrame:
     return pd.DataFrame(columns=RESULT_COLUMNS)
 
 
-class TodayConfirmedBreakoutStrategy:
-    """先找前一交易日突破股，再用确认日 K 线二次确认。"""
+class TodayConfirmedBreakoutPattern:
+    """先找前一交易日突破股，再用确认日 K 线识别确认信号。"""
 
-    def __init__(self, config: StrategyConfig | None = None) -> None:
-        self.config = config or StrategyConfig()
+    def __init__(self, config: PatternConfig | None = None) -> None:
+        self.config = config or PatternConfig()
 
     # ------------------------------------------------------------------
     # 公共入口
     # ------------------------------------------------------------------
-    def select(
+    def scan(
         self,
         trade_date: DateLike,
         stocks: pd.DataFrame,
@@ -159,8 +140,8 @@ class TodayConfirmedBreakoutStrategy:
         """返回在 trade_date 当天通过二次确认的股票。"""
 
         # 实盘/命令行通常只有“最新”市值快照，允许在没有历史匹配时回退到最新值；
-        # 回测（select_range）默认不回退，避免使用未来市值。
-        return self.select_range(
+        # 历史扫描（scan_range）默认不回退，避免使用未来市值。
+        return self.scan_range(
             [trade_date],
             stocks,
             daily_bars,
@@ -169,7 +150,7 @@ class TodayConfirmedBreakoutStrategy:
             latest_market_cap_fallback=True,
         )
 
-    def select_range(
+    def scan_range(
         self,
         trade_dates: Iterable[DateLike],
         stocks: pd.DataFrame,
@@ -411,7 +392,7 @@ class TodayConfirmedBreakoutStrategy:
         )
 
     def _apply_confirmation(self, rows: pd.DataFrame) -> pd.DataFrame:
-        """检查小阳线、影线与量能，并生成止损、止盈和每股风险。"""
+        """检查小阳线、影线与量能。"""
 
         cfg = self.config
         # 振幅是两个影线比例的分母；非正振幅置为 NaN，使后续比较自然为 False。
@@ -438,94 +419,7 @@ class TodayConfirmedBreakoutStrategy:
             & (rows["confirm_upper_wick_ratio"] <= cfg.max_confirm_upper_wick_ratio)
             & (rows["confirm_volume_ratio"] >= cfg.min_confirm_volume_ratio)
         )
-        rows = rows[mask].copy()
-
-        # 止损价 = 突破日前收盘价；入场价 = 确认日收盘价。
-        rows["stop_loss_price"] = rows["breakout_prev_close"]
-        rows["risk_per_share"] = rows["confirm_close"] - rows["stop_loss_price"]
-        # 非正风险说明价格关系不成立。
-        rows = rows[rows["risk_per_share"] > 0].copy()
-        rows["take_profit_price"] = (
-            rows["confirm_close"] + rows["risk_per_share"] * cfg.risk_reward_ratio
-        )
-        return rows
-
-    # ------------------------------------------------------------------
-    # 卖出阶段
-    # ------------------------------------------------------------------
-    def find_exits(
-        self,
-        positions: pd.DataFrame,
-        daily_bars: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """为每笔持仓找出第一个触发卖出条件的交易日（收盘判断）。
-
-        positions 需包含 symbol、entry_date（即 select 结果里的 confirm_date）。
-        只检查入场日之后的 K 线：连续下跌只统计入场后的交易日。
-        没有触发卖出的持仓不出现在结果中；实盘时若 exit_date 等于最新交易日，即今日应卖出。
-        两个条件同日触发时，原因记为 close_drop。
-        """
-
-        cfg = self.config
-        if positions.empty or daily_bars.empty:
-            return pd.DataFrame(columns=EXIT_COLUMNS)
-
-        held = positions[["symbol", "entry_date"]].copy()
-        held["entry_date"] = pd.to_datetime(held["entry_date"]).dt.normalize()
-        held = held.drop_duplicates()
-
-        # 复用与选股相同的行情清洗。
-        bars = self._clean_bars(self._normalize_bars(daily_bars), held["symbol"])
-        if bars.empty:
-            return pd.DataFrame(columns=EXIT_COLUMNS)
-
-        # 前收盘价必须在全量行情上算，这样入场后第一根 K 线也能取到入场日收盘价。
-        grouped = bars.groupby("symbol", sort=False, observed=True)
-        bars["daily_decline_pct"] = 1 - bars["close"] / grouped["close"].shift(1)
-
-        keys = ["symbol", "entry_date"]
-        rows = held.merge(
-            bars[
-                [
-                    "symbol",
-                    "trade_date",
-                    "close",
-                    "daily_decline_pct",
-                ]
-            ],
-            on="symbol",
-            how="inner",
-        )
-        rows = rows[rows["trade_date"] > rows["entry_date"]].sort_values(
-            [*keys, "trade_date"], kind="stable"
-        )
-        if rows.empty:
-            return pd.DataFrame(columns=EXIT_COLUMNS)
-
-        # 条件 1：单日跌幅超过阈值。
-        close_drop = rows["daily_decline_pct"] > cfg.previous_close_decline_exit_pct
-
-        # 条件 2：连续 N 个交易日的当日跌幅窗口最小值仍超过阈值。
-        count = cfg.consecutive_decline_day_count
-        weakest_decline = (
-            rows.groupby(keys, sort=False)["daily_decline_pct"]
-            .rolling(count, min_periods=count)
-            .min()
-            .reset_index(level=[0, 1], drop=True)
-        )
-        decline_streak = weakest_decline > cfg.consecutive_decline_pct
-
-        rows["exit_reason"] = None
-        rows.loc[decline_streak, "exit_reason"] = EXIT_REASON_DECLINE_STREAK
-        rows.loc[close_drop, "exit_reason"] = EXIT_REASON_CLOSE_DROP
-
-        exits = (
-            rows[rows["exit_reason"].notna()]
-            .groupby(keys, sort=False)
-            .head(1)
-            .rename(columns={"trade_date": "exit_date", "close": "exit_close"})
-        )
-        return exits[EXIT_COLUMNS].reset_index(drop=True)
+        return rows[mask].copy()
 
     # ------------------------------------------------------------------
     # 市值与热度
@@ -631,18 +525,14 @@ def load_market_data() -> tuple[
 
     database = DuckDBDatabase()
     return (
-        # 股票静态信息：名称、交易所、板块等。
         StockRepository(database).get_table_data(),
-        # 全量日 K，用于突破和确认两个阶段。
         DailyBarRepository(database).get_table_data(),
-        # 命令行运行使用最新热度快照。
         StockHotDailyRepository(database).get_latest(),
-        # 动态基础信息，当前策略使用其中的总市值。
         StockDailyBasicRepository(database).get_latest_data(),
     )
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
@@ -650,21 +540,25 @@ def run_strategy(
     stock_daily_basic: pd.DataFrame,
     trade_date: DateLike | None = None,
 ) -> pd.DataFrame:
-    """供策略 API 调用；未指定日期时使用最新交易日。"""
+    """识别放量突破次日确认信号；未指定日期时使用最新交易日。"""
 
     trade_date = trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
-    return TodayConfirmedBreakoutStrategy().select(
-        trade_date, stocks, daily_bars, hot_stocks, stock_daily_basic
+    return TodayConfirmedBreakoutPattern().scan(
+        trade_date,
+        stocks,
+        daily_bars,
+        hot_stocks,
+        stock_daily_basic,
     )
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="运行放量突破次日确认策略")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="识别放量突破次日确认信号")
     parser.add_argument("--trade-date", help="确认日期，例如 2025-09-11")
     args = parser.parse_args()
 
     stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
-    selected = run_strategy(
+    selected = run_signal(
         stocks=stocks,
         daily_bars=daily_bars,
         hot_stocks=hot_stocks,
@@ -675,21 +569,24 @@ if __name__ == "__main__":
 
     console.rule(f"确认交易日：{pd.Timestamp(trade_date):%Y-%m-%d}")
     if selected.empty:
-        console.print("没有股票满足确认条件")
-    else:
-        console.print(
-            selected[
-                [
-                    "symbol",
-                    "name",
-                    "breakout_date",
-                    "confirm_date",
-                    "breakout_volume_ratio",
-                    "confirm_volume_ratio",
-                    "confirm_close",
-                    "stop_loss_price",
-                    "take_profit_price",
-                ]
+        console.print("没有股票满足确认形态")
+        return
+
+    console.print(
+        selected[
+            [
+                "symbol",
+                "name",
+                "breakout_date",
+                "confirm_date",
+                "breakout_volume_ratio",
+                "confirm_volume_ratio",
+                "confirm_close",
             ]
-        )
-        console.print(f"共筛选出 {len(selected)} 只股票")
+        ]
+    )
+    console.print(f"共识别出 {len(selected)} 个信号")
+
+
+if __name__ == "__main__":
+    main()

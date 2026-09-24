@@ -16,7 +16,7 @@ import style from './Sidebar.module.css';
 
 const iconById = {
   'hot-rankings': Flame,
-  'strategy-signals': ChartNoAxesCombined,
+  signals: ChartNoAxesCombined,
   'strategy-backtests': History,
   'a-share-market': ChartCandlestick,
   'hk-share-market': ChartCandlestick,

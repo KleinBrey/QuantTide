@@ -1,6 +1,6 @@
-"""二次反弹到前高后的做空信号策略。
+"""识别二次反弹到前高后的做空信号。
 
-策略只识别信号，不执行交易：
+本模块只识别信号，不执行交易：
 
     前高 -> 明显回落 -> 第二次反弹到前高 -> 放量拒绝 K 线 -> 下跌跟随
 
@@ -61,8 +61,8 @@ RESULT_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数"""
+class PatternConfig:
+    """形态识别参数。"""
 
     peak_lookback_days: int = 60
     peak_min_gap_days: int = 10
@@ -82,7 +82,7 @@ class StrategyConfig:
     min_amount: float = 200_000
 
 
-DEFAULT_CONFIG = StrategyConfig()
+DEFAULT_CONFIG = PatternConfig()
 
 
 def load_market_data() -> tuple[
@@ -129,7 +129,7 @@ def _rolling_by_symbol(
 
 def calculate_indicators(
     df: pd.DataFrame,
-    config: StrategyConfig,
+    config: PatternConfig,
 ) -> pd.DataFrame:
     """原地计算前高、二次反弹、拒绝 K 线和跟随信号。"""
 
@@ -234,9 +234,9 @@ def calculate_indicators(
     return result
 
 
-def run_second_rebound_short_strategy(
+def detect_second_rebound_short(
     df: pd.DataFrame,
-    config: StrategyConfig = DEFAULT_CONFIG,
+    config: PatternConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """按股票分组计算二次冲高做空信号。"""
 
@@ -281,20 +281,20 @@ def latest_confirmed_signals(signals: pd.DataFrame) -> pd.DataFrame:
     return latest
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
-    config: StrategyConfig = DEFAULT_CONFIG,
+    config: PatternConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """返回最新交易日得到下跌跟随确认的高位做空信号。"""
 
     if daily_bars.empty:
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
-    signals = run_second_rebound_short_strategy(
+    signals = detect_second_rebound_short(
         daily_bars.rename(columns={"trade_date": "date"}),
         config=config,
     )
@@ -338,13 +338,13 @@ def run_strategy(
 
 
 if __name__ == "__main__":
-    with console.status("[bold green]正在读取本地数据并计算二次冲高做空策略..."):
+    with console.status("[bold green]正在读取本地数据并识别二次冲高做空信号..."):
         stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
         )
-        selected_stocks = run_strategy(
+        selected_stocks = run_signal(
             stocks=stocks,
             daily_bars=daily_bars,
             hot_stocks=hot_stocks,
@@ -352,7 +352,7 @@ if __name__ == "__main__":
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
-    console.print("[green]✓ 策略计算完成[/green]")
+    console.print("[green]✓ 信号识别完成[/green]")
 
     if selected_stocks.empty:
         console.print("[yellow]当前交易日没有二次冲高做空确认信号。[/yellow]")

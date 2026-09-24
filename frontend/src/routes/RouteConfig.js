@@ -9,10 +9,10 @@ export const dashboardGroups = [
         description: '同花顺官方热股、飙升与涨停榜'
       },
       {
-        id: 'strategy-signals',
-        path: '/strategy-signals',
-        title: '策略信号',
-        description: 'Python 量化策略与最新选股信号'
+        id: 'signals',
+        path: '/signals',
+        title: '选股信号',
+        description: 'Python 量化策略生成的最新选股信号'
       },
       {
         id: 'strategy-backtests',

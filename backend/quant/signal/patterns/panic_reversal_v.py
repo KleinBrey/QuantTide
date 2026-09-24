@@ -1,4 +1,4 @@
-"""均线空头排列的近期放量策略。
+"""识别均线空头排列后的恐慌反转信号。
 
 总市值大于 100 亿，排除 ST、科创板和北交所股票；
 最新交易日满足 20 日线大于 10 日线、10 日线大于 5 日线；
@@ -79,8 +79,8 @@ def load_market_data() -> tuple[
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数。"""
+class PatternConfig:
+    """形态识别参数。"""
 
     # 最小市值 100 亿，筛选时使用严格大于。
     min_market_cap: float = 10_000_000_000
@@ -96,11 +96,11 @@ class StrategyConfig:
         return self.recent_volume_days + self.previous_volume_days
 
 
-class PanicReversalVStrategy:
+class PanicReversalVPattern:
     def __init__(self) -> None:
-        self.config = StrategyConfig()
+        self.config = PatternConfig()
 
-    def select(
+    def scan(
         self,
         stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
@@ -231,16 +231,16 @@ class PanicReversalVStrategy:
         )
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
 ) -> pd.DataFrame:
-    """供 API 调用的策略入口。"""
+    """供信号 API 调用的形态识别入口。"""
 
-    return PanicReversalVStrategy().select(
+    return PanicReversalVPattern().scan(
         stocks,
         daily_bars,
         hot_stocks,
@@ -249,13 +249,13 @@ def run_strategy(
 
 
 if __name__ == "__main__":
-    with console.status("[bold green]正在读取本地数据并计算策略..."):
+    with console.status("[bold green]正在读取本地数据并识别恐慌反转信号..."):
         stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
         )
-        selected_stocks = PanicReversalVStrategy().select(
+        selected_stocks = PanicReversalVPattern().scan(
             stocks,
             daily_bars,
             hot_stocks,
@@ -263,10 +263,10 @@ if __name__ == "__main__":
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
-    console.print("[green]✓ 策略计算完成[/green]")
+    console.print("[green]✓ 信号识别完成[/green]")
 
     if selected_stocks.empty:
-        console.print("[yellow]没有股票符合策略条件。[/yellow]")
+        console.print("[yellow]没有股票符合信号条件。[/yellow]")
     else:
         display = selected_stocks.copy()
         display["market_cap"] = (display["market_cap"] / 1e8).round(2)

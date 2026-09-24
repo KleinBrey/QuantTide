@@ -1,4 +1,4 @@
-"""最近 5 日成交量 1.5 倍放量突破策略实现。
+"""识别最近 5 日成交量 1.5 倍放量突破信号。
 
 总市值大于100亿,ST股除外,科创板除外,北交所除外,
 最近5个交易日均成交量 / 最近5个交易日前20个交易日均成交量 >= 1.5,
@@ -87,8 +87,8 @@ def load_market_data() -> tuple[
 
 
 @dataclass(frozen=True, slots=True)
-class StrategyConfig:
-    """策略参数"""
+class PatternConfig:
+    """形态识别参数。"""
 
     # 最小市值 100亿
     min_market_cap: float = 10_000_000_000
@@ -107,12 +107,12 @@ class StrategyConfig:
         return self.recent_volume_days + self.previous_volume_days
 
 
-class VolumeBreakoutStrategy:
+class VolumeBreakoutPattern:
 
     def __init__(self):
-        self.config = StrategyConfig()
+        self.config = PatternConfig()
 
-    def select(
+    def scan(
         self,
         stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
@@ -269,16 +269,16 @@ class VolumeBreakoutStrategy:
         )
 
 
-def run_strategy(
+def run_signal(
     *,
     stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
 ) -> pd.DataFrame:
-    """供 API 调用的策略入口。"""
+    """供信号 API 调用的形态识别入口。"""
 
-    return VolumeBreakoutStrategy().select(
+    return VolumeBreakoutPattern().scan(
         stocks,
         daily_bars,
         hot_stocks,
@@ -294,7 +294,7 @@ if __name__ == "__main__":
             pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y-%m-%d")
         )
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
-        selected_stocks = VolumeBreakoutStrategy().select(
+        selected_stocks = VolumeBreakoutPattern().scan(
             stocks,
             daily_bars,
             hot_stocks,
@@ -302,7 +302,7 @@ if __name__ == "__main__":
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:
-        print("没有股票符合策略条件")
+        print("没有股票符合信号条件")
     else:
         # 不显示整列为空的可选字段（例如当前数据没有 heat）。
         display = selected_stocks.dropna(axis="columns", how="all")

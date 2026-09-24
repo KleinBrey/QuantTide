@@ -4,7 +4,7 @@ import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import moment from 'moment';
 import { getDailyBarsApi } from '@/api/quantide/api.js';
 import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
-import styles from './StrategyResultsTable.module.css';
+import styles from './SignalResultsTable.module.css';
 import { transformHistory } from '../utils/tableColumns.jsx';
 
 const modules = [ClientSideRowModelModule, CellStyleModule];
@@ -12,7 +12,7 @@ const themeDark = themeQuartz.withPart(colorSchemeDark).withParams({ backgroundC
 const KLINE_ROW_HEIGHT = 586;
 const historyCache = new Map();
 
-function useStrategyStockKline() {
+function useSignalStockKline() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -58,10 +58,10 @@ function useStrategyStockKline() {
   return { data, loading, error, loadKline };
 }
 
-function StrategyKlineRow({ data }) {
+function SignalKlineRow({ data }) {
   const stock = data.stock;
   const [period, setPeriod] = useState('daily');
-  const { data: klineData, loading, error, loadKline } = useStrategyStockKline();
+  const { data: klineData, loading, error, loadKline } = useSignalStockKline();
 
   useEffect(() => {
     loadKline(stock.symbol);
@@ -95,7 +95,7 @@ function keepKlineRowsWithStocks({ nodes }) {
   });
 }
 
-export default function StrategyResultsTable({ columnDefs, rows, loading }) {
+export default function SignalResultsTable({ columnDefs, rows, loading }) {
   const rowData = useMemo(
     () =>
       rows.flatMap((row, index) => {
@@ -117,12 +117,12 @@ export default function StrategyResultsTable({ columnDefs, rows, loading }) {
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ resizable: true, sortable: true }}
-          fullWidthCellRenderer={StrategyKlineRow}
+          fullWidthCellRenderer={SignalKlineRow}
           getRowHeight={params => (params.data?.rowType === 'kline' ? KLINE_ROW_HEIGHT : undefined)}
           getRowId={params => params.data.rowId}
           isFullWidthRow={params => params.rowNode.data?.rowType === 'kline'}
           loading={loading}
-          overlayNoRowsTemplate="<span>当前策略暂无命中股票</span>"
+          overlayNoRowsTemplate="<span>当前信号暂无命中股票</span>"
           postSortRows={keepKlineRowsWithStocks}
           suppressCellFocus
         />

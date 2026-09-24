@@ -31,18 +31,18 @@ from backend.app.repository import (
 )
 from backend.app.schemas import DailyBar, HotStock, GlobalStock, Stock
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
-from backend.quant.strategy.registry import (
-    STRATEGY_EXECUTORS,
-    execute_strategy,
-    find_strategy,
-    strategy_list,
+from backend.quant.signal.registry import (
+    SIGNAL_EXECUTORS,
+    execute_signal,
+    find_signal,
+    signal_list,
 )
 from backend.quant.backtest.engine import (
     BacktestConfig,
     ConfirmedVolumeBreakoutBacktest,
 )
 from backend.quant.backtest.result import format_backtest_result
-from backend.quant.strategy.result import format_strategy_result
+from backend.quant.signal.result import format_signal_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
 from backend.scripts.sync_daily_k_db import sync_daily_k
 from backend.scripts.sync_hot_stock_db import sync_stock_hot
@@ -351,43 +351,43 @@ def daily_bars(
     return records
 
 
-@router.get("/strategies")
-def strategies() -> dict[str, list[dict[str, object]]]:
-    """返回策略列表"""
+@router.get("/signals")
+def signals() -> dict[str, list[dict[str, object]]]:
+    """返回选股信号列表。"""
 
-    return {"items": strategy_list()}
+    return {"items": signal_list()}
 
 
-@router.get("/strategies/{strategy_id}/signals")
-def strategy_signals(
-    strategy_id: str,
+@router.get("/signals/{signal_id}")
+def signal_results(
+    signal_id: str,
     stock_repository: StockListRepository,
     daily_repository: DailyRepository,
     stock_daily_basic_repository: StockDailyBasicRepo,
     stock_hot_repository: StockHotRepository,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, object]:
-    """执行指定策略并返回结果"""
+    """运行指定形态识别器并返回命中结果。"""
 
-    if strategy_id not in STRATEGY_EXECUTORS:
-        raise HTTPException(status_code=404, detail="该策略不存在")
+    if signal_id not in SIGNAL_EXECUTORS:
+        raise HTTPException(status_code=404, detail="该信号不存在")
 
     try:
-        selected_stocks = execute_strategy(
-            strategy_id,
+        selected_stocks = execute_signal(
+            signal_id,
             stocks=stock_repository.get_table_data(),
             daily_bars=daily_repository.get_table_data(),
             hot_stocks=stock_hot_repository.get_latest(),
             stock_daily_basic=stock_daily_basic_repository.get_latest_data(),
         )
     except Exception as error:
-        logger.exception("执行策略 %s 失败", strategy_id)
+        logger.exception("执行信号 %s 失败", signal_id)
         raise HTTPException(
             status_code=500,
-            detail=f"策略执行失败：{error}",
+            detail=f"信号执行失败：{error}",
         ) from error
 
-    return format_strategy_result(strategy_id, selected_stocks, limit=limit)
+    return format_signal_result(signal_id, selected_stocks, limit=limit)
 
 
 @router.get("/backtests/confirmed_volume_breakout")
@@ -439,5 +439,5 @@ async def confirmed_volume_breakout_backtest(
 
     return format_backtest_result(
         result,
-        strategy=find_strategy("confirmed_volume_breakout"),
+        strategy=find_signal("confirmed_volume_breakout"),
     )

@@ -16,7 +16,7 @@ FastAPI / APScheduler / 命令行脚本
             │           │                         ▼
             └───────────┴────────────────── quant（纯量化计算）
                                                  │
-                                      因子 → 策略 → 结果
+                         因子计算 → 形态信号 → 交易策略 → 回测评估
 ```
 
 ## 应用目录
@@ -116,18 +116,26 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `quant/factor/`
 
-保存收益率、成交量、动量、波动率和技术指标等纯因子计算。统一入口
+职责仅限因子计算。保存收益率、成交量、动量、波动率和技术指标等纯计算。统一入口
 `calculate_basic_factors` 只接收 DataFrame，不访问数据库或外部数据源。
+
+### `quant/signal/`
+
+职责仅限形态识别与选股信号。保存信号实现、注册、展示配置和接口结果格式化。
+`patterns/` 下的每个文件
+负责识别一种信号形态，计算入口消费股票基础信息、日 K、市值和热度 DataFrame；
+文件的 `__main__` 入口会从 `app` 数据层读取本地数据，用于独立运行和查看结果。
+信号层不决定买入、卖出、止损或止盈。
+
+信号的名称、说明和规则集中配置在 `quant/signal/signals.json`。新增信号时，在该文件
+增加唯一 `id`，并在 `quant/signal/registry.py` 的 `SIGNAL_EXECUTORS` 中关联对应的
+`patterns/` 执行函数。
 
 ### `quant/strategy/`
 
-保存策略注册、结果格式化和具体策略实现。策略计算入口消费股票基础信息、日 K、
-市值和热度 DataFrame；每个实现文件的 `__main__` 入口会从 `app` 数据层读取本地数据，
-用于独立运行和查看结果。
-
-策略的名称、说明和规则集中配置在 `quant/strategy/strategies.json`。新增策略时，
-在该文件增加唯一 `id`，并在 `quant/strategy/registry.py` 的
-`STRATEGY_EXECUTORS` 中登记执行函数。
+职责仅限买卖规则与交易策略。当前 `today_confirmed_breakout.py` 提供
+`TodayConfirmedBreakoutStrategy`：它组合 `TodayConfirmedBreakoutPattern` 的识别结果，
+生成入场、止损和止盈价格，并统一提供退出规则；本层不负责账户撮合或绩效计算。
 
 ### `quant/stock/`
 
@@ -135,7 +143,9 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `quant/backtest/`
 
-保存 A 股日频回测 MVP，当前跑通 `confirmed_volume_breakout`：放量
+职责仅限模拟执行与绩效评估。`engine.py` 维护账户、仓位和成交，
+`signal_engine.py` 在无资金约束下独立评估每个交易候选，结果与指标计算分别放在
+`result.py` 和 `signal_result.py`。当前跑通 `confirmed_volume_breakout`：放量
 阳线后次日量能维持并收小阳线时，按确认日收盘价等权买入。止损价为放量
 突破日前一交易日的收盘价，止盈价为 2 倍盈亏比，从买入后下一交易日起执行。
 默认回测结束日期往前两个月、100 万初始资金、最多 10 只股票：
@@ -167,17 +177,17 @@ uv run python -m backend.scripts.sync_hot_stock_db
 
 上述脚本都位于外层 `backend/scripts/`，同步脚本会在写入前自动初始化数据库。
 
-每个策略实现文件都可以单独运行并查看本地结果，例如：
+每个信号形态入口都可以单独运行并查看本地结果，例如：
 
 ```bash
-uv run python -m backend.quant.strategy.implementations.breakout_pullback_n
-uv run python -m backend.quant.strategy.implementations.panic_reversal_v
-uv run python -m backend.quant.strategy.implementations.recent_volume_breakout
-uv run python -m backend.quant.strategy.implementations.today_confirmed_volume_breakout
-uv run python -m backend.quant.strategy.implementations.today_confirmed_volume_breakout --trade-date 2025-09-11
+uv run python -m backend.quant.signal.patterns.breakout_pullback_n
+uv run python -m backend.quant.signal.patterns.panic_reversal_v
+uv run python -m backend.quant.signal.patterns.recent_volume_breakout
+uv run python -m backend.quant.signal.patterns.today_confirmed_breakout
+uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-date 2025-09-11
 ```
 
-各策略文件分别保留自己的数据读取、Rich 终端展示和 `__main__` 入口。
+各信号形态入口分别保留自己的数据读取、Rich 终端展示和 `__main__` 入口。
 
 ## 命令入口
 
@@ -206,5 +216,7 @@ uv run quant-backtest
 | 增加定时任务 | `app/jobs/` |
 | 增加数据同步脚本 | `backend/scripts/` |
 | 增加因子 | `quant/factor/` |
-| 增加策略 | `quant/strategy/` |
+| 增加或调整选股信号 | `quant/signal/patterns/` 与 `quant/signal/` |
+| 增加或调整买卖规则、交易策略 | `quant/strategy/` |
+| 增加模拟执行或绩效评估 | `quant/backtest/` |
 | 增加股票池或通用过滤 | `quant/stock/` |
