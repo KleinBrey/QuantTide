@@ -23,6 +23,8 @@ from backend.app.repository import (
     StockRepository,
 )
 
+from backend.quant.stock import filter_stocks
+
 console = Console()
 
 # 让中文对齐正确
@@ -59,34 +61,9 @@ RESULT_COLUMNS = [
 ]
 
 
-def load_market_data() -> tuple[
-    pd.DataFrame,
-    pd.DataFrame,
-    pd.DataFrame,
-    pd.DataFrame,
-]:
-    """读取本地数据"""
-
-    database = DuckDBDatabase()
-
-    # 全部股票列表
-    stocks = StockRepository(database).get_table_data()
-
-    # 全部股票日线数据
-    daily_bars = DailyBarRepository(database).get_table_data()
-
-    # 最新股票热度
-    hot_stocks = StockHotDailyRepository(database).get_latest()
-
-    # 股票最新动态指标
-    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
-
-    return stocks, daily_bars, hot_stocks, stock_daily_basic
-
-
 @dataclass(frozen=True, slots=True)
-class PatternConfig:
-    """形态识别参数。"""
+class SignalConfig:
+    """信号识别参数。"""
 
     # 最小市值 100 亿（信号条件要求严格大于）。
     min_market_cap: float = 10_000_000_000
@@ -108,7 +85,7 @@ class PatternConfig:
 class TodayVolumeBreakoutPattern:
 
     def __init__(self):
-        self.config = PatternConfig()
+        self.config = SignalConfig()
 
     def scan(
         self,
@@ -122,10 +99,11 @@ class TodayVolumeBreakoutPattern:
         if stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        # 合并股票市值动态字段
-        stocks = self.merge_stock_basic(stocks, stock_daily_basic)
-        # 过滤掉 ST、科创板和北交所股票
-        stocks = self.filter_stocks(stocks)
+        stocks = filter_stocks(
+            self.config.min_market_cap,
+            stocks,
+            stock_daily_basic,
+        )
 
         # 返回符合条件的股票的行情数据
         daily_bars = self.filter_daily_bars(daily_bars, stocks["symbol"])
@@ -137,31 +115,6 @@ class TodayVolumeBreakoutPattern:
         result = self._filter_volume_ratio(result)
         result = self._filter_return(result)
         return self._sort_filter_by_hot(result, hot_stocks)
-
-    @staticmethod
-    def merge_stock_basic(
-        stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """补齐股票市值动态字段。"""
-
-        return stocks.merge(stock_daily_basic, on="symbol", how="left")
-
-    def filter_stocks(self, stocks: pd.DataFrame) -> pd.DataFrame:
-        """排除 ST、科创板和北交所股票。"""
-
-        # 是否是ST
-        is_st = stocks["name"].str.contains("ST", na=False)
-        # 是否科创板
-        is_star_market = stocks["market"] == "科创板"
-        # 是否北交所
-        is_beijing = stocks["exchange"] == "BJ"
-        # 是否符合市值
-        is_big_market_cap = stocks["market_cap"] > self.config.min_market_cap
-
-        result = stocks.loc[~is_st & ~is_star_market & ~is_beijing & is_big_market_cap]
-
-        return result
 
     @staticmethod
     def filter_daily_bars(
@@ -271,6 +224,31 @@ def run_signal(
         hot_stocks,
         stock_daily_basic,
     )
+
+
+def load_market_data() -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+]:
+    """读取本地数据"""
+
+    database = DuckDBDatabase()
+
+    # 全部股票列表
+    stocks = StockRepository(database).get_table_data()
+
+    # 全部股票日线数据
+    daily_bars = DailyBarRepository(database).get_table_data()
+
+    # 最新股票热度
+    hot_stocks = StockHotDailyRepository(database).get_latest()
+
+    # 股票最新动态指标
+    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
+
+    return stocks, daily_bars, hot_stocks, stock_daily_basic
 
 
 if __name__ == "__main__":

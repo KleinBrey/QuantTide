@@ -79,8 +79,8 @@ def load_market_data() -> tuple[
 
 
 @dataclass(frozen=True, slots=True)
-class PatternConfig:
-    """形态识别参数。"""
+class SignalConfig:
+    """信号识别参数。"""
 
     # 最小市值 100 亿，筛选时使用严格大于。
     min_market_cap: float = 10_000_000_000
@@ -98,7 +98,7 @@ class PatternConfig:
 
 class PanicReversalVPattern:
     def __init__(self) -> None:
-        self.config = PatternConfig()
+        self.config = SignalConfig()
 
     def scan(
         self,

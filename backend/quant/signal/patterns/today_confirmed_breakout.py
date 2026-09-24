@@ -72,8 +72,8 @@ _BREAKOUT_SOURCE_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class PatternConfig:
-    """形态识别参数。比例一律用小数表示，0.03 代表 3%。"""
+class SignalConfig:
+    """信号识别参数。比例一律用小数表示，0.03 代表 3%。"""
 
     # ---- 突破日条件 ----
     # 总市值必须大于该值（元）。
@@ -123,8 +123,8 @@ def _empty_result() -> pd.DataFrame:
 class TodayConfirmedBreakoutPattern:
     """先找前一交易日突破股，再用确认日 K 线识别确认信号。"""
 
-    def __init__(self, config: PatternConfig | None = None) -> None:
-        self.config = config or PatternConfig()
+    def __init__(self, config: SignalConfig | None = None) -> None:
+        self.config = config or SignalConfig()
 
     # ------------------------------------------------------------------
     # 公共入口

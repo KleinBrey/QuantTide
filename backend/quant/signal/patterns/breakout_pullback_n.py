@@ -56,8 +56,8 @@ RESULT_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class PatternConfig:
-    """形态识别参数。"""
+class SignalConfig:
+    """信号识别参数。"""
 
     # 突破前高的观察天数。
     prior_high_days: int = 20
@@ -86,7 +86,7 @@ class PatternConfig:
         return self.prior_high_days + self.breakout_days + self.max_pullback_days + 1
 
 
-DEFAULT_CONFIG = PatternConfig()
+DEFAULT_CONFIG = SignalConfig()
 
 
 def load_market_data() -> tuple[
@@ -107,7 +107,7 @@ def load_market_data() -> tuple[
 
 def find_latest_signal(
     bars: pd.DataFrame,
-    config: PatternConfig,
+    config: SignalConfig,
 ) -> dict[str, object] | None:
     """判断单只股票的最新交易日是否完成三阶段形态。"""
 
@@ -191,7 +191,7 @@ def find_latest_signal(
 
 def detect_strong_breakout_pullback(
     df: pd.DataFrame,
-    config: PatternConfig = DEFAULT_CONFIG,
+    config: SignalConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """按股票分组，返回最新交易日形成放量企稳信号的股票。"""
 
@@ -232,7 +232,7 @@ def run_signal(
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
-    config: PatternConfig = DEFAULT_CONFIG,
+    config: SignalConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """计算最新交易日的突破回调企稳信号。"""
 

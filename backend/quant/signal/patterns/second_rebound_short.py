@@ -61,8 +61,8 @@ RESULT_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class PatternConfig:
-    """形态识别参数。"""
+class SignalConfig:
+    """信号识别参数。"""
 
     peak_lookback_days: int = 60
     peak_min_gap_days: int = 10
@@ -82,7 +82,7 @@ class PatternConfig:
     min_amount: float = 200_000
 
 
-DEFAULT_CONFIG = PatternConfig()
+DEFAULT_CONFIG = SignalConfig()
 
 
 def load_market_data() -> tuple[
@@ -129,7 +129,7 @@ def _rolling_by_symbol(
 
 def calculate_indicators(
     df: pd.DataFrame,
-    config: PatternConfig,
+    config: SignalConfig,
 ) -> pd.DataFrame:
     """原地计算前高、二次反弹、拒绝 K 线和跟随信号。"""
 
@@ -236,7 +236,7 @@ def calculate_indicators(
 
 def detect_second_rebound_short(
     df: pd.DataFrame,
-    config: PatternConfig = DEFAULT_CONFIG,
+    config: SignalConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """按股票分组计算二次冲高做空信号。"""
 
@@ -287,7 +287,7 @@ def run_signal(
     daily_bars: pd.DataFrame,
     hot_stocks: pd.DataFrame,
     stock_daily_basic: pd.DataFrame,
-    config: PatternConfig = DEFAULT_CONFIG,
+    config: SignalConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """返回最新交易日得到下跌跟随确认的高位做空信号。"""
 
