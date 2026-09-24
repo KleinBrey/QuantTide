@@ -42,12 +42,24 @@ export default function BacktestResultsView({ state }) {
                 {strategy?.description ? <span>{strategy.description}</span> : null}
               </div>
               <div className={styles.meta}>
-                <span>最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong></span>
-                <span>回测区间 <strong>{summary ? `${summary.start_date} ~ ${summary.end_date}` : '-'}</strong></span>
-                <span>交易记录 <strong>{summary?.trade_count ?? '-'}</strong></span>
+                <span>
+                  最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong>
+                </span>
+                <span>
+                  回测区间 <strong>{summary ? `${summary.start_date} ~ ${summary.end_date}` : '-'}</strong>
+                </span>
+                <span>
+                  交易记录 <strong>{summary?.trade_count ?? '-'}</strong>
+                </span>
               </div>
             </div>
-            <Button type="button" className="dashboard-ghost-button" onClick={refresh} disabled={loading} variant="outline">
+            <Button
+              type="button"
+              className="dashboard-ghost-button"
+              onClick={refresh}
+              disabled={loading}
+              variant="outline"
+            >
               {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
               <span>{loading ? '回测中' : '重新运行'}</span>
             </Button>
@@ -62,11 +74,7 @@ export default function BacktestResultsView({ state }) {
           </div>
         </section>
 
-        <BacktestEquityChart
-          equityCurve={result?.equity_curve}
-          initialCash={summary?.initial_cash}
-          loading={loading}
-        />
+        <BacktestEquityChart equityCurve={result?.equity_curve} initialCash={summary?.initial_cash} loading={loading} />
       </div>
 
       <section
@@ -81,7 +89,7 @@ export default function BacktestResultsView({ state }) {
         <div className={cn('dashboard-panel-header', styles.tableHeader)}>
           <div>
             <h2>交易记录</h2>
-            <span>每笔交易下方展示个股行情；红色 B 为买点，绿色 S 为卖点</span>
+            <span>同一股票的交易按日期排列，末行汇总展示 K 线；B 为买点，S 为卖点</span>
           </div>
           <FullscreenButton isFullscreen={isFullscreen} mode={FULLSCREEN_MODE.WINDOW} onToggle={toggleFullscreen} />
         </div>

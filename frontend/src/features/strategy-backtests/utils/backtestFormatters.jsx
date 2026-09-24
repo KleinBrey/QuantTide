@@ -8,7 +8,9 @@ export function finiteNumber(value) {
 
 export function formatNumber(value, digits = 2) {
   const number = finiteNumber(value);
-  return number === null ? '-' : number.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return number === null
+    ? '-'
+    : number.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 export function formatPercent(value) {
@@ -21,13 +23,15 @@ const reasonLabels = {
   confirm_buy: '确认买入',
   stop_loss: '止损',
   take_profit: '止盈',
-  previous_close_decline: '较前收跌超5%',
-  consecutive_bearish_candles: '连续三根阴线'
+  close_drop: '收盘跌超5%',
+  decline_streak: '连续3天跌超2%'
 };
 
 export function TradeSideCell({ value }) {
   const isBuy = value === 'BUY';
-  return <span className={`${styles.sideBadge} ${isBuy ? styles.buy : styles.sell}`}>{isBuy ? '买入 B' : '卖出 S'}</span>;
+  return (
+    <span className={`${styles.sideBadge} ${isBuy ? styles.buy : styles.sell}`}>{isBuy ? '买入 B' : '卖出 S'}</span>
+  );
 }
 
 export function ProfitCell({ value }) {
@@ -43,19 +47,61 @@ export function ReturnCell({ value }) {
 }
 
 export const tradeColumnDefs = [
-  { headerName: '交易日期', field: 'trade_date', minWidth: 116, flex: 0.9 },
+  { headerName: '交易日期', field: 'trade_date', minWidth: 116, flex: 0.9, sort: 'asc' },
   { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
   { headerName: '代码', field: 'symbol', minWidth: 110, flex: 0.9 },
   { headerName: '方向', field: 'side', minWidth: 96, flex: 0.7, cellRenderer: TradeSideCell },
-  { headerName: '成交价', field: 'price', minWidth: 96, flex: 0.7, valueFormatter: params => formatNumber(params.value) },
-  { headerName: '数量', field: 'quantity', minWidth: 90, flex: 0.65, valueFormatter: params => formatNumber(params.value, 0) },
-  { headerName: '成交额', field: 'gross_amount', minWidth: 112, flex: 0.8, valueFormatter: params => formatNumber(params.value) },
-  { headerName: '仓位', field: 'position_pct', minWidth: 88, flex: 0.65, valueFormatter: params => formatPercent(params.value) },
-  { headerName: '止损价', field: 'stop_loss_price', minWidth: 92, flex: 0.7, valueFormatter: params => formatNumber(params.value) },
-  { headerName: '止盈价', field: 'take_profit_price', minWidth: 92, flex: 0.7, valueFormatter: params => formatNumber(params.value) },
+  {
+    headerName: '成交价',
+    field: 'price',
+    minWidth: 96,
+    flex: 0.7,
+    valueFormatter: params => formatNumber(params.value)
+  },
+  {
+    headerName: '数量',
+    field: 'quantity',
+    minWidth: 90,
+    flex: 0.65,
+    valueFormatter: params => formatNumber(params.value, 0)
+  },
+  {
+    headerName: '成交额',
+    field: 'gross_amount',
+    minWidth: 112,
+    flex: 0.8,
+    valueFormatter: params => formatNumber(params.value)
+  },
+  {
+    headerName: '仓位',
+    field: 'position_pct',
+    minWidth: 88,
+    flex: 0.65,
+    valueFormatter: params => formatPercent(params.value)
+  },
+  {
+    headerName: '止损价',
+    field: 'stop_loss_price',
+    minWidth: 92,
+    flex: 0.7,
+    valueFormatter: params => formatNumber(params.value)
+  },
+  {
+    headerName: '止盈价',
+    field: 'take_profit_price',
+    minWidth: 92,
+    flex: 0.7,
+    valueFormatter: params => formatNumber(params.value)
+  },
   { headerName: '实现盈亏', field: 'realized_pnl', minWidth: 108, flex: 0.8, cellRenderer: ProfitCell },
   { headerName: '收益率', field: 'return_pct', minWidth: 94, flex: 0.7, cellRenderer: ReturnCell },
-  { headerName: '成交原因', field: 'reason', minWidth: 112, flex: 0.9, valueFormatter: params => reasonLabels[params.value] || params.value || '-' }
+  {
+    headerName: '成交原因',
+    field: 'reason',
+    minWidth: 200,
+    flex: 0.9,
+    valueFormatter: params => reasonLabels[params.value] || params.value || '-'
+  }
 ];
 
 export function transformHistory(items = []) {

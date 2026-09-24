@@ -7,8 +7,7 @@ from backend.app.services import CNMarketService
 
 
 def sync_stock_daily_basic(
-    lookback_days: int | None = None,
-    max_workers: int = 10,
+    lookback_days: int,
 ) -> int:
     """同步指定自然日范围的市值等每日指标。"""
 
@@ -19,7 +18,7 @@ def sync_stock_daily_basic(
         tushare_provider=TushareProvider(),
         stock_daily_basic_repository=StockDailyBasicRepository(database),
     )
-    return cn_market_service.update_stock_daily_basic(lookback_days, max_workers)
+    return cn_market_service.update_stock_daily_basic(lookback_days)
 
 
 def main() -> None:
@@ -36,13 +35,13 @@ def main() -> None:
 
     match choice:
         case "1":
-            sync_stock_daily_basic(3, 100)
+            sync_stock_daily_basic(3)
 
         case "2":
-            sync_stock_daily_basic(60, 50)
+            sync_stock_daily_basic(60)
 
         case "3":
-            sync_stock_daily_basic(365, 10)
+            sync_stock_daily_basic(365)
 
         case "e":
             print("退出")

@@ -160,9 +160,11 @@ class CNMarketService(HotStockService):
     def update_stock_daily_basic(
         self,
         lookback_days: int | None = None,
-        max_workers: int = 10,
     ) -> int:
         """按日期并发获取股票每日指标，并在主线程中依次写入数据库。"""
+
+        # 默认开10个线程
+        max_workers: int = 10
 
         if lookback_days is None:
             dates: list[date | None] = [None]
@@ -173,13 +175,8 @@ class CNMarketService(HotStockService):
             end_date = date.today()
             start_date = end_date - timedelta(days=lookback_days - 1)
             dates = [
-                start_date + timedelta(days=offset)
-                for offset in range(lookback_days)
+                start_date + timedelta(days=offset) for offset in range(lookback_days)
             ]
-
-        if max_workers <= 0:
-            raise ValueError("max_workers 必须大于 0")
-
         affected_rows = 0
         failed_dates: list[date | None] = []
 

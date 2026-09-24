@@ -24,6 +24,7 @@ function useTradeKline(symbol, trades) {
     const tradeDates = trades.map(trade => moment(trade.trade_date)).filter(date => date.isValid());
     const firstTradeDate = moment.min(tradeDates);
     const lastTradeDate = moment.max(tradeDates);
+    // 获取交易日期的前后两个月作为K线数据的时间范围
     const start = firstTradeDate.clone().subtract(2, 'months').format('YYYY-MM-DD');
     const end = lastTradeDate.clone().add(2, 'months').format('YYYY-MM-DD');
     const cacheKey = `${symbol}:${start}:${end}`;
@@ -71,8 +72,8 @@ function useTradeKline(symbol, trades) {
 
 function TradeKlineRow({ data }) {
   const [period, setPeriod] = useState('daily');
-  const { trade, symbolTrades } = data;
-  const { data: klineData, loading, error } = useTradeKline(trade.symbol, symbolTrades);
+  const { stock, symbolTrades } = data;
+  const { data: klineData, loading, error } = useTradeKline(stock.symbol, symbolTrades);
   const markers = useMemo(
     () => symbolTrades.map(item => ({ time: item.trade_date, side: item.side, price: item.price })),
     [symbolTrades]
@@ -81,7 +82,7 @@ function TradeKlineRow({ data }) {
   return (
     <div className={styles.klineRow}>
       <StockKlineChart
-        stock={{ name: trade.name, symbol: trade.symbol }}
+        stock={stock}
         data={klineData}
         loading={loading}
         error={error}
@@ -94,16 +95,25 @@ function TradeKlineRow({ data }) {
   );
 }
 
-function keepKlineRowsWithTrades({ nodes }) {
-  const detailRowsByTrade = new Map(
-    nodes.filter(node => node.data?.rowType === 'kline').map(node => [node.data.parentRowId, node])
+function keepStockGroupsTogether({ nodes }) {
+  const klineRowsBySymbol = new Map(
+    nodes.filter(node => node.data?.rowType === 'kline').map(node => [node.data.symbol, node])
   );
-  const tradeRows = nodes.filter(node => node.data?.rowType !== 'kline');
+  const tradeGroups = new Map();
+
+  nodes.forEach(node => {
+    if (node.data?.rowType === 'kline') return;
+    const symbol = node.data?.symbol;
+    const symbolRows = tradeGroups.get(symbol) || [];
+    symbolRows.push(node);
+    tradeGroups.set(symbol, symbolRows);
+  });
+
   nodes.length = 0;
-  tradeRows.forEach(tradeRow => {
-    nodes.push(tradeRow);
-    const detailRow = detailRowsByTrade.get(tradeRow.data.rowId);
-    if (detailRow) nodes.push(detailRow);
+  tradeGroups.forEach((tradeRows, symbol) => {
+    nodes.push(...tradeRows);
+    const klineRow = klineRowsBySymbol.get(symbol);
+    if (klineRow) nodes.push(klineRow);
   });
 }
 
@@ -116,16 +126,30 @@ export default function BacktestTradesTable({ trades, loading }) {
       tradesBySymbol.set(trade.symbol, symbolTrades);
     });
 
-    return trades.flatMap((trade, index) => {
-      const tradeRowId = `trade-${trade.symbol}-${trade.trade_date}-${trade.side}-${index}`;
+    const sortedGroups = [...tradesBySymbol.entries()]
+      .map(([symbol, symbolTrades]) => [
+        symbol,
+        [...symbolTrades].sort((left, right) => String(left.trade_date).localeCompare(String(right.trade_date)))
+      ])
+      .sort(([, leftTrades], [, rightTrades]) =>
+        String(leftTrades[0]?.trade_date).localeCompare(String(rightTrades[0]?.trade_date))
+      );
+
+    return sortedGroups.flatMap(([symbol, symbolTrades]) => {
+      const tradeRows = symbolTrades.map((trade, index) => ({
+        ...trade,
+        rowId: `trade-${symbol}-${trade.trade_date}-${trade.side}-${index}`
+      }));
+      const stock = { name: symbolTrades[0]?.name, symbol };
+
       return [
-        { ...trade, rowId: tradeRowId },
+        ...tradeRows,
         {
           rowType: 'kline',
-          rowId: `kline-${tradeRowId}`,
-          parentRowId: tradeRowId,
-          trade,
-          symbolTrades: tradesBySymbol.get(trade.symbol)
+          rowId: `kline-${symbol}`,
+          symbol,
+          stock,
+          symbolTrades
         }
       ];
     });
@@ -145,7 +169,7 @@ export default function BacktestTradesTable({ trades, loading }) {
           isFullWidthRow={params => params.rowNode.data?.rowType === 'kline'}
           loading={loading}
           overlayNoRowsTemplate="<span>当前回测区间暂无交易记录</span>"
-          postSortRows={keepKlineRowsWithTrades}
+          postSortRows={keepStockGroupsTogether}
           suppressCellFocus
         />
       </AgGridProvider>

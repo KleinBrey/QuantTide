@@ -184,7 +184,7 @@ async def sync_stock_daily_basic_database() -> dict[str, str | float]:
     return await _run_database_sync(
         "sync_stock_daily_basic_db.py",
         "最新交易日股票指标同步完成",
-        sync_stock_daily_basic,
+        lambda: sync_stock_daily_basic(lookback_days=3),
     )
 
 

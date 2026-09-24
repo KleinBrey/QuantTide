@@ -9,20 +9,21 @@
 - 买入数量按 ``lot_size`` 向下取整，并为佣金预留现金；不足一手则跳过；
 - 信号仅在确认日按收盘价尝试成交，未成交信号不会顺延到下一交易日；
 - 遵守 A 股 T+1，买入当日不卖出；满足任一卖出条件时整仓卖出；
-- 所有卖出条件均在收盘后判断并按收盘价成交，不使用日内最高价或最低价；
-- 止盈止损均未触发时，较前收跌幅大于 5% 则按收盘价卖出；
-- 连续 3 根阴线且每根实体跌幅大于 2% 时，按第三根阴线收盘价卖出；
+- 所有卖出条件均在收盘后判断并按收盘价成交；
+- 卖出优先级：止损 > 止盈 > 策略卖出条件（大跌、连续下跌，见策略的 find_exits）；
 - 每日收盘后按最新可用收盘价计算持仓市值与账户权益。
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
-from math import floor
+from math import floor, isinf
 from typing import Any
 
 import pandas as pd
+from rich import box
 from rich.console import Console
 from rich.table import Table
 
@@ -49,7 +50,7 @@ console = Console()
 
 @dataclass(frozen=True, slots=True)
 class BacktestConfig:
-    """回测时间、账户和卖出条件。"""
+    """回测时间和账户参数。卖出条件在策略的 StrategyConfig 里。"""
 
     # 时间范围
     # 回测开始日期；未指定时按 lookback_months 从结束日期向前推算。
@@ -75,24 +76,6 @@ class BacktestConfig:
     # 卖出时收取的税率，使用小数表示；买入时不收取。
     sell_tax_rate: float = 0.006
 
-    # 卖出条件
-    # 当日收盘价较前一交易日收盘价跌幅严格大于 5% 时卖出。
-    previous_close_decline_exit_pct: float = 0.05
-    # 连续 3 根阴线且每根实体跌幅严格大于 2% 时卖出。
-    consecutive_bearish_candle_count: int = 3
-    consecutive_bearish_body_pct: float = 0.02
-
-
-@dataclass(frozen=True, slots=True)
-class BuyExecutionStats:
-    """单个交易日的买入信号执行统计。"""
-
-    executed: int = 0
-    skipped_full: int = 0
-    skipped_already_held: int = 0
-    skipped_unexecutable: int = 0
-    skipped_insufficient_cash: int = 0
-
 
 class ConfirmedVolumeBreakoutBacktest:
     """只服务于放量突破次日确认策略的回测。"""
@@ -117,77 +100,59 @@ class ConfirmedVolumeBreakoutBacktest:
     ) -> BacktestResult:
         """执行回测并返回净值、交易记录和期末持仓。"""
 
-        # 1. 准备回测区间、交易日历、行情和策略信号。
-        bars = self._prepare_bars(daily_bars)
-        start_date, end_date = self._resolve_period(bars)
-        calendar = self._trading_calendar(bars, start_date, end_date)
-        heat = hot_stocks.copy()
-        if "trade_date" in heat.columns:
-            heat["trade_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
+        # 1. 确定回测区间和交易日历。
+        bars = daily_bars
+        start_date, end_date = self.resolve_period(bars)
+        calendar = self.trading_calendar(bars, start_date, end_date)
+        period_bars = bars[bars["trade_date"].between(start_date, end_date)]
 
+        # 2. 一次性算出所有买入信号，以及每个信号入场后的策略卖出日。
         signals = self.strategy.select_range(
-            calendar,
-            stocks,
-            bars,
-            heat,
-            stock_daily_basic,
+            calendar, stocks, bars, hot_stocks, stock_daily_basic
         )
-
-        quotes = self._prepare_quotes(bars, start_date, end_date)
+        strategy_exits = self._find_strategy_exits(signals, period_bars)
         signals_by_date = {
             confirm_date: group.sort_values(["selection_rank", "symbol"])
             for confirm_date, group in signals.groupby("confirm_date", sort=True)
         }
+        close_prices = (
+            period_bars.drop_duplicates(["trade_date", "symbol"], keep="last")
+            .set_index(["trade_date", "symbol"])["close"]
+            .astype(float)
+            .sort_index()
+        )
 
-        # 2. 初始化账户、每日状态和回测统计。
+        # 3. 按交易日依次执行卖出、买入和收盘估值。
         account = Account(self.config.initial_cash)
         trade_rows: list[dict[str, Any]] = []
         equity_rows: list[dict[str, Any]] = []
         last_close_prices: dict[str, float] = {}
-        bearish_candle_streaks: dict[str, int] = {}
-        executed_signal_count = 0
-        skipped_full_position_count = 0
-        skipped_already_held_count = 0
-        skipped_unexecutable_count = 0
-        skipped_insufficient_cash_count = 0
+        stats: Counter[str] = Counter()
 
-        # 3. 按交易日依次执行卖出、买入和收盘估值。
         for trade_date in calendar:
-            day_quotes = quotes.loc[trade_date]
-            if isinstance(day_quotes, pd.Series):
-                day_quotes = day_quotes.to_frame().T
-            day_quotes = day_quotes[~day_quotes.index.duplicated(keep="last")]
-
-            self._execute_risk_exits(
-                account=account,
-                trade_date=trade_date.date(),
-                day_quotes=day_quotes,
-                previous_close_prices=last_close_prices,
-                bearish_candle_streaks=bearish_candle_streaks,
-                trade_rows=trade_rows,
-            )
+            day_prices = close_prices.loc[trade_date].to_dict()
+            last_close_prices.update(day_prices)
+            today = trade_date.date()
 
             # 先卖后买，释放的现金和仓位可以用于当天的新信号。
-            candidates = signals_by_date.get(trade_date)
-            if candidates is not None and not candidates.empty:
-                buy_stats = self._execute_close_buys(
-                    account=account,
-                    trade_date=trade_date.date(),
-                    day_quotes=day_quotes,
-                    candidates=candidates,
-                    trade_rows=trade_rows,
-                )
-                executed_signal_count += buy_stats.executed
-                skipped_full_position_count += buy_stats.skipped_full
-                skipped_already_held_count += buy_stats.skipped_already_held
-                skipped_unexecutable_count += buy_stats.skipped_unexecutable
-                skipped_insufficient_cash_count += buy_stats.skipped_insufficient_cash
+            self._sell(account, today, day_prices, strategy_exits, trade_rows)
 
-            last_close_prices.update(day_quotes["close"].to_dict())
+            candidates = signals_by_date.get(trade_date)
+            if candidates is not None:
+                self._buy(
+                    account,
+                    today,
+                    day_prices,
+                    last_close_prices,
+                    candidates,
+                    trade_rows,
+                    stats,
+                )
+
             market_value = account.market_value(last_close_prices)
             equity_rows.append(
                 {
-                    "trade_date": trade_date.date(),
+                    "trade_date": today,
                     "cash": account.cash,
                     "market_value": market_value,
                     "total_equity": account.cash + market_value,
@@ -195,12 +160,11 @@ class ConfirmedVolumeBreakoutBacktest:
             )
 
         # 4. 组装期末持仓和结果摘要。
-        final_positions = self._build_final_positions(account, last_close_prices)
-
         hot_dates = pd.to_datetime(
             hot_stocks.get("trade_date", pd.Series(dtype="datetime64[ns]")),
             errors="coerce",
         ).dropna()
+        strategy_config = self.strategy.config
         metadata = {
             "strategy": self.strategy_id,
             "start_date": calendar[0].date().isoformat(),
@@ -209,11 +173,11 @@ class ConfirmedVolumeBreakoutBacktest:
             "max_position_pct": self.config.max_position_pct,
             "signal_days": int(signals["confirm_date"].nunique()),
             "qualified_signal_count": len(signals),
-            "executed_signal_count": executed_signal_count,
-            "skipped_full_position_count": skipped_full_position_count,
-            "skipped_already_held_count": skipped_already_held_count,
-            "skipped_unexecutable_count": skipped_unexecutable_count,
-            "skipped_insufficient_cash_count": skipped_insufficient_cash_count,
+            "executed_signal_count": stats["executed"],
+            "skipped_full_position_count": stats["skipped_full"],
+            "skipped_already_held_count": stats["skipped_already_held"],
+            "skipped_unexecutable_count": stats["skipped_unexecutable"],
+            "skipped_insufficient_cash_count": stats["skipped_insufficient_cash"],
             "hot_data_start": (
                 hot_dates.min().date().isoformat() if not hot_dates.empty else None
             ),
@@ -224,16 +188,16 @@ class ConfirmedVolumeBreakoutBacktest:
                 "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
                 f"单只股票建仓上限为当日账户权益的 {self.config.max_position_pct:.0%}",
                 f"持仓未满时按信号排名补仓，{self.config.lot_size} 股整手，只做多",
-                "买入当日不卖，从下一交易日起检查止损和止盈",
-                "所有卖出条件均按收盘价判断并按收盘价成交",
+                "买入当日不卖，从下一交易日起检查卖出条件",
+                "所有卖出条件均按收盘价判断并按收盘价成交，止损、止盈优先",
                 (
                     "较前一交易日收盘跌幅大于 "
-                    f"{self.config.previous_close_decline_exit_pct:.0%} 时卖出"
+                    f"{strategy_config.previous_close_decline_exit_pct:.0%} 时卖出"
                 ),
                 (
-                    f"连续 {self.config.consecutive_bearish_candle_count} 根阴线且"
-                    "每根实体跌幅大于 "
-                    f"{self.config.consecutive_bearish_body_pct:.0%} 时卖出"
+                    f"连续 {strategy_config.consecutive_decline_day_count} 个交易日"
+                    "的当日跌幅均大于 "
+                    f"{strategy_config.consecutive_decline_pct:.0%} 时卖出"
                 ),
                 "历史热度缺失时仍产生信号，按放量强度排序",
                 "市值过滤使用确认日当日或此前最近可用的历史市值",
@@ -247,10 +211,237 @@ class ConfirmedVolumeBreakoutBacktest:
                 initial_cash=self.config.initial_cash,
             ),
             trades=build_trade_frame(trade_rows),
-            final_positions=final_positions,
+            final_positions=self._build_final_positions(account, last_close_prices),
             metadata=metadata,
         )
 
+    # ------------------------------------------------------------------
+    # 区间与日历
+    # ------------------------------------------------------------------
+    def resolve_period(self, bars: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """根据配置和行情可用范围确定实际回测区间。"""
+
+        available_start = bars["trade_date"].min()
+        available_end = bars["trade_date"].max()
+
+        if self.config.end_date is not None:
+            end_date = pd.to_datetime(self.config.end_date, errors="raise").normalize()
+        else:
+            end_date = available_end
+        end_date = min(end_date, available_end)
+
+        if self.config.start_date is not None:
+            start_date = pd.to_datetime(
+                self.config.start_date, errors="raise"
+            ).normalize()
+        else:
+            start_date = end_date - pd.DateOffset(months=self.config.lookback_months)
+        start_date = max(start_date, available_start)
+        if start_date > end_date:
+            raise ValueError("回测开始日期不能晚于结束日期")
+        return start_date, end_date
+
+    @staticmethod
+    def trading_calendar(
+        bars: pd.DataFrame,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+    ) -> pd.DatetimeIndex:
+        """提取回测区间内的交易日。"""
+
+        dates = bars.loc[
+            bars["trade_date"].between(start_date, end_date), "trade_date"
+        ].drop_duplicates()
+        calendar = pd.DatetimeIndex(dates.sort_values())
+        if calendar.empty:
+            raise ValueError("指定区间内没有交易日")
+        return calendar
+
+    # ------------------------------------------------------------------
+    # 卖出
+    # ------------------------------------------------------------------
+    def _find_strategy_exits(
+        self,
+        signals: pd.DataFrame,
+        period_bars: pd.DataFrame,
+    ) -> dict[tuple[str, date], tuple[date, str]]:
+        """让策略为每个信号找出入场后的第一个卖出日。
+
+        返回 {(股票, 入场日): (卖出日, 卖出原因)}。入场日就是确认日，
+        买入后 position.opened_at 与之相同，卖出时直接查表即可。
+        """
+
+        entries = signals[["symbol", "confirm_date"]].rename(
+            columns={"confirm_date": "entry_date"}
+        )
+        exits = self.strategy.find_exits(entries, period_bars)
+        return {
+            (row.symbol, row.entry_date.date()): (row.exit_date.date(), row.exit_reason)
+            for row in exits.itertuples()
+        }
+
+    def _sell(
+        self,
+        account: Account,
+        trade_date: date,
+        day_prices: dict[str, float],
+        strategy_exits: dict[tuple[str, date], tuple[date, str]],
+        trade_rows: list[dict[str, Any]],
+    ) -> None:
+        """检查持仓是否需要卖出，按收盘价整仓卖出并记录成交。"""
+
+        for symbol, position in list(account.positions.items()):
+            # A 股 T+1：买入当天不允许卖出；停牌无行情时也无法成交。
+            if position.opened_at >= trade_date or symbol not in day_prices:
+                continue
+
+            price = day_prices[symbol]
+            reason = self._exit_reason(position, price, trade_date, strategy_exits)
+            if reason is None:
+                continue
+
+            gross_amount = position.quantity * price
+            fee = self._transaction_fee(gross_amount, side="SELL")
+            sold, realized_pnl = account.sell(symbol=symbol, price=price, fee=fee)
+            trade_rows.append(
+                {
+                    "trade_date": trade_date,
+                    "signal_date": sold.signal_date,
+                    "symbol": symbol,
+                    "name": sold.name,
+                    "side": "SELL",
+                    "price": price,
+                    "quantity": sold.quantity,
+                    "gross_amount": gross_amount,
+                    "position_pct": None,
+                    "stop_loss_price": sold.stop_loss_price,
+                    "take_profit_price": sold.take_profit_price,
+                    "fee": fee,
+                    "cash_after": account.cash,
+                    "realized_pnl": realized_pnl,
+                    "return_pct": realized_pnl / sold.cost_basis,
+                    "reason": reason,
+                }
+            )
+
+    @staticmethod
+    def _exit_reason(
+        position: Position,
+        price: float,
+        trade_date: date,
+        strategy_exits: dict[tuple[str, date], tuple[date, str]],
+    ) -> str | None:
+        """按优先级返回卖出原因：止损 > 止盈 > 策略卖出条件；无需卖出返回 None。"""
+
+        if price <= position.stop_loss_price:
+            return "stop_loss"
+        if price >= position.take_profit_price:
+            return "take_profit"
+
+        exit_date, reason = strategy_exits.get(
+            (position.symbol, position.opened_at), (None, None)
+        )
+        return reason if exit_date == trade_date else None
+
+    # ------------------------------------------------------------------
+    # 买入
+    # ------------------------------------------------------------------
+    def _buy(
+        self,
+        account: Account,
+        trade_date: date,
+        day_prices: dict[str, float],
+        last_close_prices: dict[str, float],
+        candidates: pd.DataFrame,
+        trade_rows: list[dict[str, Any]],
+        stats: Counter[str],
+    ) -> None:
+        """按信号排名依次在收盘价买入，并累计执行统计。"""
+
+        equity = account.total_equity(last_close_prices)
+        # 单股预算始终按买入前账户总权益的固定比例计算。
+        target_budget = equity * self.config.max_position_pct
+
+        for signal in candidates.to_dict(orient="records"):
+            symbol = str(signal["symbol"])
+            price = day_prices.get(symbol)
+            stop_price = float(signal["stop_loss_price"])
+            target_price = float(signal["take_profit_price"])
+
+            if symbol in account.positions:
+                stats["skipped_already_held"] += 1
+                continue
+            # 当日没有行情，或价格关系不满足 止损 < 收盘 < 止盈。
+            if price is None or not 0 < stop_price < price < target_price:
+                stats["skipped_unexecutable"] += 1
+                continue
+            if len(account.positions) >= self.config.max_positions:
+                stats["skipped_full"] += 1
+                continue
+
+            quantity = self._affordable_quantity(
+                min(target_budget, account.cash), price
+            )
+            if quantity <= 0:
+                stats["skipped_insufficient_cash"] += 1
+                continue
+
+            gross_amount = quantity * price
+            fee = self._transaction_fee(gross_amount, side="BUY")
+            position = account.buy(
+                symbol=symbol,
+                name=str(signal["name"]),
+                quantity=quantity,
+                price=price,
+                fee=fee,
+                stop_loss_price=stop_price,
+                take_profit_price=target_price,
+                signal_date=pd.Timestamp(signal["breakout_date"]).date(),
+                trade_date=trade_date,
+            )
+            stats["executed"] += 1
+            trade_rows.append(
+                {
+                    "trade_date": trade_date,
+                    "signal_date": position.signal_date,
+                    "symbol": symbol,
+                    "name": position.name,
+                    "side": "BUY",
+                    "price": price,
+                    "quantity": quantity,
+                    "gross_amount": gross_amount,
+                    "position_pct": gross_amount / equity,
+                    "stop_loss_price": position.stop_loss_price,
+                    "take_profit_price": position.take_profit_price,
+                    "fee": fee,
+                    "cash_after": account.cash,
+                    "realized_pnl": None,
+                    "return_pct": None,
+                    "reason": "confirm_buy",
+                }
+            )
+
+    def _affordable_quantity(self, budget: float, price: float) -> int:
+        """在预算内计算可买的整手股数，并为买入佣金预留资金。"""
+
+        commission = max(
+            budget * self.config.commission_rate, self.config.minimum_commission
+        )
+        lots = floor((budget - commission) / price / self.config.lot_size)
+        return max(lots, 0) * self.config.lot_size
+
+    def _transaction_fee(self, gross_amount: float, *, side: str) -> float:
+        """计算单笔交易的佣金和卖出税费。"""
+
+        commission = max(
+            gross_amount * self.config.commission_rate, self.config.minimum_commission
+        )
+        sell_tax = gross_amount * self.config.sell_tax_rate if side == "SELL" else 0.0
+        return commission + sell_tax
+
+    # ------------------------------------------------------------------
+    # 结果
+    # ------------------------------------------------------------------
     @staticmethod
     def _build_final_positions(
         account: Account,
@@ -277,359 +468,6 @@ class ConfirmedVolumeBreakoutBacktest:
                 }
             )
         return pd.DataFrame(rows)
-
-    @staticmethod
-    def _prepare_bars(daily_bars: pd.DataFrame) -> pd.DataFrame:
-        """清洗日 K，并保证每只股票每天只有一条有效行情。"""
-
-        required = {
-            "symbol",
-            "trade_date",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-        }
-        missing = sorted(required.difference(daily_bars.columns))
-        if missing:
-            raise ValueError(f"日 K 数据缺少字段：{', '.join(missing)}")
-
-        bars = daily_bars.copy()
-        bars["symbol"] = bars["symbol"].astype("string")
-        bars["trade_date"] = pd.to_datetime(
-            bars["trade_date"], errors="coerce"
-        ).dt.normalize()
-        for column in ["open", "high", "low", "close", "volume"]:
-            bars[column] = pd.to_numeric(bars[column], errors="coerce")
-        bars = bars.dropna(subset=list(required))
-        bars = bars[
-            (bars["open"] > 0)
-            & (bars["high"] > 0)
-            & (bars["low"] > 0)
-            & (bars["close"] > 0)
-            & (bars["volume"] > 0)
-        ]
-        return (
-            bars.drop_duplicates(["symbol", "trade_date"], keep="last")
-            .sort_values(["symbol", "trade_date"])
-            .reset_index(drop=True)
-        )
-
-    @staticmethod
-    def _prepare_quotes(
-        bars: pd.DataFrame,
-        start_date: pd.Timestamp,
-        end_date: pd.Timestamp,
-    ) -> pd.DataFrame:
-        """生成按日期和股票索引的回测成交行情。"""
-
-        return (
-            bars.loc[
-                bars["trade_date"].between(start_date, end_date),
-                ["trade_date", "symbol", "open", "close"],
-            ]
-            .set_index(["trade_date", "symbol"])
-            .sort_index()
-        )
-
-    def _resolve_period(self, bars: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """根据配置和行情可用范围确定实际回测区间。"""
-
-        if bars.empty:
-            raise ValueError("日 K 数据为空，无法回测")
-
-        available_start = bars["trade_date"].min()
-        available_end = bars["trade_date"].max()
-        end_date = (
-            pd.to_datetime(self.config.end_date, errors="raise").normalize()
-            if self.config.end_date is not None
-            else available_end
-        )
-        end_date = min(end_date, available_end)
-        if self.config.start_date is not None:
-            start_date = pd.to_datetime(
-                self.config.start_date, errors="raise"
-            ).normalize()
-        else:
-            start_date = end_date - pd.DateOffset(months=self.config.lookback_months)
-        start_date = max(start_date, available_start)
-        if start_date > end_date:
-            raise ValueError("回测开始日期不能晚于结束日期")
-        return start_date, end_date
-
-    @staticmethod
-    def _trading_calendar(
-        bars: pd.DataFrame,
-        start_date: pd.Timestamp,
-        end_date: pd.Timestamp,
-    ) -> pd.DatetimeIndex:
-        """提取回测区间内的交易日。"""
-
-        dates = bars.loc[
-            bars["trade_date"].between(start_date, end_date), "trade_date"
-        ].drop_duplicates()
-        calendar = pd.DatetimeIndex(dates.sort_values())
-        if calendar.empty:
-            raise ValueError("指定区间内没有交易日")
-        return calendar
-
-    def _execute_risk_exits(
-        self,
-        *,
-        account: Account,
-        trade_date: date,
-        day_quotes: pd.DataFrame,
-        trade_rows: list[dict[str, Any]],
-        previous_close_prices: dict[str, float] | None = None,
-        bearish_candle_streaks: dict[str, int] | None = None,
-    ) -> None:
-        """检查已有持仓的卖出条件，并记录实际成交。"""
-
-        previous_close_prices = previous_close_prices or {}
-        if bearish_candle_streaks is None:
-            bearish_candle_streaks = {}
-
-        for symbol, position in list(account.positions.items()):
-            # A 股 T+1：买入当天不允许卖出；停牌无行情时也无法成交。
-            if position.opened_at >= trade_date or symbol not in day_quotes.index:
-                continue
-
-            quote = day_quotes.loc[symbol]
-            bearish_candle_streaks[symbol] = self._next_bearish_streak(
-                quote,
-                bearish_candle_streaks.get(symbol, 0),
-            )
-
-            decision = self._exit_decision(
-                position,
-                quote,
-                previous_close=previous_close_prices.get(symbol),
-                consecutive_bearish_count=bearish_candle_streaks[symbol],
-            )
-            if decision is None:
-                continue
-
-            exit_price, reason = decision
-            gross_amount = position.quantity * exit_price
-            fee = self._transaction_fee(gross_amount, side="SELL")
-            sold_position, realized_pnl = account.sell(
-                symbol=symbol,
-                price=exit_price,
-                fee=fee,
-            )
-            bearish_candle_streaks.pop(symbol, None)
-            trade_rows.append(
-                {
-                    "trade_date": trade_date,
-                    "signal_date": sold_position.signal_date,
-                    "symbol": symbol,
-                    "name": sold_position.name,
-                    "side": "SELL",
-                    "price": exit_price,
-                    "quantity": sold_position.quantity,
-                    "gross_amount": gross_amount,
-                    "position_pct": None,
-                    "stop_loss_price": sold_position.stop_loss_price,
-                    "take_profit_price": sold_position.take_profit_price,
-                    "fee": fee,
-                    "cash_after": account.cash,
-                    "realized_pnl": realized_pnl,
-                    "return_pct": realized_pnl / sold_position.cost_basis,
-                    "reason": reason,
-                }
-            )
-
-    def _exit_decision(
-        self,
-        position: Position,
-        quote: pd.Series,
-        previous_close: float | None = None,
-        consecutive_bearish_count: int = 0,
-    ) -> tuple[float, str] | None:
-        """按优先级返回收盘卖出价格和原因；无需卖出时返回 None。"""
-
-        close_price = float(quote["close"])
-        stop_price = position.stop_loss_price
-        target_price = position.take_profit_price
-
-        # 止损和止盈优先于其他收盘风控条件。
-        if close_price <= stop_price:
-            return close_price, "stop_loss"
-        if close_price >= target_price:
-            return close_price, "take_profit"
-
-        if previous_close is not None and previous_close > 0:
-            previous_close_decline_pct = (previous_close - close_price) / previous_close
-            if previous_close_decline_pct > self.config.previous_close_decline_exit_pct:
-                return close_price, "previous_close_decline"
-
-        if consecutive_bearish_count >= self.config.consecutive_bearish_candle_count:
-            return close_price, "consecutive_bearish_candles"
-
-        return None
-
-    def _next_bearish_streak(
-        self,
-        quote: pd.Series,
-        current_streak: int,
-    ) -> int:
-        """更新连续大阴线计数；当前 K 线不满足条件时归零。"""
-
-        open_price = float(quote["open"])
-        close_price = float(quote["close"])
-        body_decline_pct = (open_price - close_price) / open_price
-        if (
-            close_price < open_price
-            and body_decline_pct > self.config.consecutive_bearish_body_pct
-        ):
-            return current_streak + 1
-        return 0
-
-    def _execute_close_buys(
-        self,
-        *,
-        account: Account,
-        trade_date: date,
-        day_quotes: pd.DataFrame,
-        candidates: pd.DataFrame,
-        trade_rows: list[dict[str, Any]],
-    ) -> BuyExecutionStats:
-        """按信号顺序在收盘价买入，并返回执行统计。"""
-
-        # 先剔除已持仓、缺少行情或价格关系无效的信号。
-        executable: list[dict[str, Any]] = []
-        skipped_already_held = 0
-        skipped_unexecutable = 0
-        seen_symbols = set(account.positions)
-        for signal in candidates.to_dict(orient="records"):
-            symbol = str(signal["symbol"])
-            if symbol in seen_symbols:
-                skipped_already_held += 1
-                continue
-            if symbol not in day_quotes.index:
-                skipped_unexecutable += 1
-                continue
-            close_price = float(day_quotes.loc[symbol, "close"])
-            stop_price = float(signal["stop_loss_price"])
-            target_price = float(signal["take_profit_price"])
-            if 0 < stop_price < close_price < target_price:
-                signal["execution_price"] = close_price
-                executable.append(signal)
-                seen_symbols.add(symbol)
-            else:
-                skipped_unexecutable += 1
-
-        if not executable:
-            return BuyExecutionStats(
-                skipped_already_held=skipped_already_held,
-                skipped_unexecutable=skipped_unexecutable,
-            )
-
-        if len(account.positions) >= self.config.max_positions:
-            return BuyExecutionStats(
-                skipped_full=len(executable),
-                skipped_already_held=skipped_already_held,
-                skipped_unexecutable=skipped_unexecutable,
-            )
-
-        close_prices = day_quotes["close"].astype(float).to_dict()
-        portfolio_equity = account.total_equity(close_prices)
-        # 单股预算独立于最大持仓数，始终按账户总权益的固定比例计算。
-        target_budget = portfolio_equity * self.config.max_position_pct
-        executed = 0
-        skipped_full = 0
-        skipped_insufficient_cash = 0
-        for signal in executable:
-            if len(account.positions) >= self.config.max_positions:
-                skipped_full += 1
-                continue
-            symbol = str(signal["symbol"])
-            price = float(signal["execution_price"])
-            budget = min(target_budget, account.cash)
-            quantity = self._affordable_quantity(budget, price)
-            while quantity > 0:
-                gross_amount = quantity * price
-                fee = self._transaction_fee(gross_amount, side="BUY")
-                if gross_amount + fee <= account.cash + 1e-8:
-                    break
-                quantity -= self.config.lot_size
-            if quantity <= 0:
-                skipped_insufficient_cash += 1
-                continue
-
-            gross_amount = quantity * price
-            fee = self._transaction_fee(gross_amount, side="BUY")
-            position = account.buy(
-                symbol=symbol,
-                name=str(signal["name"]),
-                quantity=quantity,
-                price=price,
-                fee=fee,
-                stop_loss_price=float(signal["stop_loss_price"]),
-                take_profit_price=float(signal["take_profit_price"]),
-                signal_date=pd.Timestamp(signal["breakout_date"]).date(),
-                trade_date=trade_date,
-            )
-            trade_rows.append(
-                {
-                    "trade_date": trade_date,
-                    "signal_date": position.signal_date,
-                    "symbol": symbol,
-                    "name": position.name,
-                    "side": "BUY",
-                    "price": price,
-                    "quantity": quantity,
-                    "gross_amount": gross_amount,
-                    "position_pct": gross_amount / portfolio_equity,
-                    "stop_loss_price": position.stop_loss_price,
-                    "take_profit_price": position.take_profit_price,
-                    "fee": fee,
-                    "cash_after": account.cash,
-                    "realized_pnl": None,
-                    "return_pct": None,
-                    "reason": "confirm_buy",
-                }
-            )
-            executed += 1
-
-        return BuyExecutionStats(
-            executed=executed,
-            skipped_full=skipped_full,
-            skipped_already_held=skipped_already_held,
-            skipped_unexecutable=skipped_unexecutable,
-            skipped_insufficient_cash=skipped_insufficient_cash,
-        )
-
-    def _affordable_quantity(self, budget: float, price: float) -> int:
-        """在预算内计算可买的整手股数，并预留买入佣金。"""
-
-        if budget <= 0 or price <= 0:
-            return 0
-        gross_budget = budget
-        if self.config.commission_rate > 0:
-            gross_budget = max(
-                0.0,
-                budget
-                - max(
-                    budget * self.config.commission_rate,
-                    self.config.minimum_commission,
-                ),
-            )
-        lots = floor(gross_budget / price / self.config.lot_size)
-        return lots * self.config.lot_size
-
-    def _transaction_fee(self, gross_amount: float, *, side: str) -> float:
-        """计算单笔交易的佣金和卖出税费。"""
-
-        commission = 0.0
-        if self.config.commission_rate > 0:
-            commission = max(
-                gross_amount * self.config.commission_rate,
-                self.config.minimum_commission,
-            )
-        sell_tax = gross_amount * self.config.sell_tax_rate if side == "SELL" else 0.0
-        return commission + sell_tax
 
 
 def load_backtest_data(
@@ -659,31 +497,63 @@ def run_from_database(config: BacktestConfig | None = None) -> BacktestResult:
 
 
 def _render_result(result: BacktestResult) -> None:
-    """在终端输出回测核心指标。"""
+    """按策略表现、交易表现和执行统计输出回测指标。"""
 
     summary = result.summary()
-    table = Table(title="放量突破次日确认回测")
+
+    table = _metric_table()
+    table.add_row("回测区间", f"{summary['start_date']} ~ {summary['end_date']}")
+    table.add_row("初始资金", f"{int(summary['initial_cash']):,}")
+    table.add_row("期末资产", f"{int(summary['final_equity']):,}")
+    table.add_section()
+    table.add_row("累计收益率", f"{summary['total_return']:.2%}")
+    # table.add_row("年化收益率", f"{summary['annualized_return']:.2%}")
+    # table.add_row("Sharpe", f"{summary['sharpe_ratio']:.3f}")
+    # table.add_row("Calmar", f"{summary['calmar_ratio']:.3f}")
+
+    table.add_row("合格信号数", str(summary["qualified_signal_count"]))
+    table.add_row("开仓次数", str(summary["opening_count"]))
+    table.add_row("最大回撤", f"{summary['max_drawdown']:.2%}")
+    table.add_row("已平仓交易", str(summary["closed_trade_count"]))
+    table.add_row("期末未平仓", str(summary["open_positions"]))
+    table.add_section()
+    table.add_row("胜率", f"{summary['win_rate']:.2%}")
+    table.add_row("平均单笔收益率", f"{summary['average_trade_return']:+.2%}")
+    table.add_row("平均盈利收益率", f"{summary['average_winning_return']:+.2%}")
+    table.add_row("平均亏损收益率", f"{summary['average_losing_return']:+.2%}")
+    table.add_row("盈亏比", _format_ratio(summary["payoff_ratio"]))
+    # table.add_row("Profit Factor", _format_ratio(summary["profit_factor"]))
+    # table.add_row("单笔期望收益率", f"{summary['expectancy_return']:+.2%}")
+    table.add_row("平均持仓天数", f"{summary['average_holding_days']:.1f}")
+    table.add_section()
+
+    table.add_row("信号成交率", f"{summary['signal_execution_rate']:.2%}")
+    table.add_row("满仓跳过", str(summary["skipped_full_position_count"]))
+    console.print(table)
+
+
+def _metric_table() -> Table:
+    """创建与终端示例一致的双列表格。"""
+
+    table = Table(
+        title="回测统计",
+        title_justify="center",
+        box=box.SQUARE,
+        show_edge=True,
+        pad_edge=False,
+        width=50,
+    )
     table.add_column("指标")
     table.add_column("结果", justify="right")
-    table.add_row("回测区间", f"{summary['start_date']} ~ {summary['end_date']}")
-    table.add_row("初始资金", f"{summary['initial_cash']:,.2f}")
-    table.add_row("期末资产", f"{summary['final_equity']:,.2f}")
-    table.add_row("累计收益率", f"{summary['total_return']:.2%}")
-    table.add_row("年化收益率", f"{summary['annualized_return']:.2%}")
-    table.add_row("最大回撤", f"{summary['max_drawdown']:.2%}")
-    table.add_row("Sharpe", f"{summary['sharpe_ratio']:.3f}")
-    table.add_row("有效信号日", str(summary["signal_days"]))
-    table.add_row("合格信号数", str(summary["qualified_signal_count"]))
-    table.add_row("成交数（买入）", str(summary["executed_signal_count"]))
-    table.add_row(
-        "因满仓跳过数",
-        str(summary["skipped_full_position_count"]),
-    )
-    table.add_row("交易记录", str(summary["trade_count"]))
-    table.add_row("已平仓股票", str(summary["closed_trade_count"]))
-    table.add_row("胜率", f"{summary['win_rate']:.2%}")
-    table.add_row("期末未平仓", str(summary["open_positions"]))
-    console.print(table)
+    return table
+
+
+def _format_ratio(value: float | None) -> str:
+    """以两位小数显示比率，并友好表示无穷或无可用数据。"""
+
+    if value is None:
+        return "—"
+    return "∞" if isinf(value) and value > 0 else f"{value:.2f}"
 
 
 def main() -> None:
