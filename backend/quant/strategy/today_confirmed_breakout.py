@@ -1,10 +1,20 @@
-"""放量突破次日确认信号的买卖规则。"""
+"""放量突破次日确认信号的买卖规则。
+
+入场：确认日收盘价买入，突破日前收盘价止损，按盈亏比设置止盈。
+
+退出（收盘后判断、按收盘价成交、入场当日不退出），按优先级：
+1. 止损：收盘价 <= 止损价；
+2. 止盈：收盘价 >= 止盈价；
+3. 大跌：某日收盘价较前收跌幅大于 5%，次日没有大阳线或中阳线反包则退出；
+4. 连续下跌：连续 3 个交易日，每天较前收的跌幅都大于 2%。
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from backend.quant.signal.patterns.today_confirmed_breakout import (
@@ -21,6 +31,8 @@ ENTRY_COLUMNS = [
 ]
 EXIT_COLUMNS = ["symbol", "entry_date", "exit_date", "exit_reason", "exit_close"]
 
+EXIT_REASON_STOP_LOSS = "stop_loss"
+EXIT_REASON_TAKE_PROFIT = "take_profit"
 EXIT_REASON_CLOSE_DROP = "close_drop"
 EXIT_REASON_DECLINE_STREAK = "decline_streak"
 
@@ -31,22 +43,16 @@ class StrategyConfig:
 
     # 止盈距离为每股风险的倍数；2.0 表示目标盈亏比为 2:1。
     risk_reward_ratio: float = 2.0
-    # 当日收盘价相对前收的跌幅严格大于该值时退出；0.05 表示 5%。
+    # 当日收盘价相对前收的跌幅严格大于该值算“大跌”，次日再决定是否退出。
     previous_close_decline_exit_pct: float = 0.05
+    # 大跌次日，大阳线实体相对开盘价的最低涨幅；0.05 表示 5%。
+    close_drop_large_bullish_min_body_pct: float = 0.05
+    # 大跌次日，反包（当日涨幅与中阳线实体）所需的最低涨幅；0.02 表示 2%。
+    close_drop_reversal_min_rise_pct: float = 0.02
     # 触发“连续下跌”退出所需的连续交易日数。
     consecutive_decline_day_count: int = 3
     # 连续下跌期间，每日相对前收的跌幅均须严格大于该值；0.02 表示 2%。
     consecutive_decline_pct: float = 0.02
-
-    def __post_init__(self) -> None:
-        if self.risk_reward_ratio <= 0:
-            raise ValueError("risk_reward_ratio 必须大于 0")
-        if self.previous_close_decline_exit_pct < 0:
-            raise ValueError("previous_close_decline_exit_pct 不能为负数")
-        if self.consecutive_decline_day_count <= 0:
-            raise ValueError("consecutive_decline_day_count 必须大于 0")
-        if self.consecutive_decline_pct < 0:
-            raise ValueError("consecutive_decline_pct 不能为负数")
 
 
 class TodayConfirmedBreakoutStrategy:
@@ -60,6 +66,9 @@ class TodayConfirmedBreakoutStrategy:
         self.config = config or StrategyConfig()
         self.pattern = pattern or TodayConfirmedBreakoutPattern()
 
+    # ------------------------------------------------------------------
+    # 入场
+    # ------------------------------------------------------------------
     def generate_entries(
         self,
         trade_date: DateLike,
@@ -71,11 +80,7 @@ class TodayConfirmedBreakoutStrategy:
         """为一个交易日生成包含风控价格的入场候选。"""
 
         signals = self.pattern.scan(
-            trade_date,
-            stocks,
-            daily_bars,
-            hot_stocks,
-            stock_daily_basic,
+            trade_date, stocks, daily_bars, hot_stocks, stock_daily_basic
         )
         return self._apply_entry_rules(signals)
 
@@ -90,16 +95,12 @@ class TodayConfirmedBreakoutStrategy:
         """为多个交易日生成包含风控价格的入场候选。"""
 
         signals = self.pattern.scan_range(
-            trade_dates,
-            stocks,
-            daily_bars,
-            hot_stocks,
-            stock_daily_basic,
+            trade_dates, stocks, daily_bars, hot_stocks, stock_daily_basic
         )
         return self._apply_entry_rules(signals)
 
     def _apply_entry_rules(self, signals: pd.DataFrame) -> pd.DataFrame:
-        """把信号转换为可执行候选：确认日收盘入场，突破日前收盘止损。"""
+        """确认日收盘入场，突破日前收盘价止损，按盈亏比止盈。"""
 
         if signals.empty:
             return pd.DataFrame(columns=ENTRY_COLUMNS)
@@ -109,6 +110,7 @@ class TodayConfirmedBreakoutStrategy:
         entries["risk_per_share"] = (
             entries["confirm_close"] - entries["stop_loss_price"]
         )
+        # 入场价不高于止损价时，风险为非正，价格关系不成立。
         entries = entries[entries["risk_per_share"] > 0].copy()
         entries["take_profit_price"] = (
             entries["confirm_close"]
@@ -116,136 +118,121 @@ class TodayConfirmedBreakoutStrategy:
         )
         return entries[ENTRY_COLUMNS].reset_index(drop=True)
 
+    # ------------------------------------------------------------------
+    # 退出
+    # ------------------------------------------------------------------
     def find_exits(
         self,
         positions: pd.DataFrame,
         daily_bars: pd.DataFrame,
     ) -> pd.DataFrame:
-        """为每笔持仓找出首个触发策略退出规则的交易日。"""
+        """为每笔持仓找出首个触发退出规则的交易日。
 
-        if positions.empty or daily_bars.empty:
+        positions 需包含 symbol、entry_date、stop_loss_price、take_profit_price。
+        没有触发退出的持仓不会出现在结果里。
+        """
+
+        if positions.empty:
             return pd.DataFrame(columns=EXIT_COLUMNS)
-
-        held = positions[["symbol", "entry_date"]].copy()
-        held["entry_date"] = pd.to_datetime(held["entry_date"]).dt.normalize()
-        held = held.drop_duplicates()
-
-        bars = self._prepare_bars(daily_bars, held["symbol"])
-        if bars.empty:
-            return pd.DataFrame(columns=EXIT_COLUMNS)
-
-        grouped = bars.groupby("symbol", sort=False, observed=True)
-        bars["daily_decline_pct"] = 1 - bars["close"] / grouped["close"].shift(1)
 
         keys = ["symbol", "entry_date"]
-        rows = held.merge(
-            bars[["symbol", "trade_date", "close", "daily_decline_pct"]],
-            on="symbol",
-            how="inner",
-        )
+        held = positions[[*keys, "stop_loss_price", "take_profit_price"]].copy()
+        held["entry_date"] = pd.to_datetime(held["entry_date"]).dt.normalize()
+        held = held.drop_duplicates(keys)
+
+        # 每笔持仓配上它入场之后的每日行情（入场当日不退出，符合 T+1）。
+        bars = self._add_daily_columns(self._prepare_bars(daily_bars, held["symbol"]))
+        rows = held.merge(bars, on="symbol")
         rows = rows[rows["trade_date"] > rows["entry_date"]].sort_values(
             [*keys, "trade_date"], kind="stable"
         )
         if rows.empty:
             return pd.DataFrame(columns=EXIT_COLUMNS)
 
-        close_drop = (
-            rows["daily_decline_pct"]
-            > self.config.previous_close_decline_exit_pct
-        )
-        weakest_decline = (
-            rows.groupby(keys, sort=False)["daily_decline_pct"]
-            .rolling(
-                self.config.consecutive_decline_day_count,
-                min_periods=self.config.consecutive_decline_day_count,
+        cfg = self.config
+        stop_loss = rows["close"] <= rows["stop_loss_price"]
+        take_profit = rows["close"] >= rows["take_profit_price"]
+        # 前一天大跌，今天没有反包，就退出。
+        close_drop = rows["big_drop_yesterday"] & ~self._is_reversal(rows)
+        # 最近 N 天涨幅的最大值仍小于 -2%，说明每天都跌超 2%。
+        decline_streak = (
+            rows.groupby(keys)["rise_pct"].transform(
+                lambda s: s.rolling(cfg.consecutive_decline_day_count).max()
             )
-            .min()
-            .reset_index(level=[0, 1], drop=True)
+            < -cfg.consecutive_decline_pct
         )
-        decline_streak = weakest_decline > self.config.consecutive_decline_pct
 
-        rows["exit_reason"] = None
-        rows.loc[decline_streak, "exit_reason"] = EXIT_REASON_DECLINE_STREAK
-        rows.loc[close_drop, "exit_reason"] = EXIT_REASON_CLOSE_DROP
-
+        # np.select 取第一个成立的条件，所以列表顺序就是优先级。
+        rows["exit_reason"] = np.select(
+            [stop_loss, take_profit, close_drop, decline_streak],
+            [
+                EXIT_REASON_STOP_LOSS,
+                EXIT_REASON_TAKE_PROFIT,
+                EXIT_REASON_CLOSE_DROP,
+                EXIT_REASON_DECLINE_STREAK,
+            ],
+            default="",
+        )
         exits = (
-            rows[rows["exit_reason"].notna()]
+            rows[rows["exit_reason"] != ""]
             .groupby(keys, sort=False)
             .head(1)
             .rename(columns={"trade_date": "exit_date", "close": "exit_close"})
         )
         return exits[EXIT_COLUMNS].reset_index(drop=True)
 
-    def next_decline_streak(
-        self,
-        *,
-        close_price: float,
-        previous_close: float,
-        current_streak: int,
-    ) -> int:
-        """按策略的连续下跌定义更新计数。"""
+    def _is_reversal(self, rows: pd.DataFrame) -> pd.Series:
+        """当日是否以大阳线或中阳线反包了前一日的下跌。
 
-        decline_pct = 1 - close_price / previous_close
-        return (
-            current_streak + 1
-            if decline_pct > self.config.consecutive_decline_pct
-            else 0
+        - 大阳线：实体涨幅达到 close_drop_large_bullish_min_body_pct；
+        - 中阳线：实体涨幅达到 close_drop_reversal_min_rise_pct，
+          且开盘不高于前一日实体下沿、收盘不低于前一日实体上沿（阳包阴）；
+        - 两者都要求当日涨幅（相对前收）达到 close_drop_reversal_min_rise_pct。
+        实体涨幅为正即代表阳线，所以不用单独判断。
+        """
+
+        cfg = self.config
+        previous_body_low = np.minimum(rows["previous_open"], rows["previous_close"])
+        previous_body_high = np.maximum(rows["previous_open"], rows["previous_close"])
+
+        large_bullish = rows["body_pct"] >= cfg.close_drop_large_bullish_min_body_pct
+        medium_engulfing = (
+            (rows["body_pct"] >= cfg.close_drop_reversal_min_rise_pct)
+            & (rows["open"] <= previous_body_low)
+            & (rows["close"] >= previous_body_high)
         )
+        enough_rise = rows["rise_pct"] >= cfg.close_drop_reversal_min_rise_pct
+        return enough_rise & (large_bullish | medium_engulfing)
 
-    def exit_reason(
-        self,
-        *,
-        close_price: float,
-        stop_loss_price: float,
-        take_profit_price: float,
-        previous_close: float,
-        consecutive_decline_count: int,
-    ) -> str | None:
-        """按优先级判断单日退出原因。"""
+    def _add_daily_columns(self, bars: pd.DataFrame) -> pd.DataFrame:
+        """计算每根 K 线的前收、涨幅、实体涨幅，以及“前一天是否大跌”。"""
 
-        risk_reason = self.risk_exit_reason(
-            close_price=close_price,
-            stop_loss_price=stop_loss_price,
-            take_profit_price=take_profit_price,
+        by_symbol = bars.groupby("symbol", sort=False)
+        bars["previous_open"] = by_symbol["open"].shift(1)
+        bars["previous_close"] = by_symbol["close"].shift(1)
+        # 四舍五入到 6 位小数，消除浮点误差，让 5%、2% 这类边界值判断准确。
+        bars["rise_pct"] = (bars["close"] / bars["previous_close"] - 1).round(6)
+        bars["body_pct"] = (bars["close"] / bars["open"] - 1).round(6)
+
+        yesterday_rise = bars.groupby("symbol", sort=False)["rise_pct"].shift(1)
+        bars["big_drop_yesterday"] = (
+            yesterday_rise < -self.config.previous_close_decline_exit_pct
         )
-        if risk_reason is not None:
-            return risk_reason
-        decline_pct = 1 - close_price / previous_close
-        if decline_pct > self.config.previous_close_decline_exit_pct:
-            return EXIT_REASON_CLOSE_DROP
-        if consecutive_decline_count >= self.config.consecutive_decline_day_count:
-            return EXIT_REASON_DECLINE_STREAK
-        return None
+        return bars
 
     @staticmethod
-    def risk_exit_reason(
-        *,
-        close_price: float,
-        stop_loss_price: float,
-        take_profit_price: float,
-    ) -> str | None:
-        """判断止损和止盈规则。"""
+    def _prepare_bars(daily_bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
+        """只保留持仓股票有效的开盘价、收盘价，并按股票、日期排序去重。"""
 
-        if close_price <= stop_loss_price:
-            return "stop_loss"
-        if close_price >= take_profit_price:
-            return "take_profit"
-        return None
-
-    @staticmethod
-    def _prepare_bars(
-        daily_bars: pd.DataFrame,
-        symbols: pd.Series,
-    ) -> pd.DataFrame:
-        """清洗退出规则所需的收盘行情。"""
-
-        bars = daily_bars[daily_bars["symbol"].isin(symbols)].copy()
-        bars["trade_date"] = pd.to_datetime(
-            bars["trade_date"], errors="coerce"
-        ).dt.normalize()
-        bars["close"] = pd.to_numeric(bars["close"], errors="coerce")
-        bars = bars.dropna(subset=["symbol", "trade_date", "close"])
-        bars = bars[bars["close"] > 0]
+        bars = daily_bars.loc[
+            daily_bars["symbol"].isin(symbols),
+            ["symbol", "trade_date", "open", "close"],
+        ].copy()
+        bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
+        for column in ("open", "close"):
+            bars[column] = pd.to_numeric(bars[column], errors="coerce")
+        # 缺失（NaN）或非正的价格无法计算涨幅，直接丢弃。
+        bars = bars[(bars["open"] > 0) & (bars["close"] > 0)]
         return (
             bars.sort_values(["symbol", "trade_date"], kind="stable")
             .drop_duplicates(["symbol", "trade_date"], keep="last")

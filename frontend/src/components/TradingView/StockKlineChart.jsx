@@ -28,6 +28,7 @@ const movingAverages = [
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const EMPTY_MARKERS = [];
+const DEFAULT_VISIBLE_BAR_COUNT = 120;
 
 function timeKey(value) {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -173,10 +174,18 @@ function rowSummary(row, previousRow) {
   };
 }
 
-function resetTimeScale(chart, rowCount) {
-  if (rowCount > 120) {
+function resetTimeScale(chart, rowCount, alignDataLeft) {
+  if (alignDataLeft) {
     chart.timeScale().setVisibleLogicalRange({
-      from: rowCount - 120,
+      from: 0,
+      to: Math.max(rowCount, DEFAULT_VISIBLE_BAR_COUNT) - 1
+    });
+    return;
+  }
+
+  if (rowCount > DEFAULT_VISIBLE_BAR_COUNT) {
+    chart.timeScale().setVisibleLogicalRange({
+      from: rowCount - DEFAULT_VISIBLE_BAR_COUNT,
       to: rowCount - 1 // 右侧不留空隙
     });
     return;
@@ -193,7 +202,8 @@ export default function StockKlineChart({
   period,
   onPeriodChange,
   markers = EMPTY_MARKERS,
-  enableMouseWheelZoom = true
+  enableMouseWheelZoom = true,
+  alignDataLeft = false
 }) {
   const chartRef = useRef(null);
   const contextMenuRef = useRef(null);
@@ -364,7 +374,7 @@ export default function StockKlineChart({
     resetViewRef.current = () => {
       candleSeries.priceScale().applyOptions({ autoScale: true });
       volumeSeries.priceScale().applyOptions({ autoScale: true });
-      resetTimeScale(chart, rows.length);
+      resetTimeScale(chart, rows.length, alignDataLeft);
     };
 
     const summariesByTime = new Map(rows.map((row, index) => [String(row.time), rowSummary(row, rows[index - 1])]));
@@ -375,7 +385,7 @@ export default function StockKlineChart({
     };
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
-    resetTimeScale(chart, rows.length);
+    resetTimeScale(chart, rows.length, alignDataLeft);
 
     return () => {
       resetViewRef.current = () => {};
@@ -383,7 +393,7 @@ export default function StockKlineChart({
       if (tradeMarkerPrimitive) candleSeries.detachPrimitive(tradeMarkerPrimitive);
       chart.remove();
     };
-  }, [enableMouseWheelZoom, rows, seriesMarkers]);
+  }, [alignDataLeft, enableMouseWheelZoom, rows, seriesMarkers]);
 
   const handleContextMenu = event => {
     event.preventDefault();

@@ -136,10 +136,11 @@
 .equitySnapshot > span {
   align-items: center;
   color: #a1a1aa;
-  display: flex;
+  display: flex !important;
   font-size: 12px;
   font-weight: 700;
   gap: 7px;
+  margin: 0 !important;
 }
 
 .equitySnapshot i {

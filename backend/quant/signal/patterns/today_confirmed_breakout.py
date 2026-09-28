@@ -15,7 +15,6 @@ import argparse
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Union
 
 import pandas as pd
 from rich.console import Console
@@ -31,7 +30,7 @@ from backend.quant.stock import filter_market_cap, filter_static_stocks
 
 console = Console()
 
-DateLike = Union[date, str, pd.Timestamp]
+DateLike = date | str | pd.Timestamp
 
 # 形态识别最终向信号 API 暴露的字段，不包含买卖规则。
 RESULT_COLUMNS = [
@@ -52,22 +51,6 @@ RESULT_COLUMNS = [
     "hot_rank",
     "hot_value",
     "selection_rank",
-]
-
-# 突破日需要从行情表带出的列。
-_BREAKOUT_SOURCE_COLUMNS = [
-    "symbol",
-    "trade_date",
-    "close",
-    "volume",
-    "breakout_prev_close",
-    "breakout_previous_avg_volume",
-    "breakout_volume_ratio",
-    "breakout_return_1d_pct",
-    "breakout_return_5d_pct",
-    "breakout_from_low",
-    "breakout_ma_short",
-    "breakout_ma_long",
 ]
 
 
@@ -103,9 +86,10 @@ class SignalConfig:
     max_confirm_upper_wick_ratio: float = 0.4
     # 确认日成交量至少保留突破日成交量的比例。
     min_confirm_volume_ratio: float = 0.70
+
     @property
     def warmup_days(self) -> int:
-        """计算一个突破信号所需的最少历史交易日数量。"""
+        """算出一个突破信号所需的最少历史交易日数量。"""
 
         return max(
             self.previous_volume_days + 1,
@@ -139,7 +123,7 @@ class TodayConfirmedBreakoutPattern:
     ) -> pd.DataFrame:
         """返回在 trade_date 当天通过二次确认的股票。"""
 
-        # 实盘/命令行通常只有“最新”市值快照，允许在没有历史匹配时回退到最新值；
+        # 实盘/命令行通常只有“最新”市值快照，匹配不到历史市值时允许回退到最新值；
         # 历史扫描（scan_range）默认不回退，避免使用未来市值。
         return self.scan_range(
             [trade_date],
@@ -165,51 +149,29 @@ class TodayConfirmedBreakoutPattern:
         confirm_dates = self._normalize_dates(trade_dates)
         if confirm_dates.empty or stocks.empty or daily_bars.empty:
             return _empty_result()
-
         eligible = filter_static_stocks(stocks)
-        if eligible.empty:
-            return _empty_result()
 
-        # 1. 日期配对：每个确认日只能使用它之前最近一个全市场交易日作为突破日。
-        bars = self._normalize_bars(daily_bars)
-        date_pairs, market_dates = self._pair_dates(bars, confirm_dates)
-        if date_pairs.empty:
-            return _empty_result()
+        # 1. 行情准备：确认日配突破日，清洗行情，只留用得到的时间段。
+        date_pairs = self._pair_dates(daily_bars, confirm_dates)
+        bars = self._prepare_bars(daily_bars, eligible["symbol"])
+        bars = self._trim_bars(bars, date_pairs, confirm_dates.max())
 
-        # 2. 清洗行情并只保留必要的时间窗口（突破日往前留出指标预热期）。
-        bars = self._clean_bars(bars, eligible["symbol"])
-        bars = self._trim_bars(bars, market_dates, date_pairs, confirm_dates.max())
-        if bars.empty:
-            return _empty_result()
-
-        # 3. 突破阶段：滚动指标 + 条件过滤。
+        # 2. 突破阶段：计算指标并筛选突破日。
         bars = self._add_breakout_indicators(bars)
         signals = self._select_breakout_signals(bars, date_pairs)
-        if signals.empty:
-            return _empty_result()
 
-        # 4. 确认阶段：拼接确认日 K 线，检查形态并计算止盈止损。
+        # 3. 确认阶段：拼上确认日 K 线，检查形态。
         signals = self._attach_confirm_bars(signals, bars, confirm_dates)
         signals = self._apply_confirmation(signals)
         if signals.empty:
             return _empty_result()
 
-        # 5. 基本面与热度：放在最后，只处理已通过量价形态的少量信号。
-        signals = signals.merge(
-            eligible[["symbol", "name", "exchange"]],
-            on="symbol",
-            how="inner",
-            sort=False,
-        )
+        # 4. 补充基本面与热度，最后排名。只处理已通过形态的少量信号。
+        signals = signals.merge(eligible[["symbol", "name", "exchange"]], on="symbol")
         signals = self._merge_market_cap(
-            signals,
-            stock_daily_basic,
-            fallback_to_latest=latest_market_cap_fallback,
+            signals, stock_daily_basic, fallback_to_latest=latest_market_cap_fallback
         )
         signals = filter_market_cap(self.config.min_market_cap, signals)
-        if signals.empty:
-            return _empty_result()
-
         signals = self._merge_heat(signals, hot_stocks)
         signals = signals.sort_values(
             ["confirm_date", "hot_rank", "breakout_volume_ratio"],
@@ -227,51 +189,41 @@ class TodayConfirmedBreakoutPattern:
     # ------------------------------------------------------------------
     @staticmethod
     def _normalize_dates(trade_dates: Iterable[DateLike]) -> pd.DatetimeIndex:
-        dates = pd.DatetimeIndex(
-            pd.to_datetime(list(trade_dates), errors="raise")
-        ).normalize()
+        """统一到零点，去重并排序。"""
+
+        dates = pd.DatetimeIndex(pd.to_datetime(list(trade_dates))).normalize()
         return dates.drop_duplicates().sort_values()
 
     @staticmethod
-    def _normalize_bars(daily_bars: pd.DataFrame) -> pd.DataFrame:
-        """统一日期到零点，避免带时分秒的输入无法与日频数据匹配。"""
-
-        bars = daily_bars.copy()
-        bars["trade_date"] = pd.to_datetime(
-            bars["trade_date"], errors="coerce"
-        ).dt.normalize()
-        return bars
-
-    @staticmethod
     def _pair_dates(
-        bars: pd.DataFrame,
+        daily_bars: pd.DataFrame,
         confirm_dates: pd.DatetimeIndex,
-    ) -> tuple[pd.DataFrame, pd.DatetimeIndex]:
-        """为每个确认日找到其之前最近的全市场交易日作为突破日。"""
+    ) -> pd.DataFrame:
+        """每个确认日配上它之前最近的一个全市场交易日，作为突破日。"""
 
         market_dates = pd.DatetimeIndex(
-            bars["trade_date"].dropna().drop_duplicates().sort_values()
-        )
+            pd.to_datetime(daily_bars["trade_date"]).dt.normalize().unique()
+        ).sort_values()
         previous = market_dates.searchsorted(confirm_dates, side="left") - 1
-        valid = previous >= 0
-        pairs = pd.DataFrame(
+        has_previous = previous >= 0
+        return pd.DataFrame(
             {
-                "confirm_date": confirm_dates[valid],
-                "breakout_date": market_dates[previous[valid]],
+                "confirm_date": confirm_dates[has_previous],
+                "breakout_date": market_dates[previous[has_previous]],
             }
         )
-        return pairs, market_dates
 
     @staticmethod
-    def _clean_bars(bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
+    def _prepare_bars(daily_bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
         """只保留候选股票的有效行情，并按股票、日期排序去重。"""
 
         # 先按股票池裁剪，再做类型转换，降低批量计算开销。
-        bars = bars[bars["symbol"].isin(symbols)].copy()
+        columns = ["symbol", "trade_date", "open", "high", "low", "close", "volume"]
+        bars = daily_bars.loc[daily_bars["symbol"].isin(symbols), columns].copy()
+        bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
         for column in ("open", "high", "low", "close", "volume"):
             bars[column] = pd.to_numeric(bars[column], errors="coerce")
-        bars = bars.dropna(subset=["trade_date", "close", "volume"])
-        # 零值和负值无法用于收益率、量比计算。
+        # 缺失、零值和负值无法用于收益率、量比计算（缺失值比较结果为 False）。
         bars = bars[(bars["close"] > 0) & (bars["volume"] > 0)]
         return (
             bars.sort_values(["symbol", "trade_date"], kind="stable")
@@ -282,18 +234,15 @@ class TodayConfirmedBreakoutPattern:
     def _trim_bars(
         self,
         bars: pd.DataFrame,
-        market_dates: pd.DatetimeIndex,
         date_pairs: pd.DataFrame,
         last_confirm_date: pd.Timestamp,
     ) -> pd.DataFrame:
-        """丢弃用不到的行情：最后确认日之后（防未来数据）与预热期之前。
+        """丢弃用不到的行情：最后确认日之后，以及首个突破日之前的多余历史。"""
 
-        预热期按全市场交易日的 2 倍窗口留余量，覆盖个股停牌导致的行数缺口。
-        """
-
-        first_position = market_dates.searchsorted(date_pairs["breakout_date"].min())
-        start_position = max(0, first_position - self.config.warmup_days * 2)
-        start_date = market_dates[start_position]
+        # 1 个交易日约 1.4 个自然日，这里放大到 3 倍，给周末、节假日和停牌留足余量。
+        start_date = date_pairs["breakout_date"].min() - pd.Timedelta(
+            days=self.config.warmup_days * 3
+        )
         return bars[
             (bars["trade_date"] >= start_date)
             & (bars["trade_date"] <= last_confirm_date)
@@ -302,40 +251,32 @@ class TodayConfirmedBreakoutPattern:
     # ------------------------------------------------------------------
     # 突破阶段
     # ------------------------------------------------------------------
-    @staticmethod
-    def _rolling(grouped_series, window: int, func: str) -> pd.Series:
-        """按股票滚动统计，窗口不满则为 NaN，结果与原行索引对齐。"""
-
-        rolled = grouped_series.rolling(window, min_periods=window)
-        return getattr(rolled, func)().reset_index(level=0, drop=True)
-
     def _add_breakout_indicators(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """为每一行计算“若以该日为突破日”的全部指标（向量化，无逐股循环）。"""
+        """为每一行计算“如果以这一天作为突破日”的各项指标。"""
 
         cfg = self.config
-        grouped = bars.groupby("symbol", sort=False, observed=True)
-        close_group = grouped["close"]
+        by_symbol = bars.groupby("symbol")
+        close = by_symbol["close"]
 
-        previous_close = close_group.shift(1)
-        # 基准均量取该日之前 N 日（不含当日）。
-        avg_volume = self._rolling(grouped["volume"], cfg.previous_volume_days, "mean")
-        previous_avg_volume = avg_volume.groupby(
-            bars["symbol"], sort=False, observed=True
-        ).shift(1)
-        low = self._rolling(close_group, cfg.low_window_days, "min")
-
-        bars["breakout_prev_close"] = previous_close
-        bars["breakout_previous_avg_volume"] = previous_avg_volume
+        # 滚动结果带有“股票”这一层索引，droplevel(0) 去掉后即可与原行对齐。
+        bars["breakout_prev_close"] = close.shift(1)
+        # 成交量先整体后移一天，再求 N 日均值，就是不含当日的基准均量。
+        previous_volume = by_symbol["volume"].shift(1)
+        previous_avg_volume = (
+            previous_volume.groupby(bars["symbol"])
+            .rolling(cfg.previous_volume_days)
+            .mean()
+            .droplevel(0)
+        )
         bars["breakout_volume_ratio"] = bars["volume"] / previous_avg_volume
-        bars["breakout_return_1d_pct"] = bars["close"] / previous_close - 1
+        bars["breakout_return_1d_pct"] = bars["close"] / bars["breakout_prev_close"] - 1
         bars["breakout_return_5d_pct"] = (
-            bars["close"] / close_group.shift(cfg.weekly_return_days) - 1
+            bars["close"] / close.shift(cfg.weekly_return_days) - 1
         )
-        bars["breakout_from_low"] = bars["close"] / low - 1
-        bars["breakout_ma_short"] = self._rolling(
-            close_group, cfg.short_ma_days, "mean"
-        )
-        bars["breakout_ma_long"] = self._rolling(close_group, cfg.long_ma_days, "mean")
+        lowest_close = close.rolling(cfg.low_window_days).min().droplevel(0)
+        bars["breakout_from_low"] = bars["close"] / lowest_close - 1
+        bars["breakout_ma_short"] = close.rolling(cfg.short_ma_days).mean().droplevel(0)
+        bars["breakout_ma_long"] = close.rolling(cfg.long_ma_days).mean().droplevel(0)
         return bars
 
     def _select_breakout_signals(
@@ -343,10 +284,10 @@ class TodayConfirmedBreakoutPattern:
         bars: pd.DataFrame,
         date_pairs: pd.DataFrame,
     ) -> pd.DataFrame:
-        """在突破日行上应用全部突破条件，并与确认日配对。"""
+        """在突破日那一行上检查全部突破条件，并配上对应的确认日。"""
 
         cfg = self.config
-        mask = (
+        is_breakout = (
             bars["trade_date"].isin(date_pairs["breakout_date"])
             & (bars["breakout_volume_ratio"] >= cfg.min_breakout_volume_ratio)
             & (bars["breakout_return_1d_pct"] > cfg.min_breakout_return_1d_pct)
@@ -354,14 +295,25 @@ class TodayConfirmedBreakoutPattern:
             & (bars["breakout_ma_long"] > bars["breakout_ma_short"])
             & (bars["breakout_from_low"] <= cfg.max_breakout_from_low)
         )
-        signals = bars.loc[mask, _BREAKOUT_SOURCE_COLUMNS].rename(
+        signals = bars.loc[
+            is_breakout,
+            [
+                "symbol",
+                "trade_date",
+                "close",
+                "volume",
+                "breakout_prev_close",
+                "breakout_volume_ratio",
+                "breakout_return_1d_pct",
+            ],
+        ].rename(
             columns={
                 "trade_date": "breakout_date",
                 "close": "breakout_close",
                 "volume": "breakout_volume",
             }
         )
-        return date_pairs.merge(signals, on="breakout_date", how="inner", sort=False)
+        return date_pairs.merge(signals, on="breakout_date")
 
     # ------------------------------------------------------------------
     # 确认阶段
@@ -372,7 +324,7 @@ class TodayConfirmedBreakoutPattern:
         bars: pd.DataFrame,
         confirm_dates: pd.DatetimeIndex,
     ) -> pd.DataFrame:
-        """拼接确认日 K 线；确认日停牌/无行情的股票被 inner join 剔除。"""
+        """拼接确认日 K 线；确认日停牌、没有行情的股票会被剔除。"""
 
         confirm_bars = bars.loc[
             bars["trade_date"].isin(confirm_dates),
@@ -387,9 +339,7 @@ class TodayConfirmedBreakoutPattern:
                 "volume": "confirm_volume",
             }
         )
-        return signals.merge(
-            confirm_bars, on=["confirm_date", "symbol"], how="inner", sort=False
-        )
+        return signals.merge(confirm_bars, on=["confirm_date", "symbol"])
 
     def _apply_confirmation(self, rows: pd.DataFrame) -> pd.DataFrame:
         """检查小阳线、影线与量能。"""
@@ -411,7 +361,7 @@ class TodayConfirmedBreakoutPattern:
             / candle_range,
             confirm_volume_ratio=rows["confirm_volume"] / rows["breakout_volume"],
         )
-        mask = (
+        is_confirmed = (
             (rows["confirm_close"] > rows["confirm_open"])
             & (confirm_return > cfg.min_confirm_return_1d_pct)
             & (confirm_return <= cfg.max_confirm_return_1d_pct)
@@ -419,49 +369,30 @@ class TodayConfirmedBreakoutPattern:
             & (rows["confirm_upper_wick_ratio"] <= cfg.max_confirm_upper_wick_ratio)
             & (rows["confirm_volume_ratio"] >= cfg.min_confirm_volume_ratio)
         )
-        return rows[mask].copy()
+        return rows[is_confirmed]
 
     # ------------------------------------------------------------------
     # 市值与热度
     # ------------------------------------------------------------------
     @staticmethod
     def _merge_market_cap(
-        candidates: pd.DataFrame,
+        signals: pd.DataFrame,
         stock_daily_basic: pd.DataFrame,
         *,
-        fallback_to_latest: bool = False,
+        fallback_to_latest: bool,
     ) -> pd.DataFrame:
-        """按确认日向前匹配每只股票最近可用的历史市值（point-in-time）。
+        """按确认日向前匹配每只股票最近一次的历史市值，避免使用未来市值。
 
-        fallback_to_latest=True 时，匹配不到的股票使用其最新市值，仅适用于实盘。
+        fallback_to_latest=True 时，匹配不到的股票改用其最新市值，仅适用于实盘。
         """
 
-        candidates = candidates.copy()
-        candidates["symbol"] = candidates["symbol"].astype("string")
-        candidates["market_cap"] = pd.Series(
-            pd.NA, index=candidates.index, dtype="Float64"
-        )
-
-        required = {"symbol", "trade_date", "market_cap"}
-        if stock_daily_basic.empty or not required.issubset(stock_daily_basic.columns):
-            return candidates
-
         history = stock_daily_basic[["symbol", "trade_date", "market_cap"]].copy()
-        history["symbol"] = history["symbol"].astype("string")
-        history["trade_date"] = pd.to_datetime(
-            history["trade_date"], errors="coerce"
-        ).dt.normalize()
+        history["trade_date"] = pd.to_datetime(history["trade_date"]).dt.normalize()
         history["market_cap"] = pd.to_numeric(history["market_cap"], errors="coerce")
-        history = (
-            history.dropna(subset=["symbol", "trade_date", "market_cap"])
-            .drop_duplicates(["symbol", "trade_date"], keep="last")
-            .sort_values("trade_date")
-        )
-        if history.empty:
-            return candidates
+        history = history.dropna().sort_values("trade_date")
 
-        merged = pd.merge_asof(
-            candidates.drop(columns="market_cap").sort_values("confirm_date"),
+        signals = pd.merge_asof(
+            signals.sort_values("confirm_date"),
             history,
             left_on="confirm_date",
             right_on="trade_date",
@@ -471,47 +402,29 @@ class TodayConfirmedBreakoutPattern:
 
         if fallback_to_latest:
             latest = history.groupby("symbol")["market_cap"].last()
-            merged["market_cap"] = merged["market_cap"].fillna(
-                merged["symbol"].map(latest)
+            signals["market_cap"] = signals["market_cap"].fillna(
+                signals["symbol"].map(latest)
             )
-        return merged.reset_index(drop=True)
+        return signals
 
     @staticmethod
-    def _merge_heat(result: pd.DataFrame, hot_stocks: pd.DataFrame) -> pd.DataFrame:
-        """补充热度排名。
-
-        热度表行序即排名：含 trade_date 时按突破日逐日排名，否则视为最新快照。
-        同一股票（同一日）只取第一条；没有热度的信号排在有热度者之后。
-        """
-
-        result = result.copy()
-        if hot_stocks.empty:
-            result["hot_rank"] = pd.NA
-            result["hot_value"] = pd.NA
-            return result
+    def _merge_heat(signals: pd.DataFrame, hot_stocks: pd.DataFrame) -> pd.DataFrame:
+        """补充热度排名；热度表的行序就是排名，没有热度的信号排在有热度者之后。"""
 
         heat = hot_stocks.copy()
-        if "trade_date" not in heat.columns:
-            heat = heat.drop_duplicates("symbol").reset_index(drop=True)
-            heat["hot_rank"] = heat.index + 1
-            return result.merge(
-                heat[["symbol", "hot_rank", "hot_value"]],
-                on="symbol",
-                how="left",
-                sort=False,
-            )
-
-        heat["trade_date"] = pd.to_datetime(
-            heat["trade_date"], errors="coerce"
-        ).dt.normalize()
-        heat = heat.drop_duplicates(["trade_date", "symbol"]).copy()
-        heat["hot_rank"] = heat.groupby("trade_date", sort=False).cumcount() + 1
-        heat = heat.rename(columns={"trade_date": "breakout_date"})
-        return result.merge(
-            heat[["breakout_date", "symbol", "hot_rank", "hot_value"]],
-            on=["breakout_date", "symbol"],
-            how="left",
-            sort=False,
+        if "trade_date" in heat.columns:
+            # 历史热度：每个突破日各有一份排名。
+            heat["breakout_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
+            keys = ["breakout_date", "symbol"]
+            heat = heat.drop_duplicates(keys)
+            heat["hot_rank"] = heat.groupby("breakout_date").cumcount() + 1
+        else:
+            # 最新热度快照：整体一份排名。
+            keys = ["symbol"]
+            heat = heat.drop_duplicates(keys)
+            heat["hot_rank"] = range(1, len(heat) + 1)
+        return signals.merge(
+            heat[[*keys, "hot_rank", "hot_value"]], on=keys, how="left"
         )
 
 
@@ -544,11 +457,7 @@ def run_signal(
 
     trade_date = trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
     return TodayConfirmedBreakoutPattern().scan(
-        trade_date,
-        stocks,
-        daily_bars,
-        hot_stocks,
-        stock_daily_basic,
+        trade_date, stocks, daily_bars, hot_stocks, stock_daily_basic
     )
 
 
@@ -558,14 +467,14 @@ def main() -> None:
     args = parser.parse_args()
 
     stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+    trade_date = args.trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
     selected = run_signal(
         stocks=stocks,
         daily_bars=daily_bars,
         hot_stocks=hot_stocks,
         stock_daily_basic=stock_daily_basic,
-        trade_date=args.trade_date,
+        trade_date=trade_date,
     )
-    trade_date = args.trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
 
     console.rule(f"确认交易日：{pd.Timestamp(trade_date):%Y-%m-%d}")
     if selected.empty:

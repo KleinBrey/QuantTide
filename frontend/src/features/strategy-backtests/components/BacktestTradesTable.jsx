@@ -24,9 +24,9 @@ function useTradeKline(symbol, trades) {
     const tradeDates = trades.map(trade => moment(trade.trade_date)).filter(date => date.isValid());
     const firstTradeDate = moment.min(tradeDates);
     const lastTradeDate = moment.max(tradeDates);
-    // 获取交易日期的前后两个月作为K线数据的时间范围
-    const start = firstTradeDate.clone().subtract(2, 'months').format('YYYY-MM-DD');
-    const end = lastTradeDate.clone().add(2, 'months').format('YYYY-MM-DD');
+    // 获取交易日期的前后3个月作为K线数据的时间范围
+    const start = firstTradeDate.clone().subtract(3, 'months').format('YYYY-MM-DD');
+    const end = lastTradeDate.clone().add(3, 'months').format('YYYY-MM-DD');
     const cacheKey = `${symbol}:${start}:${end}`;
     const cachedRows = historyCache.get(cacheKey);
     if (cachedRows) {
@@ -90,6 +90,7 @@ function TradeKlineRow({ data }) {
         onPeriodChange={setPeriod}
         markers={markers}
         enableMouseWheelZoom={false}
+        alignDataLeft
       />
     </div>
   );
