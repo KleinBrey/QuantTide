@@ -548,6 +548,7 @@ def main() -> None:
 
     config = BacktestConfig(
         initial_cash=1_000_000.0,
+        start_date="2026-01-01",
         lookback_months=6,
         max_positions=20,
         max_position_pct=0.05,
