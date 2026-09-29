@@ -24,7 +24,8 @@ const reasonLabels = {
   stop_loss: '止损',
   take_profit: '止盈',
   close_drop: '大跌超5%',
-  decline_streak: '连续3天跌超2%'
+  decline_streak: '连续3天跌超2%',
+  volume_upper_shadow: '高位放量长上影线'
 };
 
 export function TradeSideCell({ value }) {

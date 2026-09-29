@@ -9,7 +9,7 @@
 - 买入数量按 ``lot_size`` 向下取整，并为佣金预留现金；不足一手则跳过；
 - 信号仅在确认日按收盘价尝试成交，未成交信号不会顺延到下一交易日；
 - 遵守 A 股 T+1，买入当日不卖出；满足任一卖出条件时整仓卖出；
-- 卖出规则全部由策略的 find_exits 给出（止损 > 止盈 > 大跌 > 连续下跌），
+- 卖出规则全部由策略的 find_exits 给出（止损 > 止盈 > 大跌 > 连续下跌 > 放量长上影线），
   均在收盘后判断并按收盘价成交；
 - 每日收盘后按最新可用收盘价计算持仓市值与账户权益。
 """
@@ -103,12 +103,15 @@ class ConfirmedVolumeBreakoutBacktest:
         start_date, end_date = self.resolve_period(daily_bars)
         calendar = self.trading_calendar(daily_bars, start_date, end_date)
         period_bars = daily_bars[daily_bars["trade_date"].between(start_date, end_date)]
+        # 退出指标需要回测开始日前的历史数据作为滚动窗口预热；同时截断在
+        # end_date，避免指定历史回测区间时使用未来行情。
+        exit_indicator_bars = daily_bars[daily_bars["trade_date"] <= end_date]
 
         # 2. 一次性算出所有入场候选，以及每个候选入场后的卖出日。
         signals = self.strategy.generate_entries_range(
             calendar, stocks, daily_bars, hot_stocks, stock_daily_basic
         )
-        strategy_exits = self._find_strategy_exits(signals, period_bars)
+        strategy_exits = self._find_strategy_exits(signals, exit_indicator_bars)
         signals_by_date = {
             confirm_date: group.sort_values(["selection_rank", "symbol"])
             for confirm_date, group in signals.groupby("confirm_date")
@@ -451,6 +454,13 @@ class ConfirmedVolumeBreakoutBacktest:
                 f"连续 {strategy.consecutive_decline_day_count} 个交易日"
                 f"的当日跌幅均大于 {strategy.consecutive_decline_pct:.0%} 时卖出"
             ),
+            (
+                f"当日成交量达到前 {strategy.upper_shadow_volume_lookback} 个交易日"
+                f"均量的 {strategy.upper_shadow_volume_ratio_min:.1f} 倍，"
+                f"上影线占振幅不低于 {strategy.upper_shadow_min_pct:.0%}，"
+                f"下影线占振幅不高于 {strategy.lower_shadow_max_pct:.0%}，"
+                f"且实体占振幅不低于 {strategy.candle_body_min_pct:.0%} 时卖出"
+            ),
             "历史热度缺失时仍产生信号，按放量强度排序",
             "市值过滤使用确认日当日或此前最近可用的历史市值",
             "佣金和卖出税率按配置计算，不计滑点、涨跌停和复权影响",
@@ -548,8 +558,7 @@ def main() -> None:
 
     config = BacktestConfig(
         initial_cash=1_000_000.0,
-        start_date="2026-01-01",
-        lookback_months=6,
+        lookback_months=12,
         max_positions=20,
         max_position_pct=0.05,
     )

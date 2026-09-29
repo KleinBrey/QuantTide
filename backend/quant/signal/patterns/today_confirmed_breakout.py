@@ -1,10 +1,22 @@
-"""识别前一交易日放量突破、当前交易日小阳线确认形态。
+"""识别前一交易日放量突破、当前交易日确认跟随。
 
 信号分为两个阶段：
 
-1. 突破日（确认日之前最近一个全市场交易日）：放量、收涨、短期涨幅有限、
-   20 日线在 10 日线之上、离 20 日低点不远；
-2. 确认日：小阳线、影线受控、量能保持。
+1. 突破日：
+总市值大于100亿,ST股除外,科创板除外,北交所除外;
+当日涨幅大于0;
+当日成交量 / 前20个交易日均成交量 >= 1.5;
+最近5个交易日涨幅小于10%;
+距离最近20个交易日最低点涨幅小于10%;
+20日线大于10日线;
+
+2. 确认日：
+当日涨幅在0% ~ 5% 之间;
+上影线长度<=整个体积的40%;
+下影线长度<=整个体积的300%(几乎等于不用管);
+成交量不小于突破日的70%
+
+按现在个股热度排序
 
 `scan`（单日）与 `scan_range`（多日）共用同一条向量化流水线。
 """
@@ -26,6 +38,7 @@ from backend.app.repository import (
     StockHotDailyRepository,
     StockRepository,
 )
+from backend.quant.factor import calculate_volume_ratio
 from backend.quant.stock import filter_market_cap, filter_static_stocks
 
 console = Console()
@@ -82,7 +95,7 @@ class SignalConfig:
     min_confirm_return_1d_pct: float = 0.0
     max_confirm_return_1d_pct: float = 0.05
     # 下 / 上影线占整根 K 线振幅的比例上限。
-    max_confirm_lower_wick_ratio: float = 0.6
+    max_confirm_lower_wick_ratio: float = 3
     max_confirm_upper_wick_ratio: float = 0.4
     # 确认日成交量至少保留突破日成交量的比例。
     min_confirm_volume_ratio: float = 0.70
@@ -260,15 +273,14 @@ class TodayConfirmedBreakoutPattern:
 
         # 滚动结果带有“股票”这一层索引，droplevel(0) 去掉后即可与原行对齐。
         bars["breakout_prev_close"] = close.shift(1)
-        # 成交量先整体后移一天，再求 N 日均值，就是不含当日的基准均量。
-        previous_volume = by_symbol["volume"].shift(1)
-        previous_avg_volume = (
-            previous_volume.groupby(bars["symbol"])
-            .rolling(cfg.previous_volume_days)
-            .mean()
-            .droplevel(0)
+        # recent_days=1 表示以当日成交量对比此前 N 日的基准均量。
+        bars["breakout_volume_ratio"] = by_symbol["volume"].transform(
+            lambda volume: calculate_volume_ratio(
+                volume.to_frame(name="volume"),
+                recent_days=1,
+                previous_days=cfg.previous_volume_days,
+            )["volume_ratio"]
         )
-        bars["breakout_volume_ratio"] = bars["volume"] / previous_avg_volume
         bars["breakout_return_1d_pct"] = bars["close"] / bars["breakout_prev_close"] - 1
         bars["breakout_return_5d_pct"] = (
             bars["close"] / close.shift(cfg.weekly_return_days) - 1

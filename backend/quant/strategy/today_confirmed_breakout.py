@@ -6,7 +6,11 @@
 1. 止损：收盘价 <= 止损价；
 2. 止盈：收盘价 >= 止盈价；
 3. 大跌：某日收盘价较前收跌幅大于 5%，次日没有大阳线或中阳线反包则退出；
-4. 连续下跌：连续 3 个交易日，每天较前收的跌幅都大于 2%。
+4. 连续下跌：连续 3 个交易日，每天较前收的跌幅都大于 2%；
+5. 放量长上影线：当日成交量 / 前 10 个交易日均成交量 >= 1.5，
+   且上影线长度占整根 K 线的比例 >= 40%，
+   且下影线长度占整根 K 线的比例 <= 30%，
+   且实体长度占整根 K 线的比例 >= 10%。
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ EXIT_REASON_STOP_LOSS = "stop_loss"
 EXIT_REASON_TAKE_PROFIT = "take_profit"
 EXIT_REASON_CLOSE_DROP = "close_drop"
 EXIT_REASON_DECLINE_STREAK = "decline_streak"
+EXIT_REASON_UPPER_SHADOW = "volume_upper_shadow"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +58,16 @@ class StrategyConfig:
     consecutive_decline_day_count: int = 3
     # 连续下跌期间，每日相对前收的跌幅均须严格大于该值；0.02 表示 2%。
     consecutive_decline_pct: float = 0.02
+    # 放量长上影线：当日成交量相对前 N 个交易日均量的最低倍数。
+    upper_shadow_volume_ratio_min: float = 1.5
+    # 计算均量所用的前序交易日数（不含当日）。
+    upper_shadow_volume_lookback: int = 10
+    # 上影线占整根 K 线（最高价 - 最低价）的最低比例；0.4 表示 40%。
+    upper_shadow_min_pct: float = 0.4
+    # 下影线占整根 K 线（最高价 - 最低价）的最高比例；0.3 表示 30%。
+    lower_shadow_max_pct: float = 0.3
+    # 实体长度占整根 K 线（最高价 - 最低价）的最低比例；0.4 表示 40%。
+    candle_body_min_pct: float = 0.1
 
 
 class TodayConfirmedBreakoutStrategy:
@@ -129,6 +144,7 @@ class TodayConfirmedBreakoutStrategy:
         """为每笔持仓找出首个触发退出规则的交易日。
 
         positions 需包含 symbol、entry_date、stop_loss_price、take_profit_price。
+        daily_bars 需包含 symbol、trade_date、open、high、low、close、volume。
         没有触发退出的持仓不会出现在结果里。
         """
 
@@ -141,6 +157,7 @@ class TodayConfirmedBreakoutStrategy:
         held = held.drop_duplicates(keys)
 
         # 每笔持仓配上它入场之后的每日行情（入场当日不退出，符合 T+1）。
+        # 指标在完整历史行情上计算（含入场前），之后再截取入场后的行。
         bars = self._add_daily_columns(self._prepare_bars(daily_bars, held["symbol"]))
         rows = held.merge(bars, on="symbol")
         rows = rows[rows["trade_date"] > rows["entry_date"]].sort_values(
@@ -161,15 +178,24 @@ class TodayConfirmedBreakoutStrategy:
             )
             < -cfg.consecutive_decline_pct
         )
+        # 放量、上影线足够长、下影线不过长且实体足够大；均量不足 N 天或
+        # K 线无振幅时比例为 NaN，整个条件的比较结果为 False。
+        upper_shadow = (
+            (rows["volume_ratio"] >= cfg.upper_shadow_volume_ratio_min)
+            & (rows["upper_shadow_pct"] >= cfg.upper_shadow_min_pct)
+            & (rows["lower_shadow_pct"] <= cfg.lower_shadow_max_pct)
+            & (rows["candle_body_pct"] >= cfg.candle_body_min_pct)
+        )
 
         # np.select 取第一个成立的条件，所以列表顺序就是优先级。
         rows["exit_reason"] = np.select(
-            [stop_loss, take_profit, close_drop, decline_streak],
+            [stop_loss, take_profit, close_drop, decline_streak, upper_shadow],
             [
                 EXIT_REASON_STOP_LOSS,
                 EXIT_REASON_TAKE_PROFIT,
                 EXIT_REASON_CLOSE_DROP,
                 EXIT_REASON_DECLINE_STREAK,
+                EXIT_REASON_UPPER_SHADOW,
             ],
             default="",
         )
@@ -205,7 +231,7 @@ class TodayConfirmedBreakoutStrategy:
         return enough_rise & (large_bullish | medium_engulfing)
 
     def _add_daily_columns(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """计算每根 K 线的前收、涨幅、实体涨幅，以及“前一天是否大跌”。"""
+        """计算前收、涨幅、实体涨幅、K 线各部分占比、量比和前一天是否大跌。"""
 
         by_symbol = bars.groupby("symbol", sort=False)
         bars["previous_open"] = by_symbol["open"].shift(1)
@@ -218,21 +244,55 @@ class TodayConfirmedBreakoutStrategy:
         bars["big_drop_yesterday"] = (
             yesterday_rise < -self.config.previous_close_decline_exit_pct
         )
+
+        # 上影线占比 = (最高价 - 实体上沿) / (最高价 - 最低价)；无振幅时置 NaN。
+        candle_range = bars["high"] - bars["low"]
+        upper_shadow_len = bars["high"] - np.maximum(bars["open"], bars["close"])
+        bars["upper_shadow_pct"] = (
+            upper_shadow_len / candle_range.where(candle_range > 0)
+        ).round(6)
+
+        # 下影线占比 = (实体下沿 - 最低价) / (最高价 - 最低价)。
+        lower_shadow_len = np.minimum(bars["open"], bars["close"]) - bars["low"]
+        bars["lower_shadow_pct"] = (
+            lower_shadow_len / candle_range.where(candle_range > 0)
+        ).round(6)
+
+        # 实体占比 = abs(收盘价 - 开盘价) / (最高价 - 最低价)。
+        candle_body_len = (bars["close"] - bars["open"]).abs()
+        bars["candle_body_pct"] = (
+            candle_body_len / candle_range.where(candle_range > 0)
+        ).round(6)
+
+        # 量比 = 当日成交量 / 前 N 个交易日均量（shift(1) 排除当日，凑不满 N 天为 NaN）。
+        lookback = self.config.upper_shadow_volume_lookback
+        average_volume = by_symbol["volume"].transform(
+            lambda s: s.shift(1).rolling(lookback).mean()
+        )
+        bars["volume_ratio"] = (
+            bars["volume"] / average_volume.where(average_volume > 0)
+        ).round(6)
         return bars
 
     @staticmethod
     def _prepare_bars(daily_bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
-        """只保留持仓股票有效的开盘价、收盘价，并按股票、日期排序去重。"""
+        """只保留持仓股票有效的价格与成交量，并按股票、日期排序去重。"""
 
         bars = daily_bars.loc[
             daily_bars["symbol"].isin(symbols),
-            ["symbol", "trade_date", "open", "close"],
+            ["symbol", "trade_date", "open", "high", "low", "close", "volume"],
         ].copy()
         bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
-        for column in ("open", "close"):
+        for column in ("open", "high", "low", "close", "volume"):
             bars[column] = pd.to_numeric(bars[column], errors="coerce")
-        # 缺失（NaN）或非正的价格无法计算涨幅，直接丢弃。
-        bars = bars[(bars["open"] > 0) & (bars["close"] > 0)]
+        # 缺失（NaN）或非正的价格无法计算涨幅，直接丢弃；
+        # 成交量缺失则保留，仅让该日及后续窗口内的量比为 NaN。
+        bars = bars[
+            (bars["open"] > 0)
+            & (bars["high"] > 0)
+            & (bars["low"] > 0)
+            & (bars["close"] > 0)
+        ]
         return (
             bars.sort_values(["symbol", "trade_date"], kind="stable")
             .drop_duplicates(["symbol", "trade_date"], keep="last")

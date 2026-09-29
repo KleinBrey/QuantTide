@@ -5,11 +5,21 @@ from __future__ import annotations
 import pandas as pd
 
 
-def calculate_volume_ratio_5d(df: pd.DataFrame) -> pd.DataFrame:
-    """计算当日成交量相对最近 5 日平均成交量的倍数。"""
+def calculate_volume_ratio(
+    df: pd.DataFrame,
+    recent_days: int = 1,
+    previous_days: int = 20,
+) -> pd.DataFrame:
+    """计算最近 N 日均量相对之前 M 日均量的倍数。"""
 
     result = df.copy()
-    volume_ma5 = result["volume"].rolling(5).mean()
-    result["volume_ratio_5d"] = result["volume"] / volume_ma5
-    return result
 
+    recent_avg_volume = result["volume"].rolling(recent_days).mean()
+
+    previous_avg_volume = (
+        result["volume"].shift(recent_days).rolling(previous_days).mean()
+    )
+
+    result["volume_ratio"] = recent_avg_volume / previous_avg_volume
+
+    return result

@@ -404,10 +404,8 @@ async def confirmed_volume_breakout_backtest(
         date | None,
         Query(description="回测结束日期，默认使用最新交易日"),
     ] = None,
-    lookback_months: Annotated[int, Query(ge=1, le=60)] = 6,
-    max_positions: Annotated[int, Query(ge=1, le=100)] = (
-        BacktestConfig().max_positions
-    ),
+    lookback_months: Annotated[int, Query(ge=1, le=60)] = 12,
+    max_positions: Annotated[int, Query(ge=1, le=100)] = 20,
     initial_cash: Annotated[float, Query(gt=0)] = 1_000_000.0,
 ) -> dict[str, object]:
     """执行放量突破次日确认回测，返回绩效和逐笔交易记录。"""
