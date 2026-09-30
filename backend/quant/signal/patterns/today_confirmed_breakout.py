@@ -62,7 +62,6 @@ RESULT_COLUMNS = [
     "confirm_close",
     "breakout_prev_close",
     "hot_rank",
-    "hot_value",
     "selection_rank",
 ]
 
@@ -421,7 +420,7 @@ class TodayConfirmedBreakoutPattern:
 
     @staticmethod
     def _merge_heat(signals: pd.DataFrame, hot_stocks: pd.DataFrame) -> pd.DataFrame:
-        """补充热度排名；热度表的行序就是排名，没有热度的信号排在有热度者之后。"""
+        """补充热度排名；直接使用热度表存储的排名，没有热度的信号排在有热度者之后。"""
 
         heat = hot_stocks.copy()
         if "trade_date" in heat.columns:
@@ -429,14 +428,14 @@ class TodayConfirmedBreakoutPattern:
             heat["breakout_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
             keys = ["breakout_date", "symbol"]
             heat = heat.drop_duplicates(keys)
-            heat["hot_rank"] = heat.groupby("breakout_date").cumcount() + 1
+            heat["hot_rank"] = heat["rank"]
         else:
             # 最新热度快照：整体一份排名。
             keys = ["symbol"]
             heat = heat.drop_duplicates(keys)
-            heat["hot_rank"] = range(1, len(heat) + 1)
+            heat["hot_rank"] = heat["rank"]
         return signals.merge(
-            heat[[*keys, "hot_rank", "hot_value"]], on=keys, how="left"
+            heat[[*keys, "hot_rank"]], on=keys, how="left"
         )
 
 

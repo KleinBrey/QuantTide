@@ -63,6 +63,10 @@ uv run uvicorn backend.app.main:app \
 - `hk_market.duckdb.stock_hot_daily`：问财每日港股热度，主键为 `trade_date + symbol`；
 - `us_market.duckdb.stock_hot_daily`：问财每日美股热度，主键为 `trade_date + symbol`。
 
+三个市场的热度表统一存储 `rank INTEGER`（正整数，1 为热度最高），接口也返回 `rank`，查询按排名升序排列。问财快照按热度值降序生成排名，A 股历史补齐使用 HiThink 返回的原始排名。策略输出中的 `hot_rank` 直接取自该排名，不再按结果行号重新编号。
+
+热榜同步要求传入完整榜单；在同一事务内删除输入交易日的旧榜单并插入新榜单，失败则回滚，其他日期不受影响。空榜或清洗丢失记录时拒绝更新。新建表保留 `(trade_date, symbol)` 主键，并增加 `(trade_date, rank)` 唯一约束；已有表不会因 `CREATE TABLE IF NOT EXISTS` 自动增加约束，现有表由股票主键和写入前的排名检查防止重复。
+
 ### `app/provider/`
 
 - `tushare_provider.py`：股票列表、日 K、复权行情和每日市值指标；
@@ -176,6 +180,19 @@ uv run python -m backend.scripts.sync_hot_stock_db
 ```
 
 上述脚本都位于外层 `backend/scripts/`，同步脚本会在写入前自动初始化数据库。
+
+补齐 A 股股票池最近一年（含今天的 365 个自然日）的历史热度排名：
+
+```bash
+uv run python -m backend.scripts.sync_hot_stock_daily_rank
+```
+
+读取 A 股库 `stocks` 中的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
+并发数使用配置 `sync_workers`（默认 4，可用环境变量 `SYNC_WORKERS` 调低），每次请求随机等待 1～2 秒，超时为 30 秒。
+主线程逐股写入 `stock_hot_daily`，以本次接口数据为准覆盖同日同股票的记录，可重跑。
+名称取股票池当前名称，`price`、`change_pct` 留空，`source` 为 `Hithink`，只保存接口实际返回的日期点位，不填造缺失日期。
+保留表的同日排名唯一约束：若该排名已被其他股票占用，删除冲突旧记录并写入本次数据；删除和写入在同一事务中完成，失败回滚，不影响无冲突记录。请求或写入失败不影响其他股票，最后汇总失败和无数据股票。
+有失败时脚本以非零状态退出；限流时可调低并发后重跑。随机延迟不能保证不会被限流。
 
 每个信号形态入口都可以单独运行并查看本地结果，例如：
 

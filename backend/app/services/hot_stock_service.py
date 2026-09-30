@@ -54,17 +54,14 @@ class HotStockService:
             "name",
             "price",
             "change_pct",
-            "hot_value",
+            "rank",
             "source",
         ]
-        frame = pd.DataFrame(value).copy()
+        frame = value.copy()
         if frame.empty:
             return pd.DataFrame(columns=columns)
 
-        if "hot_value" not in frame.columns and "hot_rank" in frame.columns:
-            frame = frame.rename(columns={"hot_rank": "hot_value"})
-
-        required_columns = ["symbol", "name", "price", "change_pct", "hot_value"]
+        required_columns = ["symbol", "name", "price", "change_pct", "rank"]
         missing_columns = [
             column for column in required_columns if column not in frame.columns
         ]
@@ -73,13 +70,13 @@ class HotStockService:
 
         frame["trade_date"] = pd.to_datetime(trade_date, errors="raise").date()
         frame["name"] = frame["name"].astype("string").str.strip()
-        for column in ["price", "change_pct", "hot_value"]:
+        for column in ["price", "change_pct", "rank"]:
             frame[column] = pd.to_numeric(
                 frame[column].astype("string").str.rstrip("%"), errors="coerce"
             )
         frame["source"] = "Iwencai"
-
-        frame = frame.dropna(subset=["symbol", "name", "hot_value"])
+        frame = frame.dropna(subset=["symbol", "name", "rank"])
+        frame["rank"] = frame["rank"].astype("int64")
         frame = frame.drop_duplicates(subset=["trade_date", "symbol"], keep="last")
         return frame[columns].reset_index(drop=True)
 
@@ -98,6 +95,8 @@ class HotStockService:
         try:
             result = getattr(self.iwencai_provider, self._fetch_method_name)()
             hot_rows = self.format_hot_stock(result, trade_date)
+            if hot_rows.empty or len(hot_rows) != len(result):
+                raise ValueError("热榜为空或清洗后记录减少，保留原榜单")
             affected_rows = self.stock_hot_repository.upsert_stock_hot_daily(hot_rows)
         except Exception as error:
             print(f"{self._market_name}热度更新失败: {error}")

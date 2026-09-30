@@ -43,6 +43,6 @@ class HotStock(BaseModel):
     name: str
     price: float | None = None
     change_pct: float | None = None
-    hot_value: float
+    rank: int
     source: str
     update_time: datetime

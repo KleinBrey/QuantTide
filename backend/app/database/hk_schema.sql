@@ -47,8 +47,10 @@ CREATE TABLE IF NOT EXISTS stock_hot_daily (
   name VARCHAR NOT NULL,
   price DOUBLE,
   change_pct DOUBLE,
-  hot_value DOUBLE NOT NULL,
+  rank INTEGER NOT NULL CHECK (rank > 0),
   source VARCHAR NOT NULL DEFAULT 'Iwencai',
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (trade_date, symbol)
+  PRIMARY KEY (trade_date, symbol),
+  -- 同一交易日、同一排名只保留一条记录。
+  UNIQUE (trade_date, rank)
 );

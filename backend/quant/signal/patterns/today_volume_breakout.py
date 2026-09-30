@@ -57,7 +57,6 @@ RESULT_COLUMNS = [
     "volume_ratio",
     "latest_1d_pct",
     "hot_rank",
-    "hot_value",
 ]
 
 
@@ -200,10 +199,10 @@ class TodayVolumeBreakoutPattern:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
         hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-        hot_stocks["hot_rank"] = hot_stocks.index + 1
+        hot_stocks["hot_rank"] = hot_stocks["rank"]
 
         return (
-            result.merge(hot_stocks[["symbol", "hot_rank", "hot_value"]], on="symbol")
+            result.merge(hot_stocks[["symbol", "hot_rank"]], on="symbol")
             .sort_values("hot_rank")[RESULT_COLUMNS]
             .reset_index(drop=True)
         )

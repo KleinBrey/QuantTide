@@ -71,10 +71,9 @@ const COLUMN_DEFS = [
     headerName: '涨幅%',
     field: 'change_pct',
     flex: 0.5,
-    minWidth: 92,
+    minWidth: 100,
     cellRenderer: ChangePercentCell
-  },
-  { headerName: '热度', field: 'hot_value', flex: 1 }
+  }
 ];
 
 export default function RankingTable({ rows, loading, marketId = 'a-share', showKline = false }) {

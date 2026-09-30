@@ -41,7 +41,7 @@ const COLUMN_DEFS = [
     minWidth: 92,
     cellRenderer: ChangePercentCell
   },
-  { headerName: '热度', field: 'hot_value', flex: 1 }
+  { headerName: '热度排名', field: 'rank', flex: 1 }
 ];
 
 // K线图组件

@@ -56,7 +56,6 @@ RESULT_COLUMNS = [
     "bear_body_ratio",
     "signal_stage",
     "hot_rank",
-    "hot_value",
 ]
 
 
@@ -321,12 +320,12 @@ def run_signal(
     ]
 
     hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-    hot_stocks["hot_rank"] = hot_stocks.index + 1
+    hot_stocks["hot_rank"] = hot_stocks["rank"]
 
     return (
         stock_info.merge(latest, on="symbol")
         .merge(
-            hot_stocks[["symbol", "hot_rank", "hot_value"]],
+            hot_stocks[["symbol", "hot_rank"]],
             on="symbol",
             how="left",
         )

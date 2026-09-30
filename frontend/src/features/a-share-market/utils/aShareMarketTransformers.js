@@ -72,7 +72,7 @@ export function transformAShareMarketResponse(payload) {
       rank: row.rank ?? index + 1,
       name: row.name ?? row.股票简称 ?? '',
       thscode: row.thscode ?? row.code ?? row.symbol ?? '',
-      heat: row.heat ?? row.hot_value ?? row.hotRank ?? '-'
+      heat: row.rank ?? row.hotRank ?? '-'
     }));
 
   if (Array.isArray(payload?.items)) {

@@ -33,7 +33,7 @@ STOCK_HOT_DAILY_COLUMNS = [
     "name",
     "price",
     "change_pct",
-    "hot_value",
+    "rank",
     "source",
 ]
 
@@ -332,14 +332,14 @@ class StockHotDailyRepository(BaseRepository):
                     name,
                     price,
                     change_pct,
-                    hot_value,
+                    rank,
                     source,
                     update_time
                 FROM {self.table_name}
                 WHERE trade_date = (
                     SELECT MAX(trade_date) FROM {self.table_name}
                 )
-                ORDER BY hot_value DESC, symbol
+                ORDER BY rank ASC, symbol
                 """).df()
 
     def get_table_data(self) -> pd.DataFrame:
@@ -353,15 +353,15 @@ class StockHotDailyRepository(BaseRepository):
                     name,
                     price,
                     change_pct,
-                    hot_value,
+                    rank,
                     source,
                     update_time
                 FROM {self.table_name}
-                ORDER BY trade_date, hot_value DESC, symbol
+                ORDER BY trade_date, rank ASC, symbol
                 """).df()
 
     def get_by_trade_date(self, trade_date: object) -> pd.DataFrame:
-        """按交易日获取股票热度列表，并按热度从高到低排列。"""
+        """按交易日获取股票热度列表，并按排名从小到大排列。"""
 
         normalized_date = pd.to_datetime(trade_date, errors="raise").date()
 
@@ -374,18 +374,18 @@ class StockHotDailyRepository(BaseRepository):
                     name,
                     price,
                     change_pct,
-                    hot_value,
+                    rank,
                     source,
                     update_time
                 FROM {self.table_name}
                 WHERE trade_date = ?
-                ORDER BY hot_value DESC, symbol
+                ORDER BY rank ASC, symbol
                 """,
                 [normalized_date],
             ).df()
 
     def upsert_stock_hot_daily(self, rows: pd.DataFrame) -> int:
-        """新增或更新每日股票热度，返回实际处理的行数。"""
+        """用完整的新榜单替换对应交易日的旧榜单，失败则回滚。"""
 
         if rows.empty:
             return 0
@@ -393,50 +393,71 @@ class StockHotDailyRepository(BaseRepository):
         hot_rows = rows.copy()
         if "source" not in hot_rows.columns:
             hot_rows["source"] = "Iwencai"
-
         _require_columns(hot_rows, STOCK_HOT_DAILY_COLUMNS)
         hot_rows = hot_rows[STOCK_HOT_DAILY_COLUMNS]
         hot_rows["trade_date"] = pd.to_datetime(
             hot_rows["trade_date"], errors="raise"
         ).dt.date
-        hot_rows = hot_rows.drop_duplicates(
-            subset=["trade_date", "symbol"], keep="last"
-        )
+        # 现有数据库可能还没有排名唯一约束，写入前检查一次。
+        if hot_rows.duplicated(["trade_date", "rank"]).any():
+            raise ValueError("同一交易日的排名不能重复")
 
         with self.db.connection() as connection:
             connection.register("incoming_stock_hot_daily", hot_rows)
-            connection.execute(f"""
-                INSERT INTO {self.table_name} (
-                    trade_date,
-                    symbol,
-                    name,
-                    price,
-                    change_pct,
-                    hot_value,
-                    source
-                )
-                SELECT
-                    trade_date,
-                    symbol,
-                    name,
-                    price,
-                    change_pct,
-                    hot_value,
-                    source
-                FROM incoming_stock_hot_daily
-                ON CONFLICT (trade_date, symbol)
-                DO UPDATE SET
-                    name = excluded.name,
-                    price = excluded.price,
-                    change_pct = excluded.change_pct,
-                    hot_value = excluded.hot_value,
-                    source = excluded.source,
-                    update_time = now()
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute("""
+                    DELETE FROM stock_hot_daily
+                    WHERE trade_date IN (
+                        SELECT DISTINCT trade_date FROM incoming_stock_hot_daily
+                    )
                 """)
+                connection.execute("""
+                    INSERT INTO stock_hot_daily (
+                        trade_date, symbol, name, price, change_pct, rank, source
+                    )
+                    SELECT trade_date, symbol, name, price, change_pct, rank, source
+                    FROM incoming_stock_hot_daily
+                """)
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
 
         return len(hot_rows)
 
     def insert_stock_hot_daily(self, rows: pd.DataFrame) -> int:
-        """兼容 insert 风格命名；实际执行新增或更新。"""
+        """兼容 insert 风格命名；实际按交易日整批替换。"""
 
         return self.upsert_stock_hot_daily(rows)
+
+    def fill_stock_hot_daily(self, rows: pd.DataFrame) -> int:
+        """写入历史排名，覆盖同日同股票或同日同排名的旧记录。"""
+        if rows.empty:
+            return 0
+
+        hot_rows = rows[STOCK_HOT_DAILY_COLUMNS].copy()
+        hot_rows["trade_date"] = pd.to_datetime(hot_rows["trade_date"]).dt.date
+        with self.db.connection() as connection:
+            connection.register("incoming_hot_history", hot_rows)
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute("""
+                    DELETE FROM stock_hot_daily existing
+                    USING incoming_hot_history incoming
+                    WHERE existing.trade_date = incoming.trade_date
+                      AND (existing.symbol = incoming.symbol
+                           OR existing.rank = incoming.rank)
+                """)
+                connection.execute("""
+                    INSERT INTO stock_hot_daily (
+                        trade_date, symbol, name, price, change_pct, rank, source
+                    )
+                    SELECT trade_date, symbol, name, price, change_pct, rank, source
+                    FROM incoming_hot_history
+                """)
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+        return len(hot_rows)

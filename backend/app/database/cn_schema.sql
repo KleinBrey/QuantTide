@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS daily_bars (
   CHECK (volume >= 0)
 );
 
--- 股票热度指标：保存每个交易日前1000只股票的热度数据。
+-- 股票热度指标：保存每日热榜快照及个股历史热度排名。
 CREATE TABLE IF NOT EXISTS stock_hot_daily (
   -- 热度所属交易日。
   trade_date DATE NOT NULL,
@@ -64,12 +64,14 @@ CREATE TABLE IF NOT EXISTS stock_hot_daily (
   price DOUBLE,
   -- 当日涨跌幅。
   change_pct DOUBLE,
-  -- 问财返回的股票热度值。
-  hot_value DOUBLE NOT NULL,
+  -- 股票热度排名，数字越小热度越高。
+  rank INTEGER NOT NULL CHECK (rank > 0),
   -- 数据来源。
   source VARCHAR NOT NULL DEFAULT 'Iwencai',
   -- 记录更新时间。
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   -- 同一股票、同一交易日只保留一条热度记录。
-  PRIMARY KEY (trade_date, symbol)
+  PRIMARY KEY (trade_date, symbol),
+  -- 同一交易日、同一排名只保留一条记录。
+  UNIQUE (trade_date, rank)
 );

@@ -28,7 +28,7 @@ HK_STOCK_HOT_DAILY_COLUMNS = [
     "name",
     "price",
     "change_pct",
-    "hot_value",
+    "rank",
     "source",
 ]
 
@@ -241,14 +241,14 @@ class HKStockHotDailyRepository(BaseRepository):
                     name,
                     price,
                     change_pct,
-                    hot_value,
+                    rank,
                     source,
                     update_time
                 FROM stock_hot_daily
                 WHERE trade_date = (
                     SELECT MAX(trade_date) FROM stock_hot_daily
                 )
-                ORDER BY hot_value DESC, symbol
+                ORDER BY rank ASC, symbol
                 """).df()
 
     def get_by_trade_date(self, trade_date: object) -> pd.DataFrame:
@@ -262,17 +262,19 @@ class HKStockHotDailyRepository(BaseRepository):
                     name,
                     price,
                     change_pct,
-                    hot_value,
+                    rank,
                     source,
                     update_time
                 FROM stock_hot_daily
                 WHERE trade_date = ?
-                ORDER BY hot_value DESC, symbol
+                ORDER BY rank ASC, symbol
                 """,
                 [normalized_date],
             ).df()
 
     def upsert_stock_hot_daily(self, rows: pd.DataFrame) -> int:
+        """用完整的新榜单替换对应交易日的旧榜单，失败则回滚。"""
+
         if rows.empty:
             return 0
 
@@ -284,40 +286,32 @@ class HKStockHotDailyRepository(BaseRepository):
         hot_rows["trade_date"] = pd.to_datetime(
             hot_rows["trade_date"], errors="raise"
         ).dt.date
-        hot_rows = hot_rows.drop_duplicates(
-            subset=["trade_date", "symbol"], keep="last"
-        )
+        # 现有数据库可能还没有排名唯一约束，写入前检查一次。
+        if hot_rows.duplicated(["trade_date", "rank"]).any():
+            raise ValueError("同一交易日的排名不能重复")
 
         with self.db.connection() as connection:
             connection.register("incoming_stock_hot_daily", hot_rows)
-            connection.execute("""
-                INSERT INTO stock_hot_daily (
-                    trade_date,
-                    symbol,
-                    name,
-                    price,
-                    change_pct,
-                    hot_value,
-                    source
-                )
-                SELECT
-                    trade_date,
-                    symbol,
-                    name,
-                    price,
-                    change_pct,
-                    hot_value,
-                    source
-                FROM incoming_stock_hot_daily
-                ON CONFLICT (trade_date, symbol)
-                DO UPDATE SET
-                    name = excluded.name,
-                    price = excluded.price,
-                    change_pct = excluded.change_pct,
-                    hot_value = excluded.hot_value,
-                    source = excluded.source,
-                    update_time = now()
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute("""
+                    DELETE FROM stock_hot_daily
+                    WHERE trade_date IN (
+                        SELECT DISTINCT trade_date FROM incoming_stock_hot_daily
+                    )
                 """)
+                connection.execute("""
+                    INSERT INTO stock_hot_daily (
+                        trade_date, symbol, name, price, change_pct, rank, source
+                    )
+                    SELECT trade_date, symbol, name, price, change_pct, rank, source
+                    FROM incoming_stock_hot_daily
+                """)
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
         return len(hot_rows)
 
     def insert_stock_hot_daily(self, rows: pd.DataFrame) -> int:
