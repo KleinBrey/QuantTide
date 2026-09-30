@@ -58,11 +58,11 @@ echo $VIRTUAL_ENV
 同步脚本会自动初始化三个市场数据库和所需数据表。`cn_market.duckdb` 只保存 A 股数据，港股和美股分别保存在 `hk_market.duckdb` 与 `us_market.duckdb`。依次同步股票列表、日 K 和当日股票热度：
 
 ```bash
-uv run python -m backend.scripts.sync_stock_list_db
-uv run python -m backend.scripts.init_hk_us_stock_pools
+uv run python -m backend.scripts.sync_stock_list
+uv run python -m backend.scripts.sync_hk_us_stock_pools
 uv run quant-sync
-uv run python -m backend.scripts.sync_hk_us_daily_k_db
-uv run python -m backend.scripts.sync_hot_stock_db
+uv run python -m backend.scripts.sync_hk_us_daily_bars
+uv run python -m backend.scripts.sync_hot_stock_latest
 ```
 
 `quant-sync` 会显示交互式菜单，可选择：

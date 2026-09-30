@@ -6,7 +6,7 @@ from backend.app.repository import DailyBarRepository, StockRepository
 from backend.app.services import CNMarketService
 
 
-def sync_daily_k(lookback_days: int, batch_size: int) -> None:
+def sync_stock_daily_bars(lookback_days: int, batch_size: int) -> None:
     """更新最近指定自然日范围内的日 K 数据。"""
     # 初始化数据库
     database = DuckDBDatabase()
@@ -46,13 +46,13 @@ def main() -> None:
 
     match choice:
         case "1":
-            sync_daily_k(3, 100)
+            sync_stock_daily_bars(3, 100)
 
         case "2":
-            sync_daily_k(60, 50)
+            sync_stock_daily_bars(60, 50)
 
         case "3":
-            sync_daily_k(365, 10)
+            sync_stock_daily_bars(365, 10)
 
         case "e":
             print("退出")

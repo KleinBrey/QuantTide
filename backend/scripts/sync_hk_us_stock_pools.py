@@ -62,7 +62,7 @@ def _stock_frame(rows: tuple[tuple[str, str], ...]) -> pd.DataFrame:
     return frame
 
 
-def initialize_hk_us_stocks(
+def sync_hk_us_stock_pools(
     hk_database: HKDuckDBDatabase,
     us_database: USDuckDBDatabase,
 ) -> dict[str, int]:
@@ -79,7 +79,7 @@ def initialize_hk_us_stocks(
 
 def main() -> None:
     settings = get_settings()
-    affected = initialize_hk_us_stocks(
+    affected = sync_hk_us_stock_pools(
         HKDuckDBDatabase(settings.hk_database_path),
         USDuckDBDatabase(settings.us_database_path),
     )

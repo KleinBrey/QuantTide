@@ -44,10 +44,10 @@ from backend.quant.backtest.engine import (
 from backend.quant.backtest.result import format_backtest_result
 from backend.quant.signal.result import format_signal_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
-from backend.scripts.sync_daily_k_db import sync_daily_k
-from backend.scripts.sync_hot_stock_db import sync_stock_hot
-from backend.scripts.sync_stock_daily_basic_db import sync_stock_daily_basic
-from backend.scripts.sync_stock_list_db import sync_stock_list
+from backend.scripts.sync_stock_daily_bars import sync_stock_daily_bars
+from backend.scripts.sync_hot_stock_latest import sync_hot_stock_latest
+from backend.scripts.sync_stock_daily_basic import sync_stock_daily_basic
+from backend.scripts.sync_stock_list import sync_stock_list
 
 from .dependencies import (
     get_daily_repository,
@@ -160,7 +160,7 @@ async def sync_stock_list_database() -> dict[str, str | float]:
     """执行股票列表数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_stock_list_db.py",
+        "sync_stock_list.py",
         "A 股股票列表同步完成",
         sync_stock_list,
     )
@@ -171,9 +171,9 @@ async def sync_daily_k_database() -> dict[str, str | float]:
     """执行最近 3 个自然日的日 K 数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_daily_k_db.py",
+        "sync_stock_daily_bars.py",
         "最近 3 个自然日的日 K 数据同步完成",
-        lambda: sync_daily_k(lookback_days=3, batch_size=100),
+        lambda: sync_stock_daily_bars(lookback_days=3, batch_size=100),
     )
 
 
@@ -182,7 +182,7 @@ async def sync_stock_daily_basic_database() -> dict[str, str | float]:
     """执行最新交易日股票指标数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_stock_daily_basic_db.py",
+        "sync_stock_daily_basic.py",
         "最新交易日股票指标同步完成",
         lambda: sync_stock_daily_basic(lookback_days=3),
     )
@@ -193,9 +193,9 @@ async def sync_hot_stock_database() -> dict[str, str | float]:
     """执行每日股票热度数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_hot_stock_db.py",
+        "sync_hot_stock_latest.py",
         "A 股、港股和美股每日热度同步完成",
-        sync_stock_hot,
+        sync_hot_stock_latest,
     )
 
 

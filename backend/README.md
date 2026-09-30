@@ -166,17 +166,17 @@ uv run quant-backtest --months 6 --max-positions 5
 
 ```bash
 # 股票列表
-uv run python -m backend.scripts.sync_stock_list_db
+uv run python -m backend.scripts.sync_stock_list
 
 # 初始化港股、美股人工股票池（各 50 只，可重复执行）
-uv run python -m backend.scripts.init_hk_us_stock_pools
+uv run python -m backend.scripts.sync_hk_us_stock_pools
 
 # 日 K
-uv run python -m backend.scripts.sync_daily_k_db
-uv run python -m backend.scripts.sync_hk_us_daily_k_db
+uv run python -m backend.scripts.sync_stock_daily_bars
+uv run python -m backend.scripts.sync_hk_us_daily_bars
 
 # 股票热度
-uv run python -m backend.scripts.sync_hot_stock_db
+uv run python -m backend.scripts.sync_hot_stock_latest
 ```
 
 上述脚本都位于外层 `backend/scripts/`，同步脚本会在写入前自动初始化数据库。
@@ -184,7 +184,7 @@ uv run python -m backend.scripts.sync_hot_stock_db
 补齐 A 股股票池最近一年（含今天的 365 个自然日）的历史热度排名：
 
 ```bash
-uv run python -m backend.scripts.sync_hot_stock_daily_rank
+uv run python -m backend.scripts.sync_hot_stock_history
 ```
 
 读取 A 股库 `stocks` 中的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
@@ -209,11 +209,11 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 ## 命令入口
 
 - `backend/run.py`：启动 FastAPI；
-- `backend/scripts/sync_stock_list_db.py`：同步股票列表；
-- `backend/scripts/init_hk_us_stock_pools.py`：幂等初始化港股、美股人工股票池；
-- `backend/scripts/sync_daily_k_db.py`：交互式同步日 K，供 `quant-sync` 使用；
-- `backend/scripts/sync_hk_us_daily_k_db.py`：通过 Futu OpenD 交互式同步港股和美股日 K；
-- `backend/scripts/sync_hot_stock_db.py`：分别向三个市场数据库同步当天股票热度。
+- `backend/scripts/sync_stock_list.py`：同步股票列表；
+- `backend/scripts/sync_hk_us_stock_pools.py`：幂等初始化港股、美股人工股票池；
+- `backend/scripts/sync_stock_daily_bars.py`：交互式同步日 K，供 `quant-sync` 使用；
+- `backend/scripts/sync_hk_us_daily_bars.py`：通过 Futu OpenD 交互式同步港股和美股日 K；
+- `backend/scripts/sync_hot_stock_latest.py`：分别向三个市场数据库同步当天股票热度。
 
 ```bash
 uv run quant-api

@@ -33,28 +33,36 @@ def fetch_stock_rank(symbol: str, name: str, start: str, end: str) -> pd.DataFra
     return rows
 
 
-def sync_hot_stock_daily_rank() -> int:
+def sync_hot_stock_history() -> int:
     settings = get_settings()
     database = DuckDBDatabase(settings.database_path)
     database.initialize()
     stocks = StockRepository(database).get_table_data()
     if stocks.empty:
-        raise RuntimeError("股票池为空，请先运行 backend.scripts.sync_stock_list_db")
+        raise RuntimeError("股票池为空，请先运行 backend.scripts.sync_stock_list")
     repository = StockHotDailyRepository(database)
 
     end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     start = end - timedelta(days=364)
-    print(f"同步 {len(stocks)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}")
+    print(
+        f"同步 {len(stocks)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}"
+    )
     total = 0
     failed, empty = [], []
     with ThreadPoolExecutor(max_workers=settings.sync_workers) as executor:
         futures = {
             executor.submit(
-                fetch_stock_rank, stock.symbol, stock.name, start.isoformat(), end.isoformat()
+                fetch_stock_rank,
+                stock.symbol,
+                stock.name,
+                start.isoformat(),
+                end.isoformat(),
             ): stock.symbol
             for stock in stocks.itertuples(index=False)
         }
-        for future in tqdm(as_completed(futures), total=len(futures), desc="同步历史热度"):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="同步历史热度"
+        ):
             symbol = futures[future]
             try:
                 rows = future.result()
@@ -77,7 +85,7 @@ def sync_hot_stock_daily_rank() -> int:
 
 
 def main() -> None:
-    sync_hot_stock_daily_rank()
+    sync_hot_stock_history()
 
 
 if __name__ == "__main__":

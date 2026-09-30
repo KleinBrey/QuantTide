@@ -137,9 +137,7 @@ def sync_market_daily_k(
         max_workers=max_workers,
         thread_name_prefix=f"{market_name}-daily-bar",
     ) as executor:
-        futures = {
-            executor.submit(fetch_symbol, symbol): symbol for symbol in symbols
-        }
+        futures = {executor.submit(fetch_symbol, symbol): symbol for symbol in symbols}
 
         for completed, future in enumerate(as_completed(futures), start=1):
             symbol = futures[future]
@@ -169,7 +167,7 @@ def sync_market_daily_k(
     }
 
 
-def sync_hk_us_daily_k(
+def sync_hk_us_daily_bars(
     lookback_days: int,
     max_workers: int | None = None,
     request_interval: float = 0.5,
@@ -238,7 +236,7 @@ def main() -> None:
         print(f"无效选项: {choice}")
         return
 
-    sync_hk_us_daily_k(lookback_days_by_choice[choice])
+    sync_hk_us_daily_bars(lookback_days_by_choice[choice])
 
 
 if __name__ == "__main__":

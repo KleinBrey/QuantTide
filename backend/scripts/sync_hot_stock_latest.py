@@ -11,7 +11,7 @@ from backend.app.repository import (
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 
 
-def sync_stock_hot() -> None:
+def sync_hot_stock_latest() -> None:
     settings = get_settings()
 
     # 三个市场分别初始化自己的数据库。
@@ -51,7 +51,7 @@ def sync_stock_hot() -> None:
 
 
 def main() -> None:
-    sync_stock_hot()
+    sync_hot_stock_latest()
 
 
 if __name__ == "__main__":
