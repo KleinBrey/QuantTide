@@ -40,6 +40,14 @@ export function getHistoricalPriceApi(params) {
 }
 
 /**
+ * 获取单只指数历史日 K（无复权参数，时间范围最多 10 年）。
+ * @param {{thscode: string, interval: '1d', start: number, end: number}} params
+ */
+export function getIndexHistoricalPriceApi(params) {
+  return request.get('/api/a-share-index/prices/historical', params);
+}
+
+/**
  * 特色数据通用接口。
  * resource 示例：hot-stock-list、skyrocket-list、limit-up-pool。
  */

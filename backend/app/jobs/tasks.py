@@ -1,9 +1,9 @@
 import logging
 
-from backend.scripts.sync_stock_daily_bars import sync_stock_daily_bars
-from backend.scripts.sync_hot_stock_latest import sync_hot_stock_latest
-from backend.scripts.sync_stock_daily_basic import sync_stock_daily_basic
-from backend.scripts.sync_stock_list import sync_stock_list
+from backend.scripts.latest.sync_stock_daily_bars import sync_stock_daily_bars
+from backend.scripts.latest.sync_hot_stock import sync_hot_stock_latest
+from backend.scripts.latest.sync_stock_daily_basic import sync_stock_daily_basic
+from backend.scripts.latest.sync_stock_list import sync_stock_list
 
 logger = logging.getLogger(__name__)
 

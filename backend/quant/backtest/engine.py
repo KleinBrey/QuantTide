@@ -1,4 +1,4 @@
-"""放量突破次日确认策略的 A 股日频回测执行器。
+"""共用的 A 股日频回测执行器。
 
 资金与成交约定：
 
@@ -7,9 +7,9 @@
 - 实际买入预算取目标资金预算与可用现金的较小值，不融资、不重新平衡旧仓；
 - 按当日信号排名依次买入，持仓达到上限后忽略剩余信号；
 - 买入数量按 ``lot_size`` 向下取整，并为佣金预留现金；不足一手则跳过；
-- 信号仅在确认日按收盘价尝试成交，未成交信号不会顺延到下一交易日；
+- 信号仅在入场日按收盘价尝试成交，未成交信号不会顺延到下一交易日；
 - 遵守 A 股 T+1，买入当日不卖出；满足任一卖出条件时整仓卖出；
-- 卖出规则全部由策略的 find_exits 给出（止损 > 止盈 > 大跌 > 连续下跌 > 放量长上影线），
+- 卖出规则全部由策略的 find_exits 给出，
   均在收盘后判断并按收盘价成交；
 - 每日收盘后按最新可用收盘价计算持仓市值与账户权益。
 """
@@ -40,9 +40,7 @@ from backend.quant.backtest.result import (
     build_equity_curve,
     build_trade_frame,
 )
-from backend.quant.strategy.today_confirmed_breakout import (
-    TodayConfirmedBreakoutStrategy,
-)
+from backend.quant.strategy.base import Strategy
 
 console = Console()
 
@@ -76,18 +74,16 @@ class BacktestConfig:
     sell_tax_rate: float = 0.006
 
 
-class ConfirmedVolumeBreakoutBacktest:
-    """只服务于放量突破次日确认策略的回测。"""
-
-    strategy_id = "confirmed_volume_breakout"
+class BacktestEngine:
+    """策略决定买卖信号，引擎负责成交与账户结算。"""
 
     def __init__(
         self,
+        strategy: Strategy,
         config: BacktestConfig | None = None,
-        strategy: TodayConfirmedBreakoutStrategy | None = None,
     ) -> None:
         self.config = config or BacktestConfig()
-        self.strategy = strategy or TodayConfirmedBreakoutStrategy()
+        self.strategy = strategy
 
     def run(
         self,
@@ -109,12 +105,12 @@ class ConfirmedVolumeBreakoutBacktest:
 
         # 2. 一次性算出所有入场候选，以及每个候选入场后的卖出日。
         signals = self.strategy.generate_entries_range(
-            calendar, stocks, daily_bars, hot_stocks, stock_daily_basic
+            calendar, stocks, exit_indicator_bars, hot_stocks, stock_daily_basic
         )
         strategy_exits = self._find_strategy_exits(signals, exit_indicator_bars)
         signals_by_date = {
-            confirm_date: group.sort_values(["selection_rank", "symbol"])
-            for confirm_date, group in signals.groupby("confirm_date")
+            entry_date: group.sort_values(["selection_rank", "symbol"])
+            for entry_date, group in signals.groupby("entry_date")
         }
         prices_by_date = {
             trade_date: dict(zip(day["symbol"], day["close"].astype(float)))
@@ -217,14 +213,11 @@ class ConfirmedVolumeBreakoutBacktest:
     ) -> dict[tuple[str, date], tuple[date, str]]:
         """让策略为每个入场候选找出入场后的第一个卖出日（含止损、止盈）。
 
-        返回 {(股票, 入场日): (卖出日, 卖出原因)}。入场日就是确认日，
+        返回 {(股票, 入场日): (卖出日, 卖出原因)}。入场日由策略指定，
         买入后 position.opened_at 与之相同，卖出时直接查表即可。
         """
 
-        entries = signals[
-            ["symbol", "confirm_date", "stop_loss_price", "take_profit_price"]
-        ].rename(columns={"confirm_date": "entry_date"})
-        exits = self.strategy.find_exits(entries, period_bars)
+        exits = self.strategy.find_exits(signals, period_bars)
         return {
             (row.symbol, row.entry_date.date()): (row.exit_date.date(), row.exit_reason)
             for row in exits.itertuples()
@@ -295,14 +288,14 @@ class ConfirmedVolumeBreakoutBacktest:
         for signal in candidates.to_dict(orient="records"):
             symbol = str(signal["symbol"])
             price = day_prices.get(symbol)
-            stop_price = float(signal["stop_loss_price"])
-            target_price = float(signal["take_profit_price"])
+            stop_price = signal.get("stop_loss_price")
+            target_price = signal.get("take_profit_price")
 
             if symbol in account.positions:
                 stats["skipped_already_held"] += 1
                 continue
-            # 当日没有行情，或价格关系不满足 止损 < 收盘 < 止盈。
-            if price is None or not 0 < stop_price < price < target_price:
+            # 当日没有可成交价格。
+            if price is None or not price > 0:
                 stats["skipped_unexecutable"] += 1
                 continue
             if len(account.positions) >= self.config.max_positions:
@@ -326,7 +319,7 @@ class ConfirmedVolumeBreakoutBacktest:
                 fee=fee,
                 stop_loss_price=stop_price,
                 take_profit_price=target_price,
-                signal_date=pd.Timestamp(signal["breakout_date"]).date(),
+                signal_date=pd.Timestamp(signal["signal_date"]).date(),
                 trade_date=trade_date,
             )
             stats["executed"] += 1
@@ -347,7 +340,7 @@ class ConfirmedVolumeBreakoutBacktest:
                     "cash_after": account.cash,
                     "realized_pnl": None,
                     "return_pct": None,
-                    "reason": "confirm_buy",
+                    "reason": signal["entry_reason"],
                 }
             )
 
@@ -411,12 +404,12 @@ class ConfirmedVolumeBreakoutBacktest:
         hot_dates = pd.to_datetime(hot_stocks.get("trade_date", []))
         has_hot_data = len(hot_dates) > 0
         return {
-            "strategy": self.strategy_id,
+            "strategy": self.strategy.id,
             "start_date": calendar[0].date().isoformat(),
             "end_date": calendar[-1].date().isoformat(),
             "max_positions": self.config.max_positions,
             "max_position_pct": self.config.max_position_pct,
-            "signal_days": int(signals["confirm_date"].nunique()),
+            "signal_days": int(signals["entry_date"].nunique()),
             "qualified_signal_count": len(signals),
             "executed_signal_count": stats["executed"],
             "skipped_full_position_count": stats["skipped_full"],
@@ -433,37 +426,11 @@ class ConfirmedVolumeBreakoutBacktest:
         }
 
     def _assumptions(self) -> list[str]:
-        """回测采用的成交与卖出假设，写入结果供展示。"""
-
-        strategy = self.strategy.config
-        return [
-            "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
+        return self.strategy.assumptions() + [
             f"单只股票建仓上限为当日账户权益的 {self.config.max_position_pct:.0%}",
             f"持仓未满时按信号排名补仓，{self.config.lot_size} 股整手，只做多",
             "买入当日不卖，从下一交易日起检查卖出条件",
-            "所有卖出条件均按收盘价判断并按收盘价成交，止损、止盈优先",
-            (
-                "较前一交易日收盘跌幅大于 "
-                f"{strategy.previous_close_decline_exit_pct:.0%} 时等待一天；"
-                f"次日涨幅不低于 {strategy.close_drop_reversal_min_rise_pct:.0%}，"
-                "且出现实体涨幅不低于 "
-                f"{strategy.close_drop_large_bullish_min_body_pct:.0%} "
-                "的大阳线或中阳线反包则继续持有，否则卖出"
-            ),
-            (
-                f"连续 {strategy.consecutive_decline_day_count} 个交易日"
-                f"的当日跌幅均大于 {strategy.consecutive_decline_pct:.0%} 时卖出"
-            ),
-            (
-                f"当日成交量达到前 {strategy.upper_shadow_volume_lookback} 个交易日"
-                f"均量的 {strategy.upper_shadow_volume_ratio_min:.1f} 倍，"
-                f"上影线占振幅不低于 {strategy.upper_shadow_min_pct:.0%}，"
-                f"下影线占振幅不高于 {strategy.lower_shadow_max_pct:.0%}，"
-                f"且实体占振幅不低于 {strategy.candle_body_min_pct:.0%} 时卖出"
-            ),
-            "历史热度缺失时仍产生信号，按放量强度排序",
-            "市值过滤使用确认日当日或此前最近可用的历史市值",
-            "佣金和卖出税率按配置计算，不计滑点、涨跌停和复权影响",
+            "按收盘价成交，佣金和卖出税率按配置计算，不计滑点、涨跌停和复权影响",
         ]
 
 
@@ -481,11 +448,20 @@ def load_backtest_data(
     )
 
 
-def run_from_database(config: BacktestConfig | None = None) -> BacktestResult:
-    """使用本地 DuckDB 执行放量突破次日确认回测。"""
+def run_from_database(
+    config: BacktestConfig | None = None,
+    strategy_id: str | None = None,
+) -> BacktestResult:
+    """使用本地数据回测指定策略，默认运行注册表中的第一个。"""
+
+    from backend.quant.strategy.registry import STRATEGIES
+
+    strategy_class = (
+        STRATEGIES[strategy_id] if strategy_id else next(iter(STRATEGIES.values()))
+    )
 
     stocks, daily_bars, hot_stocks, stock_daily_basic = load_backtest_data()
-    return ConfirmedVolumeBreakoutBacktest(config).run(
+    return BacktestEngine(strategy_class(), config).run(
         stocks=stocks,
         daily_bars=daily_bars,
         hot_stocks=hot_stocks,

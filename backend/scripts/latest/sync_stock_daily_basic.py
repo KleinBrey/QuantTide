@@ -1,4 +1,4 @@
-"""同步股票每日指标。"""
+"""日常更新：同步最近 3 个自然日的数据，供历史入口复用同步函数。"""
 
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
@@ -7,7 +7,7 @@ from backend.app.services import CNMarketService
 
 
 def sync_stock_daily_basic(
-    lookback_days: int,
+    lookback_days: int = 3,
 ) -> int:
     """同步指定自然日范围的市值等每日指标。"""
 
@@ -22,32 +22,7 @@ def sync_stock_daily_basic(
 
 
 def main() -> None:
-    print("""
-            请选择要执行的任务：
-
-            1. 更新最近 3 日数据
-            2. 更新最近 60 日数据
-            3. 更新最近 365 日数据
-            e. 退出
-          """)
-
-    choice = input("请输入选项: ").strip()
-
-    match choice:
-        case "1":
-            sync_stock_daily_basic(3)
-
-        case "2":
-            sync_stock_daily_basic(60)
-
-        case "3":
-            sync_stock_daily_basic(365)
-
-        case "e":
-            print("退出")
-
-        case _:
-            print(f"无效选项: {choice}")
+    sync_stock_daily_basic()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""补齐 A 股股票池最近 365 个自然日的热度排名。"""
+"""补齐 A 股股票池历史热度排名，可选择最近 60 或 365 个自然日。"""
 
 import random
 import time
@@ -33,17 +33,21 @@ def fetch_stock_rank(symbol: str, name: str, start: str, end: str) -> pd.DataFra
     return rows
 
 
-def sync_hot_stock_history() -> int:
+def sync_hot_stock_history(lookback_days: int = 365) -> int:
+    """补齐最近指定自然日范围（含今天）的热度排名。"""
+    if lookback_days <= 0:
+        raise ValueError("lookback_days 必须大于 0")
+
     settings = get_settings()
     database = DuckDBDatabase(settings.database_path)
     database.initialize()
     stocks = StockRepository(database).get_table_data()
     if stocks.empty:
-        raise RuntimeError("股票池为空，请先运行 backend.scripts.sync_stock_list")
+        raise RuntimeError("股票池为空，请先运行 backend.scripts.latest.sync_stock_list")
     repository = StockHotDailyRepository(database)
 
     end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    start = end - timedelta(days=364)
+    start = end - timedelta(days=lookback_days - 1)
     print(
         f"同步 {len(stocks)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}"
     )
@@ -85,7 +89,28 @@ def sync_hot_stock_history() -> int:
 
 
 def main() -> None:
-    sync_hot_stock_history()
+    print("""
+            请选择要执行的任务：
+
+            1. 更新最近 60 日热度排名
+            2. 更新最近 365 日热度排名
+            e. 退出
+          """)
+
+    choice = input("请输入选项: ").strip().lower()
+
+    match choice:
+        case "1":
+            sync_hot_stock_history(60)
+
+        case "2":
+            sync_hot_stock_history(365)
+
+        case "e":
+            print("退出")
+
+        case _:
+            print(f"无效选项: {choice}")
 
 
 if __name__ == "__main__":

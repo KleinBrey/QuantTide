@@ -1,4 +1,4 @@
-"""使用 Futu 同步港股和美股股票池的历史日 K 数据。"""
+"""日常更新：同步最近 3 个自然日的数据，供历史入口复用同步函数。"""
 
 from __future__ import annotations
 
@@ -168,7 +168,7 @@ def sync_market_daily_k(
 
 
 def sync_hk_us_daily_bars(
-    lookback_days: int,
+    lookback_days: int = 3,
     max_workers: int | None = None,
     request_interval: float = 0.5,
     *,
@@ -217,26 +217,7 @@ def sync_hk_us_daily_bars(
 
 
 def main() -> None:
-    print("""
-            请选择要执行的任务：
-
-            1. 更新港股和美股最近 3 日数据
-            2. 更新港股和美股最近 60 日数据
-            3. 更新港股和美股最近 365 日数据
-            e. 退出
-          """)
-
-    choice = input("请输入选项: ").strip().lower()
-    lookback_days_by_choice = {"1": 3, "2": 60, "3": 365}
-
-    if choice == "e":
-        print("退出")
-        return
-    if choice not in lookback_days_by_choice:
-        print(f"无效选项: {choice}")
-        return
-
-    sync_hk_us_daily_bars(lookback_days_by_choice[choice])
+    sync_hk_us_daily_bars()
 
 
 if __name__ == "__main__":

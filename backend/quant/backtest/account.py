@@ -30,8 +30,8 @@ class Account:
         quantity: int,
         price: float,
         fee: float,
-        stop_loss_price: float,
-        take_profit_price: float,
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
         signal_date: date,
         trade_date: date,
     ) -> Position:
@@ -41,8 +41,6 @@ class Account:
             raise ValueError(f"已持有 {symbol}，MVP 不支持加仓")
         if quantity <= 0 or price <= 0 or fee < 0:
             raise ValueError("买入数量和价格必须大于 0，费用不能为负")
-        if not 0 < stop_loss_price < price < take_profit_price:
-            raise ValueError("必须满足止损价 < 买入价 < 止盈价")
 
         gross_amount = quantity * price
         total_cost = gross_amount + fee

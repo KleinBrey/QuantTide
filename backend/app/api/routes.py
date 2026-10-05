@@ -39,15 +39,16 @@ from backend.quant.signal.registry import (
 )
 from backend.quant.backtest.engine import (
     BacktestConfig,
-    ConfirmedVolumeBreakoutBacktest,
+    BacktestEngine,
 )
 from backend.quant.backtest.result import format_backtest_result
+from backend.quant.strategy.registry import STRATEGIES, strategy_info, strategy_list
 from backend.quant.signal.result import format_signal_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
-from backend.scripts.sync_stock_daily_bars import sync_stock_daily_bars
-from backend.scripts.sync_hot_stock_latest import sync_hot_stock_latest
-from backend.scripts.sync_stock_daily_basic import sync_stock_daily_basic
-from backend.scripts.sync_stock_list import sync_stock_list
+from backend.scripts.latest.sync_stock_daily_bars import sync_stock_daily_bars
+from backend.scripts.latest.sync_hot_stock import sync_hot_stock_latest
+from backend.scripts.latest.sync_stock_daily_basic import sync_stock_daily_basic
+from backend.scripts.latest.sync_stock_list import sync_stock_list
 
 from .dependencies import (
     get_daily_repository,
@@ -160,7 +161,7 @@ async def sync_stock_list_database() -> dict[str, str | float]:
     """执行股票列表数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_stock_list.py",
+        "latest/sync_stock_list.py",
         "A 股股票列表同步完成",
         sync_stock_list,
     )
@@ -171,7 +172,7 @@ async def sync_daily_k_database() -> dict[str, str | float]:
     """执行最近 3 个自然日的日 K 数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_stock_daily_bars.py",
+        "latest/sync_stock_daily_bars.py",
         "最近 3 个自然日的日 K 数据同步完成",
         lambda: sync_stock_daily_bars(lookback_days=3, batch_size=100),
     )
@@ -182,7 +183,7 @@ async def sync_stock_daily_basic_database() -> dict[str, str | float]:
     """执行最新交易日股票指标数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_stock_daily_basic.py",
+        "latest/sync_stock_daily_basic.py",
         "最新交易日股票指标同步完成",
         lambda: sync_stock_daily_basic(lookback_days=3),
     )
@@ -193,7 +194,7 @@ async def sync_hot_stock_database() -> dict[str, str | float]:
     """执行每日股票热度数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_hot_stock_latest.py",
+        "latest/sync_hot_stock.py",
         "A 股、港股和美股每日热度同步完成",
         sync_hot_stock_latest,
     )
@@ -390,8 +391,15 @@ def signal_results(
     return format_signal_result(signal_id, selected_stocks, limit=limit)
 
 
-@router.get("/backtests/confirmed_volume_breakout")
-async def confirmed_volume_breakout_backtest(
+@router.get("/backtests/strategies")
+async def backtest_strategies() -> list[dict[str, str]]:
+    """只列出已实现入场与退出规则的可回测策略。"""
+    return strategy_list()
+
+
+@router.get("/backtests/{strategy_id}")
+async def strategy_backtest(
+    strategy_id: str,
     stock_repository: StockListRepository,
     daily_repository: DailyRepository,
     stock_daily_basic_repository: StockDailyBasicRepo,
@@ -406,9 +414,16 @@ async def confirmed_volume_breakout_backtest(
     ] = None,
     lookback_months: Annotated[int, Query(ge=1, le=60)] = 12,
     max_positions: Annotated[int, Query(ge=1, le=100)] = 20,
-    initial_cash: Annotated[float, Query(gt=0)] = 1_000_000.0,
+    max_position_pct: Annotated[float, Query(gt=0, le=1, allow_inf_nan=False)] = 0.05,
+    initial_cash: Annotated[float, Query(gt=0, allow_inf_nan=False)] = 1_000_000.0,
 ) -> dict[str, object]:
-    """执行放量突破次日确认回测，返回绩效和逐笔交易记录。"""
+    """按策略 ID 执行回测，返回绩效和逐笔交易记录。"""
+
+    strategy_class = STRATEGIES.get(strategy_id)
+    if strategy_class is None:
+        raise HTTPException(status_code=404, detail="回测策略不存在")
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=422, detail="回测开始日期不能晚于结束日期")
 
     config = BacktestConfig(
         initial_cash=initial_cash,
@@ -416,10 +431,11 @@ async def confirmed_volume_breakout_backtest(
         end_date=end_date,
         lookback_months=lookback_months,
         max_positions=max_positions,
+        max_position_pct=max_position_pct,
     )
 
     def run_backtest():
-        return ConfirmedVolumeBreakoutBacktest(config).run(
+        return BacktestEngine(strategy_class(), config).run(
             stocks=stock_repository.get_table_data(),
             daily_bars=daily_repository.get_table_data(),
             hot_stocks=stock_hot_repository.get_table_data(),
@@ -429,7 +445,7 @@ async def confirmed_volume_breakout_backtest(
     try:
         result = await run_in_threadpool(run_backtest)
     except Exception as error:
-        logger.exception("执行回测 confirmed_volume_breakout 失败")
+        logger.exception("执行回测 %s 失败", strategy_id)
         raise HTTPException(
             status_code=500,
             detail=f"策略回测失败：{error}",
@@ -437,5 +453,5 @@ async def confirmed_volume_breakout_backtest(
 
     return format_backtest_result(
         result,
-        strategy=find_signal("confirmed_volume_breakout"),
+        strategy=strategy_info(strategy_class),
     )

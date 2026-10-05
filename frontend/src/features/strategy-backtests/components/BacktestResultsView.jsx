@@ -1,10 +1,9 @@
-import { Loader2, RefreshCcw } from 'lucide-react';
 import moment from 'moment';
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
 import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
-import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import { formatNumber, formatPercent } from '../utils/backtestFormatters.jsx';
+import BacktestToolbar from './BacktestToolbar.jsx';
 import BacktestEquityChart from './BacktestEquityChart.jsx';
 import BacktestTradesTable from './BacktestTradesTable.jsx';
 import styles from './BacktestResultsView.module.css';
@@ -25,23 +24,25 @@ function Metric({ label, value, tone }) {
 
 export default function BacktestResultsView({ state }) {
   const { isFullscreen, targetClassName, toggleFullscreen } = useWindowFullscreen();
-  const { result, loading, error, refresh } = state;
+  const { result, loading, error } = state;
   const summary = result?.summary;
-  const strategy = result?.strategy;
   const trades = result?.trades || [];
   const returnTone = summary?.total_return > 0 ? 'positive' : summary?.total_return < 0 ? 'negative' : '';
 
   return (
     <div className={cn('dashboard-content', styles.root)}>
+      <BacktestToolbar {...state} />
       <div className={styles.overviewColumn}>
         <section className={cn('dashboard-panel', styles.summaryPanel)}>
           <div className={styles.summaryHeader}>
             <div>
               <div className={styles.heading}>
-                <h2>{strategy?.name ? `${strategy.name}回测` : '策略回测'}</h2>
-                {strategy?.description ? <span>{strategy.description}</span> : null}
+                <h2>回测统计</h2>
               </div>
               <div className={styles.meta}>
+                <span>
+                  回测策略 <strong>{result?.strategy?.name || '-'}</strong>
+                </span>
                 <span>
                   最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong>
                 </span>
@@ -53,16 +54,6 @@ export default function BacktestResultsView({ state }) {
                 </span>
               </div>
             </div>
-            <Button
-              type="button"
-              className="dashboard-ghost-button"
-              onClick={refresh}
-              disabled={loading}
-              variant="outline"
-            >
-              {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
-              <span>{loading ? '回测中' : '重新运行'}</span>
-            </Button>
           </div>
           <div className={styles.metrics}>
             <Metric label="初始资金" value={formatNumber(summary?.initial_cash)} />

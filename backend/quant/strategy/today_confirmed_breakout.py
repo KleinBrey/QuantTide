@@ -29,6 +29,9 @@ from backend.quant.signal.patterns.today_confirmed_breakout import (
 
 ENTRY_COLUMNS = [
     *SIGNAL_COLUMNS,
+    "entry_date",
+    "signal_date",
+    "entry_reason",
     "stop_loss_price",
     "take_profit_price",
     "risk_per_share",
@@ -72,6 +75,10 @@ class StrategyConfig:
 
 class TodayConfirmedBreakoutStrategy:
     """组合确认信号，并生成入场、止损、止盈和退出规则。"""
+
+    id = "confirmed_volume_breakout"
+    name = "放量突破次日确认"
+    description = "放量突破后次日确认入场，按止盈止损和形态规则退出。"
 
     def __init__(
         self,
@@ -121,6 +128,9 @@ class TodayConfirmedBreakoutStrategy:
             return pd.DataFrame(columns=ENTRY_COLUMNS)
 
         entries = signals.copy()
+        entries["entry_date"] = entries["confirm_date"]
+        entries["signal_date"] = entries["breakout_date"]
+        entries["entry_reason"] = "confirm_buy"
         entries["stop_loss_price"] = entries["breakout_prev_close"]
         entries["risk_per_share"] = (
             entries["confirm_close"] - entries["stop_loss_price"]
@@ -131,6 +141,11 @@ class TodayConfirmedBreakoutStrategy:
             entries["confirm_close"]
             + entries["risk_per_share"] * self.config.risk_reward_ratio
         )
+        # 价格约束属于该策略，不要求其他策略设置止盈止损。
+        entries = entries[
+            (entries["stop_loss_price"] > 0)
+            & (entries["take_profit_price"] > entries["confirm_close"])
+        ]
         return entries[ENTRY_COLUMNS].reset_index(drop=True)
 
     # ------------------------------------------------------------------
@@ -206,6 +221,36 @@ class TodayConfirmedBreakoutStrategy:
             .rename(columns={"trade_date": "exit_date", "close": "exit_close"})
         )
         return exits[EXIT_COLUMNS].reset_index(drop=True)
+
+    def assumptions(self) -> list[str]:
+        """策略的信号与退出规则，写入回测结果供展示。"""
+
+        strategy = self.config
+        return [
+            "确认日使用完整日 K 产生信号，并假设能按收盘价成交",
+            "所有卖出条件均按收盘价判断并按收盘价成交，止损、止盈优先",
+            (
+                "较前一交易日收盘跌幅大于 "
+                f"{strategy.previous_close_decline_exit_pct:.0%} 时等待一天；"
+                f"次日涨幅不低于 {strategy.close_drop_reversal_min_rise_pct:.0%}，"
+                "且出现实体涨幅不低于 "
+                f"{strategy.close_drop_large_bullish_min_body_pct:.0%} "
+                "的大阳线或中阳线反包则继续持有，否则卖出"
+            ),
+            (
+                f"连续 {strategy.consecutive_decline_day_count} 个交易日"
+                f"的当日跌幅均大于 {strategy.consecutive_decline_pct:.0%} 时卖出"
+            ),
+            (
+                f"当日成交量达到前 {strategy.upper_shadow_volume_lookback} 个交易日"
+                f"均量的 {strategy.upper_shadow_volume_ratio_min:.1f} 倍，"
+                f"上影线占振幅不低于 {strategy.upper_shadow_min_pct:.0%}，"
+                f"下影线占振幅不高于 {strategy.lower_shadow_max_pct:.0%}，"
+                f"且实体占振幅不低于 {strategy.candle_body_min_pct:.0%} 时卖出"
+            ),
+            "历史热度缺失时仍产生信号，按放量强度排序",
+            "市值过滤使用确认日当日或此前最近可用的历史市值",
+        ]
 
     def _is_reversal(self, rows: pd.DataFrame) -> pd.Series:
         """当日是否以大阳线或中阳线反包了前一日的下跌。

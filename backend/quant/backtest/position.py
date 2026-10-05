@@ -15,10 +15,10 @@ class Position:
     quantity: int
     entry_price: float
     cost_price: float
-    stop_loss_price: float
-    take_profit_price: float
     signal_date: date
     opened_at: date
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
 
     @property
     def cost_basis(self) -> float:

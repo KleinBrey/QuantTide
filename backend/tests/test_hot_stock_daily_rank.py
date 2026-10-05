@@ -10,7 +10,7 @@ import duckdb
 from backend.app.database import DuckDBDatabase
 from backend.app.provider.hithink_provider import HithinkProvider
 from backend.app.repository import StockHotDailyRepository, StockRepository
-from backend.scripts.sync_hot_stock_history import sync_hot_stock_history
+from backend.scripts.history.sync_hot_stock import sync_hot_stock_history
 
 
 class HotStockDailyRankTests(unittest.TestCase):
@@ -45,8 +45,8 @@ class HotStockDailyRankTests(unittest.TestCase):
                 return [dict(thscode=symbol, date=start, rank=1740 if symbol == "300034.SZ" else 2147)]
 
             with (
-                patch("backend.scripts.sync_hot_stock_history.get_settings", return_value=settings),
-                patch("backend.scripts.sync_hot_stock_history.time.sleep"),
+                patch("backend.scripts.history.sync_hot_stock.get_settings", return_value=settings),
+                patch("backend.scripts.history.sync_hot_stock.time.sleep"),
                 patch.object(HithinkProvider, "fetch_hot_stock_rank_trend", side_effect=fetch),
             ):
                 for _ in range(2):

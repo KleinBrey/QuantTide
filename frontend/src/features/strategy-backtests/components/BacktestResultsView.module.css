@@ -2,8 +2,136 @@
   align-items: stretch;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
+}
+
+.toolbar {
+  grid-column: 1 / -1;
+  padding: 14px 18px;
+}
+
+.toolbarFields {
+  align-items: center;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.toolbarFields label,
+.dateRangeField {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbarFields label > span,
+.dateRangeField > span {
+  color: #a1a1aa;
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dateRangeButton {
+  background: #18181b;
+  border-color: #3f3f46;
+  color: #f4f4f5;
+  width: 220px;
+  font-size: 13px;
+  font-weight: 400;
+  justify-content: flex-start;
+}
+
+.dateRangePopover {
+  background: var(--background);
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
+  z-index: 50;
+}
+
+.toolbarFields input,
+.strategySelect {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  color: #f4f4f5;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 13px;
+  height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  width: 70px;
+}
+
+.toolbarFields input:focus,
+.strategySelect:focus-visible {
+  outline: 1px solid #a1a1aa;
+}
+
+.strategySelect {
+  width: 160px;
+  font-weight: 400;
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+
+.strategySelect > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategyMenu {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  overflow: auto;
+  padding: 4px;
+  z-index: 50;
+}
+
+.strategyOption {
+  align-items: center;
+  border-radius: 4px;
+  color: #f4f4f5;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 16px;
+  justify-content: space-between;
+  outline: none;
+  padding: 8px 10px;
+}
+
+.strategyOption[data-highlighted] {
+  background: #27272a;
+}
+
+.toolbarFields:disabled {
+  opacity: 0.65;
+}
+
+.toolbarFields > button {
+  height: 36px;
+  margin-left: auto;
 }
 
 .overviewColumn {
@@ -121,7 +249,26 @@
 }
 
 .equityHeader {
+  flex-wrap: wrap;
+  gap: 12px;
   min-height: 72px;
+}
+
+.equitySnapshots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-left: auto;
+}
+
+.equitySnapshot small {
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.equitySnapshot i.benchmarkDot {
+  background: #38bdf8;
+  box-shadow: 0 0 10px rgb(56 189 248 / 45%);
 }
 
 .equitySnapshot {
@@ -152,13 +299,9 @@
   width: 7px;
 }
 
-.equitySnapshot strong {
+.equitySnapshot em {
   color: #f4f4f5;
   font-size: 16px;
-}
-
-.equitySnapshot em {
-  font-size: 12px;
   font-style: normal;
   font-weight: 800;
 }
@@ -226,6 +369,7 @@
 @media (max-width: 1100px) {
   .root {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
     height: auto;
     min-height: calc(100vh - 50px);
     overflow: visible;
@@ -300,6 +444,10 @@
 
   .equitySnapshot {
     justify-content: flex-start;
+  }
+
+  .equitySnapshots {
+    margin-left: 0;
   }
 }
 

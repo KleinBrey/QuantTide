@@ -147,44 +147,85 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `quant/backtest/`
 
-职责仅限模拟执行与绩效评估。`engine.py` 维护账户、仓位和成交，
-`signal_engine.py` 在无资金约束下独立评估每个交易候选，结果与指标计算分别放在
-`result.py` 和 `signal_result.py`。当前跑通 `confirmed_volume_breakout`：放量
-阳线后次日量能维持并收小阳线时，按确认日收盘价等权买入。止损价为放量
-突破日前一交易日的收盘价，止盈价为 2 倍盈亏比，从买入后下一交易日起执行。
-默认回测结束日期往前两个月、100 万初始资金、最多 10 只股票：
+职责仅限模拟执行与绩效评估。`BacktestEngine(strategy, config)` 接收策略实例，
+负责交易日循环、先卖后买、仓位上限、整手成交、费用和每日估值。
+`account.py`、`position.py` 负责账户和持仓，`result.py` 计算绩效。
+买卖条件、信号排序以及止盈止损价格由策略决定，引擎不读取某个策略的配置。
+
+默认策略为注册表中的第一个。命令行入口使用最近 12 个月、100 万初始资金、
+最多 20 只股票、单只建仓上限 5%：
 
 ```bash
 uv run quant-backtest
-uv run quant-backtest --months 6 --max-positions 5
 ```
 
-结果直接输出期末资产、累计/年化收益、最大回撤、Sharpe、胜率和最近交易
-记录。历史热度只用于同日候选股排序；缺失时按放量强度排序，不影响信号产生。
+前端通过 `GET /api/backtests/strategies` 获取策略列表，默认选中第一个策略。
+页面默认最近 6 个月，调整参数后点击“执行回测”运行。
+执行回测使用 `GET /api/backtests/{strategy_id}`，支持 `start_date`、`end_date`、
+`lookback_months`、`max_positions`、`max_position_pct` 和 `initial_cash` 参数。
+每次请求创建独立策略实例和账户；不同策略分别回测，不共用资金。
+
+### 添加一个回测策略
+
+1. 在 `quant/strategy/` 新建策略类，提供 `id`、`name`、`description`。
+2. 实现 `generate_entries_range(...)`、`find_exits(...)`、`assumptions()`，
+   接口见 `quant/strategy/base.py`。不需要继承基类。
+3. 在 `quant/strategy/registry.py` 的 `STRATEGIES` 中登记该类。
+   重启后端后，前端下拉框会自动显示，无需修改引擎或页面。
+
+入场结果为 DataFrame，包含 `symbol`、`name`、`entry_date`、`signal_date`、
+`selection_rank`、`entry_reason`；排名数值越小，买入优先级越高。
+日期使用归一化的 pandas Timestamp，同一股票同一天最多一条候选。
+`stop_loss_price`、`take_profit_price` 可选，仅用于记录和展示；
+引擎不会自动执行止盈止损，策略需在 `find_exits` 中处理。
+
+退出结果包含 `symbol`、`entry_date`、`exit_date`、`exit_reason`，
+每个候选至多一个退出日，且必须晚于入场日并有当日行情。
+没有退出信号时返回带列名的空 DataFrame，仓位保留到回测结束。
+`assumptions()` 返回策略说明列表，可以为空。
+
+策略批量计算候选入场和对应退出日期，引擎只执行实际买入的候选。
+入场信号不能使用入场日之后的数据；退出条件不能使用退出日之后的数据。
+这种方式适合当前按日、整仓买卖的策略，不包含加减仓或共享账户的多策略组合。
+
+当前正式策略只有“放量突破次日确认”。选股信号只有补齐入场、退出规则后，
+才应注册为可回测策略。测试中的持有一天和持有至期末策略仅验证引擎通用性。
 
 ## 外层同步脚本
 
 ```bash
 # 股票列表
-uv run python -m backend.scripts.sync_stock_list
+uv run python -m backend.scripts.latest.sync_stock_list
 
-# 初始化港股、美股人工股票池（各 50 只，可重复执行）
-uv run python -m backend.scripts.sync_hk_us_stock_pools
+# 更新港股、美股人工股票池（可重复执行）
+uv run python -m backend.scripts.latest.sync_hk_us_stock_pools
 
-# 日 K
-uv run python -m backend.scripts.sync_stock_daily_bars
-uv run python -m backend.scripts.sync_hk_us_daily_bars
+# 最近 3 个自然日的每日指标和日 K
+uv run python -m backend.scripts.latest.sync_stock_daily_basic
+uv run python -m backend.scripts.latest.sync_stock_daily_bars
+uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
 
 # 股票热度
-uv run python -m backend.scripts.sync_hot_stock_latest
+uv run python -m backend.scripts.latest.sync_hot_stock
 ```
 
-上述脚本都位于外层 `backend/scripts/`，同步脚本会在写入前自动初始化数据库。
+日常更新入口位于 `backend/scripts/latest/`，直接执行，不再弹出日期选择菜单。
+日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表和
+股票池更新基础资料。同步脚本会在写入前自动初始化数据库。
 
-补齐 A 股股票池最近一年（含今天的 365 个自然日）的历史热度排名：
+历史补数入口位于 `backend/scripts/history/`。每日指标和日 K 可交互式选择
+最近 60 或 365 个自然日，与日常入口共用同步函数；A 股日 K 分别每批 50、10 只：
 
 ```bash
-uv run python -m backend.scripts.sync_hot_stock_history
+uv run python -m backend.scripts.history.sync_stock_daily_basic
+uv run python -m backend.scripts.history.sync_stock_daily_bars
+uv run python -m backend.scripts.history.sync_hk_us_daily_bars
+```
+
+补齐 A 股股票池历史热度排名，运行后可选择最近 60 或 365 个自然日（含今天）：
+
+```bash
+uv run python -m backend.scripts.history.sync_hot_stock
 ```
 
 读取 A 股库 `stocks` 中的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
@@ -209,11 +250,13 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 ## 命令入口
 
 - `backend/run.py`：启动 FastAPI；
-- `backend/scripts/sync_stock_list.py`：同步股票列表；
-- `backend/scripts/sync_hk_us_stock_pools.py`：幂等初始化港股、美股人工股票池；
-- `backend/scripts/sync_stock_daily_bars.py`：交互式同步日 K，供 `quant-sync` 使用；
-- `backend/scripts/sync_hk_us_daily_bars.py`：通过 Futu OpenD 交互式同步港股和美股日 K；
-- `backend/scripts/sync_hot_stock_latest.py`：分别向三个市场数据库同步当天股票热度。
+- `backend/scripts/latest/sync_stock_list.py`：同步股票列表；
+- `backend/scripts/latest/sync_hk_us_stock_pools.py`：幂等更新港股、美股人工股票池；
+- `backend/scripts/latest/sync_stock_daily_basic.py`：同步最近 3 日每日指标；
+- `backend/scripts/latest/sync_stock_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
+- `backend/scripts/latest/sync_hk_us_daily_bars.py`：通过 Futu OpenD 同步港美股最近 3 日日 K；
+- `backend/scripts/latest/sync_hot_stock.py`：分别向三个市场数据库同步当天股票热度；
+- `backend/scripts/history/`：每日指标、日 K 和 A 股热度的历史补数入口。
 
 ```bash
 uv run quant-api
