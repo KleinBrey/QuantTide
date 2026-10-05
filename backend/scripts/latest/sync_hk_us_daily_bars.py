@@ -8,10 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pandas as pd
+from tqdm import tqdm
 
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
-from backend.app.provider import FutuProvider
+from backend.app.provider import YFinanceProvider
 from backend.app.repository import (
     HKDailyBarRepository,
     HKStockRepository,
@@ -20,11 +21,11 @@ from backend.app.repository import (
 )
 
 
-def format_futu_daily_bars(
+def format_yfinance_daily_bars(
     symbol: str,
     result: dict[str, dict[str, list[dict[str, Any]]]],
 ) -> pd.DataFrame:
-    """将 Futu 历史行情转换为 ``daily_bars`` 表结构。"""
+    """将 Yahoo Finance 历史行情转换为 ``daily_bars`` 表结构。"""
 
     columns = [
         "symbol",
@@ -49,13 +50,14 @@ def format_futu_daily_bars(
         "low_price",
         "close_price",
         "volume",
-        "turnover",
     ]
     missing_columns = [
         column for column in required_columns if column not in frame.columns
     ]
     if missing_columns:
-        raise ValueError(f"Futu 日 K 数据缺少字段：{', '.join(missing_columns)}")
+        raise ValueError(
+            f"Yahoo Finance 日 K 数据缺少字段：{', '.join(missing_columns)}"
+        )
 
     frame["symbol"] = str(symbol).strip().upper()
     frame["trade_date"] = (
@@ -68,11 +70,12 @@ def format_futu_daily_bars(
     frame["low"] = pd.to_numeric(frame["low_price"], errors="raise")
     frame["close"] = pd.to_numeric(frame["close_price"], errors="raise")
     frame["volume"] = pd.to_numeric(frame["volume"], errors="raise")
-    frame["amount"] = pd.to_numeric(frame["turnover"], errors="coerce")
+    # Yahoo 日线没有真实成交额，不以收盘价乘成交量替代。
+    frame["amount"] = None
     if "source" not in frame.columns:
-        frame["source"] = FutuProvider.source
+        frame["source"] = YFinanceProvider.source
     else:
-        frame["source"] = frame["source"].fillna(FutuProvider.source)
+        frame["source"] = frame["source"].fillna(YFinanceProvider.source)
 
     return frame[columns].reset_index(drop=True)
 
@@ -81,7 +84,7 @@ def sync_market_daily_k(
     database: DuckDBDatabase,
     stock_repository: HKStockRepository | USStockRepository,
     daily_repository: HKDailyBarRepository | USDailyBarRepository,
-    provider: FutuProvider,
+    provider: YFinanceProvider,
     market_name: str,
     lookback_days: int,
     max_workers: int = 4,
@@ -113,8 +116,7 @@ def sync_market_daily_k(
     def fetch_symbol(symbol: str):
         nonlocal last_request_time
 
-        # Futu 历史行情接口一次只接受一只股票；统一控制请求起始间隔，
-        # 同时允许已发出的请求并行等待 OpenD 返回。
+        # 统一控制 Yahoo 请求起始间隔，避免短时间集中请求。
         with request_lock:
             now = time.monotonic()
             wait_time = request_interval - (now - last_request_time)
@@ -132,6 +134,11 @@ def sync_market_daily_k(
 
     failed_symbols: list[str] = []
     affected_rows = 0
+    print(
+        f"同步{market_name}日 K：{len(symbols)} 只股票，"
+        f"最近 {lookback_days} 个自然日，并发数 {max_workers}",
+        flush=True,
+    )
 
     with ThreadPoolExecutor(
         max_workers=max_workers,
@@ -139,22 +146,21 @@ def sync_market_daily_k(
     ) as executor:
         futures = {executor.submit(fetch_symbol, symbol): symbol for symbol in symbols}
 
-        for completed, future in enumerate(as_completed(futures), start=1):
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc=f"同步{market_name}日 K",
+            dynamic_ncols=True,
+        ):
             symbol = futures[future]
             try:
-                rows = format_futu_daily_bars(symbol, future.result())
+                rows = format_yfinance_daily_bars(symbol, future.result())
                 # 与 A 股同步保持一致，不保存没有成交量的行情。
                 rows = rows[rows["volume"].notna() & rows["volume"].ne(0)]
                 affected_rows += daily_repository.upsert_daily_bars(rows)
             except Exception as error:
                 failed_symbols.append(symbol)
-                print(f"{market_name} {symbol} 获取失败: {error}", flush=True)
-
-            if completed % 5 == 0 or completed == len(futures):
-                print(
-                    f"{market_name}日 K 进度：{completed}/{len(futures)}",
-                    flush=True,
-                )
+                tqdm.write(f"{market_name} {symbol} 获取失败: {error}")
 
     print(
         f"{market_name}日 K 同步完成：股票 {len(symbols)} 只，"
@@ -172,48 +178,44 @@ def sync_hk_us_daily_bars(
     max_workers: int | None = None,
     request_interval: float = 0.5,
     *,
-    provider: FutuProvider | None = None,
+    provider: YFinanceProvider | None = None,
     hk_database: DuckDBDatabase | None = None,
     us_database: DuckDBDatabase | None = None,
 ) -> dict[str, dict[str, Any]]:
     """从港股和美股 ``stocks`` 表同步历史日 K。"""
 
     settings = get_settings()
-    workers = max_workers if max_workers is not None else settings.sync_workers
-    if provider is None:
-        # Futu SDK 默认会为每次连接和断开打印日志，与动态终端输出叠加时
-        # 会导致界面持续闪烁。CLI 中关闭控制台日志，接口错误仍会在下方汇总。
-        FutuProvider.set_console_logging(False)
-        futu_provider = FutuProvider()
-    else:
-        futu_provider = provider
+    workers = (
+        max_workers
+        if max_workers is not None
+        else min(settings.sync_workers, lookback_days)
+    )
+    quote_provider = provider if provider is not None else YFinanceProvider()
     hk_db = hk_database or HKDuckDBDatabase(settings.hk_database_path)
     us_db = us_database or USDuckDBDatabase(settings.us_database_path)
 
-    # 港股和美股共享一个 OpenD 行情连接，避免每只股票反复连接和断开。
-    with futu_provider.session():
-        return {
-            "hk": sync_market_daily_k(
-                hk_db,
-                HKStockRepository(hk_db),
-                HKDailyBarRepository(hk_db),
-                futu_provider,
-                "港股",
-                lookback_days,
-                workers,
-                request_interval,
-            ),
-            "us": sync_market_daily_k(
-                us_db,
-                USStockRepository(us_db),
-                USDailyBarRepository(us_db),
-                futu_provider,
-                "美股",
-                lookback_days,
-                workers,
-                request_interval,
-            ),
-        }
+    return {
+        "hk": sync_market_daily_k(
+            hk_db,
+            HKStockRepository(hk_db),
+            HKDailyBarRepository(hk_db),
+            quote_provider,
+            "港股",
+            lookback_days,
+            workers,
+            request_interval,
+        ),
+        "us": sync_market_daily_k(
+            us_db,
+            USStockRepository(us_db),
+            USDailyBarRepository(us_db),
+            quote_provider,
+            "美股",
+            lookback_days,
+            workers,
+            request_interval,
+        ),
+    }
 
 
 def main() -> None:

@@ -55,11 +55,22 @@ echo $VIRTUAL_ENV
 
 ## 初始化和同步
 
-同步脚本会自动初始化三个市场数据库和所需数据表。`cn_market.duckdb` 只保存 A 股数据，港股和美股分别保存在 `hk_market.duckdb` 与 `us_market.duckdb`。依次同步股票列表、日 K 和当日股票热度：
+同步脚本会自动初始化三个市场数据库和所需数据表。`cn_market.duckdb` 只保存 A 股数据，港股和美股分别保存在 `hk_market.duckdb` 与 `us_market.duckdb`。
+
+港美股股票池由独立脚本手动维护，不参与自动同步。首次初始化或添加股票时，
+修改 `backend/scripts/init_hk_us_stock_pools.py` 中的 `HK_STOCKS`、`US_STOCKS` 后运行：
+
+```bash
+uv run python -m backend.scripts.init_hk_us_stock_pools
+```
+
+脚本可重复执行，添加或更新名单内的股票，保留数据库中的其他股票；
+从脚本名单移除股票不会删除数据库记录。
+
+依次同步 A 股股票列表、日 K 和当日股票热度：
 
 ```bash
 uv run python -m backend.scripts.latest.sync_stock_list
-uv run python -m backend.scripts.latest.sync_hk_us_stock_pools
 uv run python -m backend.scripts.latest.sync_stock_daily_basic
 uv run quant-sync
 uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
@@ -69,7 +80,7 @@ uv run python -m backend.scripts.latest.sync_hot_stock
 同步入口按用途拆分到 `backend/scripts/latest/` 和 `backend/scripts/history/`。
 `quant-sync` 指向 `latest.sync_stock_daily_bars`，直接更新最近 3 个自然日的
 A 股日 K，每批 100 只。`latest` 下的每日指标和港美股日 K 同样直接更新最近 3 日，
-热度脚本同步当天数据，股票列表和股票池脚本更新基础资料。
+热度脚本同步当天数据，股票列表脚本更新 A 股基础资料。
 
 需要补历史数据时使用：
 
@@ -82,8 +93,17 @@ uv run python -m backend.scripts.history.sync_hot_stock
 
 历史每日指标和日 K 入口提供最近 60、365 个自然日选项，A 股日 K 分别每批
 50、10 只；历史热度入口同样可选最近 60、365 个自然日（含今天），补齐 A 股排名。
-港美股日 K 从两个市场各自的 `stocks` 表读取股票，通过本机 Futu OpenD
-写入对应的 `daily_bars` 表。
+港美股日 K 从两个市场各自的 `stocks` 表读取股票，通过 `YFinanceProvider`
+从 Yahoo Finance 获取，写入对应的 `daily_bars` 表，无需启动 Futu OpenD。
+价格使用 Yahoo 自动复权，成交量保留上游口径，成交额 `amount` 写入 NULL，
+来源为 `YFinance`。同步默认最多 2 个并发请求，请求失败时指数退避重试。
+
+已有 Futu 历史数据不会因代码升级自动改写。首次切换应先备份两个市场数据库，
+再通过历史入口补齐整个保留区间，避免拼接不同来源的复权行情；超过 365 天时可
+直接调用 `sync_hk_us_daily_bars(lookback_days=所需自然日数)`。
+Yahoo 自动复权与 Futu 前复权不保证一致，分红、拆股后需重刷保留的历史区间；
+日常最近 3 日同步不会自动重算更早的价格。日 K 可能包含当天未收盘的数据，
+用于收盘策略时应在对应市场收盘后运行。
 
 ## 启动 API
 

@@ -3,6 +3,7 @@ from .futu_provider import FutuProvider
 from .hithink_provider import HithinkProvider
 from .iwencai_provider import IwencaiProvider
 from .tushare_provider import TushareProvider
+from .yfinance_provider import YFinanceProvider
 
 __all__ = [
     "HithinkProvider",
@@ -10,4 +11,5 @@ __all__ = [
     "FutuProvider",
     "TushareProvider",
     "IwencaiProvider",
+    "YFinanceProvider",
 ]

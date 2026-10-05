@@ -73,6 +73,11 @@ uv run uvicorn backend.app.main:app \
 - `hithink_provider.py`：HiThink 股票列表、快照和历史行情；
 - `akshare_provider.py`：AkShare 股票列表和历史行情适配；
 - `futu_provider.py`：通过本机 Futu OpenD 获取股票列表、快照、历史 K 线和热议榜；
+- `yfinance_provider.py`：通过 Yahoo Finance 获取港美股历史 K 线，返回统一的
+  `data.item` 结构；支持日/周/月 K、Yahoo 自动复权或关闭自动复权，不支持后复权。
+  港股如 `00700.HK` 请求时映射为 `0700.HK`，内部股票代码保持不变；
+  日期保留交易所交易日，以项目约定的上海时区午夜编码为 `date_ms`；
+  `turnover` 为 None，同步后的 `amount` 为 NULL，`source` 为 `YFinance`；
 - `iwencai_provider.py`：问财股票热度查询；
 - `example/`：各 Provider 的手动冒烟测试。
 
@@ -191,14 +196,23 @@ uv run quant-backtest
 当前正式策略只有“放量突破次日确认”。选股信号只有补齐入场、退出规则后，
 才应注册为可回测策略。测试中的持有一天和持有至期末策略仅验证引擎通用性。
 
+## 手动维护港美股股票池
+
+`backend/scripts/init_hk_us_stock_pools.py` 是独立的手动入口，不参与自动同步。
+首次初始化或添加股票时，修改文件中的 `HK_STOCKS`、`US_STOCKS` 后执行：
+
+```bash
+uv run python -m backend.scripts.init_hk_us_stock_pools
+```
+
+脚本可重复执行，添加或更新名单内的股票，保留数据库中的其他股票；
+从脚本名单移除股票不会删除数据库记录。
+
 ## 外层同步脚本
 
 ```bash
-# 股票列表
+# A 股股票列表
 uv run python -m backend.scripts.latest.sync_stock_list
-
-# 更新港股、美股人工股票池（可重复执行）
-uv run python -m backend.scripts.latest.sync_hk_us_stock_pools
 
 # 最近 3 个自然日的每日指标和日 K
 uv run python -m backend.scripts.latest.sync_stock_daily_basic
@@ -210,8 +224,8 @@ uv run python -m backend.scripts.latest.sync_hot_stock
 ```
 
 日常更新入口位于 `backend/scripts/latest/`，直接执行，不再弹出日期选择菜单。
-日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表和
-股票池更新基础资料。同步脚本会在写入前自动初始化数据库。
+日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表
+更新 A 股基础资料。同步脚本会在写入前自动初始化数据库。
 
 历史补数入口位于 `backend/scripts/history/`。每日指标和日 K 可交互式选择
 最近 60 或 365 个自然日，与日常入口共用同步函数；A 股日 K 分别每批 50、10 只：
@@ -251,10 +265,11 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 
 - `backend/run.py`：启动 FastAPI；
 - `backend/scripts/latest/sync_stock_list.py`：同步股票列表；
-- `backend/scripts/latest/sync_hk_us_stock_pools.py`：幂等更新港股、美股人工股票池；
+- `backend/scripts/init_hk_us_stock_pools.py`：独立手动初始化或添加港股、美股股票池，可重复执行；
 - `backend/scripts/latest/sync_stock_daily_basic.py`：同步最近 3 日每日指标；
 - `backend/scripts/latest/sync_stock_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
-- `backend/scripts/latest/sync_hk_us_daily_bars.py`：通过 Futu OpenD 同步港美股最近 3 日日 K；
+- `backend/scripts/latest/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
+  无需 OpenD；默认最多 2 个并发请求，单股失败记录到 `failed_symbols`；
 - `backend/scripts/latest/sync_hot_stock.py`：分别向三个市场数据库同步当天股票热度；
 - `backend/scripts/history/`：每日指标、日 K 和 A 股热度的历史补数入口。
 

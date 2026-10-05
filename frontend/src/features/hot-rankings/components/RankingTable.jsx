@@ -121,6 +121,7 @@ export default function RankingTable({ rows, loading, marketId = 'a-share', show
               loading={loading}
               postSortRows={keepKlineRowsWithStocks}
               suppressCellFocus
+              enableCellTextSelection
             />
           </div>
         </AgGridProvider>

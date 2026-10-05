@@ -1,4 +1,4 @@
-"""初始化港股和美股的人工维护股票池。"""
+"""手动维护港股和美股股票池，修改下方名单后独立运行，不参与自动同步。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from backend.app.config.config import get_settings
 from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase
 from backend.app.repository import HKStockRepository, USStockRepository
 
-INITIAL_SOURCE = "Futu"
+# 初始股票池来源
+INITIAL_SOURCE = "Initial"
 
 HK_STOCKS = (
     ("00700.HK", "腾讯控股"),
@@ -26,6 +27,7 @@ HK_STOCKS = (
     ("00100.HK", "MiniMax"),
     ("06082.HK", "壁仞科技"),
     ("09903.HK", "天数智芯"),
+    ("01888.HK", "建滔积层板"),
 )
 
 US_STOCKS = (
@@ -62,7 +64,7 @@ def _stock_frame(rows: tuple[tuple[str, str], ...]) -> pd.DataFrame:
     return frame
 
 
-def sync_hk_us_stock_pools(
+def init_hk_us_stock_pools(
     hk_database: HKDuckDBDatabase,
     us_database: USDuckDBDatabase,
 ) -> dict[str, int]:
@@ -79,11 +81,11 @@ def sync_hk_us_stock_pools(
 
 def main() -> None:
     settings = get_settings()
-    affected = sync_hk_us_stock_pools(
+    affected = init_hk_us_stock_pools(
         HKDuckDBDatabase(settings.hk_database_path),
         USDuckDBDatabase(settings.us_database_path),
     )
-    print(f"股票池初始化完成：港股 {affected['hk']} 条，" f"美股 {affected['us']} 条")
+    print(f"股票池初始化完成：港股 {affected['hk']} 条，美股 {affected['us']} 条")
 
 
 if __name__ == "__main__":

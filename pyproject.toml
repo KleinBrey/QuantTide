@@ -21,6 +21,7 @@ dependencies = [
   "akshare>=1.18.91,<2",
   "tushare>=1.2.26,<2",
   "futu-api>=10,<11",
+  "yfinance>=0.2.66,<2",
 ]
 
 [dependency-groups]

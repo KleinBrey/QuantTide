@@ -7,8 +7,8 @@ const klineCache = new Map();
 const pendingRequests = new Map();
 const DATA_SOURCE_LABELS = {
   'a-share': '本地 DuckDB / Tushare',
-  'hk-share': '本地 DuckDB / Futu',
-  'us-share': '本地 DuckDB / Futu'
+  'hk-share': '本地 DuckDB / Yahoo Finance',
+  'us-share': '本地 DuckDB / Yahoo Finance'
 };
 
 export function useStockKline() {
@@ -44,11 +44,18 @@ export function useStockKline() {
           market: marketId,
           start: moment().subtract(1, 'year').format('YYYY-MM-DD'),
           end: moment().format('YYYY-MM-DD')
-        }).then(response => ({
-          dataSource: DATA_SOURCE_LABELS[marketId] || '本地 DuckDB',
-          adjustLabel: '前复权',
-          rows: transformStockHistory(response?.data)
-        }));
+        }).then(response => {
+          const items = response?.data;
+          const sources = [...new Set((Array.isArray(items) ? items : []).map(item => item.source).filter(Boolean))];
+          const isYahoo = sources.length === 1 && sources[0] === 'YFinance';
+          return {
+            dataSource: sources.length
+              ? `本地 DuckDB / ${sources.map(source => source === 'YFinance' ? 'Yahoo Finance' : source).join('、')}`
+              : DATA_SOURCE_LABELS[marketId] || '本地 DuckDB',
+            adjustLabel: sources.length > 1 ? '多来源行情' : isYahoo ? 'Yahoo 自动复权' : '前复权',
+            rows: transformStockHistory(items)
+          };
+        });
         pendingRequests.set(cacheKey, request);
       }
 
