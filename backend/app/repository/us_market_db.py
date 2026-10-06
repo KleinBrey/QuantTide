@@ -232,7 +232,7 @@ class USStockHotDailyRepository(BaseRepository):
             ).fetchone()
         return row[0] if row and row[0] is not None else None
 
-    def get_latest(self) -> pd.DataFrame:
+    def get_latest_data(self) -> pd.DataFrame:
         with self.db.connection(read_only=True) as connection:
             return connection.execute("""
                 SELECT

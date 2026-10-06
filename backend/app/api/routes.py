@@ -22,9 +22,9 @@ from backend.app.repository import (
     HKDailyBarRepository,
     HKStockHotDailyRepository,
     HKStockRepository,
-    StockHotDailyRepository,
-    StockDailyBasicRepository,
-    StockRepository,
+    DailyHotRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
     USDailyBarRepository,
     USStockHotDailyRepository,
     USStockRepository,
@@ -57,9 +57,9 @@ from .dependencies import (
     get_hk_market_service,
     get_hk_stock_repository,
     get_hk_stock_hot_repository,
-    get_stock_daily_basic_repository,
-    get_stock_hot_repository,
-    get_stock_repository,
+    get_daily_basic_repository,
+    get_daily_hot_repository,
+    get_daily_stock_repository,
     get_us_market_service,
     get_us_stock_repository,
     get_us_stock_hot_repository,
@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 database_sync_lock = threading.Lock()
 
 # 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
-StockListRepository = Annotated[StockRepository, Depends(get_stock_repository)]
+DailyStockRepo = Annotated[DailyStockRepository, Depends(get_daily_stock_repository)]
 HKStockListRepository = Annotated[
     HKStockRepository,
     Depends(get_hk_stock_repository),
@@ -91,13 +91,13 @@ USDailyRepository = Annotated[
     USDailyBarRepository,
     Depends(get_us_daily_repository),
 ]
-StockDailyBasicRepo = Annotated[
-    StockDailyBasicRepository,
-    Depends(get_stock_daily_basic_repository),
+DailyBasicRepo = Annotated[
+    DailyBasicRepository,
+    Depends(get_daily_basic_repository),
 ]
-StockHotRepository = Annotated[
-    StockHotDailyRepository,
-    Depends(get_stock_hot_repository),
+DailyHotRepo = Annotated[
+    DailyHotRepository,
+    Depends(get_daily_hot_repository),
 ]
 HKStockHotRepository = Annotated[
     HKStockHotDailyRepository,
@@ -202,31 +202,31 @@ async def sync_hot_stock_database() -> dict[str, str | float]:
 
 @router.get("/database-sync/latest-update-times")
 def database_latest_update_times(
-    stock_repository: StockListRepository,
-    stock_daily_basic_repository: StockDailyBasicRepo,
+    daily_stock_repository: DailyStockRepo,
+    daily_basic_repository: DailyBasicRepo,
     daily_repository: DailyRepository,
-    stock_hot_repository: StockHotRepository,
+    daily_hot_repository: DailyHotRepo,
     hk_stock_hot_repository: HKStockHotRepository,
     us_stock_hot_repository: USStockHotRepository,
 ) -> dict[str, datetime | None]:
     """返回各同步数据表的最新更新时间。"""
 
     return {
-        "hot-stock": stock_hot_repository.get_latest_update_time(),
+        "hot-stock": daily_hot_repository.get_latest_update_time(),
         "hk-hot-stock": hk_stock_hot_repository.get_latest_update_time(),
         "us-hot-stock": us_stock_hot_repository.get_latest_update_time(),
         "daily-k": daily_repository.get_latest_update_time(),
-        "stock-daily-basic": stock_daily_basic_repository.get_latest_update_time(),
-        "stock-list": stock_repository.get_latest_update_time(),
+        "stock-daily-basic": daily_basic_repository.get_latest_update_time(),
+        "stock-list": daily_stock_repository.get_latest_update_time(),
     }
 
 
 @router.get("/stocks-list", response_model=list[Stock])
 def stocks(
-    repository: StockListRepository,
+    repository: DailyStockRepo,
 ) -> list[dict]:
 
-    stock_table = repository.get_table_data().head(100)
+    stock_table = repository.get_latest_data().head(100)
 
     # FastAPI 不能直接把 DataFrame 当成“股票列表”返回。
     # orient="records" 会把每一行转换成一个字典，最终得到：
@@ -362,10 +362,10 @@ def signals() -> dict[str, list[dict[str, object]]]:
 @router.get("/signals/{signal_id}")
 def signal_results(
     signal_id: str,
-    stock_repository: StockListRepository,
+    daily_stock_repository: DailyStockRepo,
     daily_repository: DailyRepository,
-    stock_daily_basic_repository: StockDailyBasicRepo,
-    stock_hot_repository: StockHotRepository,
+    daily_basic_repository: DailyBasicRepo,
+    daily_hot_repository: DailyHotRepo,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, object]:
     """运行指定形态识别器并返回命中结果。"""
@@ -376,10 +376,10 @@ def signal_results(
     try:
         selected_stocks = execute_signal(
             signal_id,
-            stocks=stock_repository.get_table_data(),
+            latest_stocks=daily_stock_repository.get_latest_data(),
             daily_bars=daily_repository.get_table_data(),
-            hot_stocks=stock_hot_repository.get_latest(),
-            stock_daily_basic=stock_daily_basic_repository.get_latest_data(),
+            latest_hot=daily_hot_repository.get_latest_data(),
+            latest_basic=daily_basic_repository.get_latest_data(),
         )
     except Exception as error:
         logger.exception("执行信号 %s 失败", signal_id)
@@ -400,10 +400,10 @@ async def backtest_strategies() -> list[dict[str, str]]:
 @router.get("/backtests/{strategy_id}")
 async def strategy_backtest(
     strategy_id: str,
-    stock_repository: StockListRepository,
+    daily_stock_repository: DailyStockRepo,
     daily_repository: DailyRepository,
-    stock_daily_basic_repository: StockDailyBasicRepo,
-    stock_hot_repository: StockHotRepository,
+    daily_basic_repository: DailyBasicRepo,
+    daily_hot_repository: DailyHotRepo,
     start_date: Annotated[
         date | None,
         Query(description="回测开始日期，默认按回看月数计算"),
@@ -436,10 +436,10 @@ async def strategy_backtest(
 
     def run_backtest():
         return BacktestEngine(strategy_class(), config).run(
-            stocks=stock_repository.get_table_data(),
+            historical_stocks=daily_stock_repository.get_table_data(),
             daily_bars=daily_repository.get_table_data(),
-            hot_stocks=stock_hot_repository.get_table_data(),
-            stock_daily_basic=stock_daily_basic_repository.get_table_data(),
+            historical_hot=daily_hot_repository.get_table_data(),
+            historical_basic=daily_basic_repository.get_table_data(),
         )
 
     try:

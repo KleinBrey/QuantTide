@@ -11,7 +11,7 @@ import pandas as pd
 from ..database import DuckDBDatabase
 from ..utils.symbol import validate_symbol
 
-STOCK_COLUMNS = ["symbol", "name", "exchange", "market", "source"]
+STOCK_COLUMNS = ["symbol", "trade_date", "name", "exchange", "market", "source"]
 
 STOCK_DAILY_BASIC_COLUMNS = ["symbol", "trade_date", "market_cap"]
 
@@ -56,74 +56,94 @@ class BaseRepository:
         self.db = db
 
 
-class StockRepository(BaseRepository):
-    """负责 stocks 表的读写。"""
+class DailyStockRepository(BaseRepository):
+    """负责 daily_stocks 的股票池快照读写。"""
 
     def get_latest_update_time(self) -> datetime | None:
-        """获取股票基础信息表最近一次更新时间。"""
-
         with self.db.connection(read_only=True) as connection:
-            row = connection.execute("SELECT MAX(update_time) FROM stocks").fetchone()
+            return connection.execute("SELECT MAX(update_time) FROM daily_stocks").fetchone()[0]
 
-        return row[0] if row and row[0] is not None else None
+    def get_latest_data(self) -> pd.DataFrame:
+        """返回最新交易日的完整股票池快照。"""
+        with self.db.connection(read_only=True) as connection:
+            return connection.execute("""
+                SELECT * FROM daily_stocks
+                WHERE trade_date = (SELECT MAX(trade_date) FROM daily_stocks)
+                ORDER BY symbol
+            """).df()
 
     def get_table_data(self) -> pd.DataFrame:
-        """获取全部股票基础信息。"""
-
+        """返回全部交易日的股票池历史快照。"""
         with self.db.connection(read_only=True) as connection:
-            return connection.execute("SELECT * FROM stocks ORDER BY symbol").df()
+            return connection.execute(
+                "SELECT * FROM daily_stocks ORDER BY trade_date, symbol"
+            ).df()
+
+    def get_as_of(self, trade_date: object) -> pd.DataFrame:
+        """取当日或之前最近的整日快照，不逐股票拼接已退市成员。"""
+        day = pd.to_datetime(trade_date, errors="raise").date()
+        with self.db.connection(read_only=True) as connection:
+            return connection.execute("""
+                SELECT * FROM daily_stocks
+                WHERE trade_date = (
+                    SELECT MAX(trade_date) FROM daily_stocks WHERE trade_date <= ?
+                ) ORDER BY symbol
+            """, [day]).df()
+
+    def get_symbols_in_range(self, start: object, end: object) -> list[str]:
+        """历史补数覆盖区间内出现过的成员，包括后来已退池的股票。"""
+        start_day = pd.to_datetime(start, errors="raise").date()
+        end_day = pd.to_datetime(end, errors="raise").date()
+        if start_day > end_day:
+            raise ValueError("开始日期不能晚于结束日期")
+        with self.db.connection(read_only=True) as connection:
+            return [row[0] for row in connection.execute("""
+                SELECT DISTINCT symbol FROM daily_stocks
+                WHERE trade_date <= ? AND trade_date >= COALESCE(
+                    (SELECT MAX(trade_date) FROM daily_stocks WHERE trade_date <= ?), ?
+                ) ORDER BY symbol
+            """, [end_day, start_day, start_day]).fetchall()]
 
     def upsert_stocks(self, rows: pd.DataFrame) -> int:
-        """新增或更新股票基础信息，返回处理的行数。"""
-
+        """原子替换输入日期的完整快照，保留其他日期；空快照拒绝写入。"""
         if rows.empty:
-            return 0
-
+            raise ValueError("股票池快照为空，拒绝覆盖")
         _require_columns(rows, STOCK_COLUMNS)
         stocks = rows[STOCK_COLUMNS].copy()
-
+        stocks["trade_date"] = pd.to_datetime(stocks["trade_date"], errors="raise").dt.date
+        if stocks.isna().any().any():
+            raise ValueError("股票池快照存在缺失字段")
+        if stocks.duplicated(["trade_date", "symbol"]).any():
+            raise ValueError("同一交易日股票代码不能重复")
         with self.db.connection() as connection:
             connection.register("incoming_stocks", stocks)
-            connection.execute("""
-                INSERT INTO stocks (
-                    symbol,
-                    name,
-                    exchange,
-                    market,
-                    source
-                )
-                SELECT
-                    symbol,
-                    name,
-                    exchange,
-                    market,
-                    source
-                FROM incoming_stocks
-                ON CONFLICT (symbol) DO UPDATE SET
-                    name = excluded.name,
-                    exchange = excluded.exchange,
-                    market = excluded.market,
-                    source = excluded.source,
-                    update_time = now()
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute("""
+                    DELETE FROM daily_stocks WHERE trade_date IN (
+                        SELECT DISTINCT trade_date FROM incoming_stocks
+                    )
                 """)
-
+                connection.execute("""
+                    INSERT INTO daily_stocks (symbol, trade_date, name, exchange, market, source)
+                    SELECT symbol, trade_date, name, exchange, market, source FROM incoming_stocks
+                """)
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
         return len(stocks)
 
-    def insert_stocks(self, rows: pd.DataFrame) -> int:
-        """兼容原有调用；实际执行新增或更新。"""
 
-        return self.upsert_stocks(rows)
-
-
-class StockDailyBasicRepository(BaseRepository):
-    """负责 stock_daily_basic 表的读写。"""
+class DailyBasicRepository(BaseRepository):
+    """负责 daily_basic 表的读写。"""
 
     def get_latest_update_time(self) -> datetime | None:
         """获取股票最新指标表最近一次更新时间。"""
 
         with self.db.connection(read_only=True) as connection:
             row = connection.execute(
-                "SELECT MAX(update_time) FROM stock_daily_basic"
+                "SELECT MAX(update_time) FROM daily_basic"
             ).fetchone()
 
         return row[0] if row and row[0] is not None else None
@@ -133,7 +153,7 @@ class StockDailyBasicRepository(BaseRepository):
         with self.db.connection(read_only=True) as connection:
             return connection.execute("""
                 SELECT *
-                FROM stock_daily_basic
+                FROM daily_basic
                 ORDER BY trade_date, symbol
                 """).df()
 
@@ -143,9 +163,9 @@ class StockDailyBasicRepository(BaseRepository):
         with self.db.connection(read_only=True) as connection:
             return connection.execute("""
                 SELECT symbol, trade_date, market_cap, update_time
-                FROM stock_daily_basic
+                FROM daily_basic
                 WHERE trade_date = (
-                    SELECT MAX(trade_date) FROM stock_daily_basic
+                    SELECT MAX(trade_date) FROM daily_basic
                 )
                 ORDER BY symbol
                 """).df()
@@ -165,7 +185,7 @@ class StockDailyBasicRepository(BaseRepository):
         with self.db.connection() as connection:
             connection.register("incoming_stock_daily_basic", daily_basic)
             connection.execute("""
-                INSERT INTO stock_daily_basic (
+                INSERT INTO daily_basic (
                     symbol,
                     trade_date,
                     market_cap
@@ -300,16 +320,11 @@ class DailyBarRepository(BaseRepository):
 
         return len(bars)
 
-    def insert_daily_bars(self, rows: pd.DataFrame) -> int:
-        """兼容 insert 风格命名；实际执行新增或更新。"""
 
-        return self.upsert_daily_bars(rows)
+class DailyHotRepository(BaseRepository):
+    """负责 daily_hot 表的读写。"""
 
-
-class StockHotDailyRepository(BaseRepository):
-    """负责 stock_hot_daily 表的读写。"""
-
-    table_name = "stock_hot_daily"
+    table_name = "daily_hot"
 
     def get_latest_update_time(self) -> datetime | None:
         """获取股票热度表最近一次更新时间；无数据时返回 ``None``。"""
@@ -321,7 +336,7 @@ class StockHotDailyRepository(BaseRepository):
 
         return row[0] if row and row[0] is not None else None
 
-    def get_latest(self) -> pd.DataFrame:
+    def get_latest_data(self) -> pd.DataFrame:
         """获取数据库中最新交易日的股票热度榜。"""
 
         with self.db.connection(read_only=True) as connection:
@@ -407,13 +422,13 @@ class StockHotDailyRepository(BaseRepository):
             connection.execute("BEGIN TRANSACTION")
             try:
                 connection.execute("""
-                    DELETE FROM stock_hot_daily
+                    DELETE FROM daily_hot
                     WHERE trade_date IN (
                         SELECT DISTINCT trade_date FROM incoming_stock_hot_daily
                     )
                 """)
                 connection.execute("""
-                    INSERT INTO stock_hot_daily (
+                    INSERT INTO daily_hot (
                         trade_date, symbol, name, price, change_pct, rank, source
                     )
                     SELECT trade_date, symbol, name, price, change_pct, rank, source
@@ -425,11 +440,6 @@ class StockHotDailyRepository(BaseRepository):
                 raise
 
         return len(hot_rows)
-
-    def insert_stock_hot_daily(self, rows: pd.DataFrame) -> int:
-        """兼容 insert 风格命名；实际按交易日整批替换。"""
-
-        return self.upsert_stock_hot_daily(rows)
 
     def fill_stock_hot_daily(self, rows: pd.DataFrame) -> int:
         """写入历史排名，覆盖同日同股票或同日同排名的旧记录。"""
@@ -443,14 +453,14 @@ class StockHotDailyRepository(BaseRepository):
             connection.execute("BEGIN TRANSACTION")
             try:
                 connection.execute("""
-                    DELETE FROM stock_hot_daily existing
+                    DELETE FROM daily_hot existing
                     USING incoming_hot_history incoming
                     WHERE existing.trade_date = incoming.trade_date
                       AND (existing.symbol = incoming.symbol
                            OR existing.rank = incoming.rank)
                 """)
                 connection.execute("""
-                    INSERT INTO stock_hot_daily (
+                    INSERT INTO daily_hot (
                         trade_date, symbol, name, price, change_pct, rank, source
                     )
                     SELECT trade_date, symbol, name, price, change_pct, rank, source

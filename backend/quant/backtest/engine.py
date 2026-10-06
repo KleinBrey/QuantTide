@@ -30,9 +30,9 @@ from rich.table import Table
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockHotDailyRepository,
-    StockRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
 )
 from backend.quant.backtest.account import Account
 from backend.quant.backtest.result import (
@@ -88,13 +88,15 @@ class BacktestEngine:
     def run(
         self,
         *,
-        stocks: pd.DataFrame,
+        historical_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
     ) -> BacktestResult:
         """执行回测并返回净值、交易记录和期末持仓。"""
 
+        daily_bars = daily_bars.copy()
+        daily_bars["trade_date"] = pd.to_datetime(daily_bars["trade_date"], errors="raise").dt.normalize()
         # 1. 确定回测区间和交易日历。
         start_date, end_date = self.resolve_period(daily_bars)
         calendar = self.trading_calendar(daily_bars, start_date, end_date)
@@ -103,9 +105,23 @@ class BacktestEngine:
         # end_date，避免指定历史回测区间时使用未来行情。
         exit_indicator_bars = daily_bars[daily_bars["trade_date"] <= end_date]
 
-        # 2. 一次性算出所有入场候选，以及每个候选入场后的卖出日。
+        def through_end(frame: pd.DataFrame) -> pd.DataFrame:
+            if frame.empty:
+                return frame.copy()
+            if "trade_date" not in frame:
+                raise ValueError("回测数据必须包含 trade_date")
+            frame = frame.copy()
+            frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="raise").dt.normalize()
+            if frame["trade_date"].isna().any():
+                raise ValueError("回测数据日期不能为空")
+            return frame.loc[frame["trade_date"] <= end_date]
+
+        historical_stocks, historical_hot, historical_basic = map(
+            through_end, (historical_stocks, historical_hot, historical_basic)
+        )
+        # 2. 策略的向量化计算逐行使用当日及此前信息。
         signals = self.strategy.generate_entries_range(
-            calendar, stocks, exit_indicator_bars, hot_stocks, stock_daily_basic
+            calendar, historical_stocks, exit_indicator_bars, historical_hot, historical_basic
         )
         strategy_exits = self._find_strategy_exits(signals, exit_indicator_bars)
         signals_by_date = {
@@ -160,7 +176,7 @@ class BacktestEngine:
             ),
             trades=build_trade_frame(trade_rows),
             final_positions=self._build_final_positions(account, last_close_prices),
-            metadata=self._build_metadata(calendar, signals, hot_stocks, stats),
+            metadata=self._build_metadata(calendar, signals, historical_hot, stats),
         )
 
     # ------------------------------------------------------------------
@@ -396,12 +412,12 @@ class BacktestEngine:
         self,
         calendar: pd.DatetimeIndex,
         signals: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
+        historical_hot: pd.DataFrame,
         stats: Counter[str],
     ) -> dict[str, Any]:
         """整理回测区间、信号执行统计和回测假设。"""
 
-        hot_dates = pd.to_datetime(hot_stocks.get("trade_date", []))
+        hot_dates = pd.to_datetime(historical_hot.get("trade_date", []))
         has_hot_data = len(hot_dates) > 0
         return {
             "strategy": self.strategy.id,
@@ -430,6 +446,7 @@ class BacktestEngine:
             f"单只股票建仓上限为当日账户权益的 {self.config.max_position_pct:.0%}",
             f"持仓未满时按信号排名补仓，{self.config.lot_size} 股整手，只做多",
             "买入当日不卖，从下一交易日起检查卖出条件",
+            "股票池取当日或此前最近完整快照，缺失时不选股；指标和热度只向前匹配",
             "按收盘价成交，佣金和卖出税率按配置计算，不计滑点、涨跌停和复权影响",
         ]
 
@@ -441,10 +458,10 @@ def load_backtest_data(
 
     database = database or DuckDBDatabase()
     return (
-        StockRepository(database).get_table_data(),
+        DailyStockRepository(database).get_table_data(),
         DailyBarRepository(database).get_table_data(),
-        StockHotDailyRepository(database).get_table_data(),
-        StockDailyBasicRepository(database).get_table_data(),
+        DailyHotRepository(database).get_table_data(),
+        DailyBasicRepository(database).get_table_data(),
     )
 
 
@@ -460,12 +477,12 @@ def run_from_database(
         STRATEGIES[strategy_id] if strategy_id else next(iter(STRATEGIES.values()))
     )
 
-    stocks, daily_bars, hot_stocks, stock_daily_basic = load_backtest_data()
+    historical_stocks, daily_bars, historical_hot, historical_basic = load_backtest_data()
     return BacktestEngine(strategy_class(), config).run(
-        stocks=stocks,
+        historical_stocks=historical_stocks,
         daily_bars=daily_bars,
-        hot_stocks=hot_stocks,
-        stock_daily_basic=stock_daily_basic,
+        historical_hot=historical_hot,
+        historical_basic=historical_basic,
     )
 
 

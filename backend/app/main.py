@@ -13,9 +13,9 @@ from backend.app.jobs import create_scheduler
 from backend.app.provider import HithinkProvider, IwencaiProvider, TushareProvider
 from backend.app.repository import (
     DailyBarRepository,
-    StockHotDailyRepository,
-    StockDailyBasicRepository,
-    StockRepository,
+    DailyHotRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
     HKDailyBarRepository,
     HKStockHotDailyRepository,
     HKStockRepository,
@@ -44,14 +44,14 @@ async def lifespan(app: FastAPI):
     us_database.initialize()
 
     # 注册stock表的repository，用来统一处理增删改查
-    stock_repository = StockRepository(database)
+    daily_stock_repository = DailyStockRepository(database)
     hk_stock_repository = HKStockRepository(hk_database)
     us_stock_repository = USStockRepository(us_database)
-    stock_daily_basic_repository = StockDailyBasicRepository(database)
+    daily_basic_repository = DailyBasicRepository(database)
     daily_repository = DailyBarRepository(database)
     hk_daily_repository = HKDailyBarRepository(hk_database)
     us_daily_repository = USDailyBarRepository(us_database)
-    stock_hot_repository = StockHotDailyRepository(database)
+    daily_hot_repository = DailyHotRepository(database)
     hk_stock_hot_repository = HKStockHotDailyRepository(hk_database)
     us_stock_hot_repository = USStockHotDailyRepository(us_database)
 
@@ -64,11 +64,11 @@ async def lifespan(app: FastAPI):
     cn_market_service = CNMarketService(
         hithink_provider=hithink_provider,
         tushare_provider=tushare_provider,
-        stock_repository=stock_repository,
-        stock_daily_basic_repository=stock_daily_basic_repository,
+        daily_stock_repository=daily_stock_repository,
+        daily_basic_repository=daily_basic_repository,
         daily_repository=daily_repository,
         iwencai_provider=iwencai_provider,
-        stock_hot_repository=stock_hot_repository,
+        daily_hot_repository=daily_hot_repository,
     )
     hk_market_service = HKMarketService(
         iwencai_provider=iwencai_provider,
@@ -80,14 +80,14 @@ async def lifespan(app: FastAPI):
     )
 
     # 将共享实例挂载到 app.state，供路由及其他应用组件复用。
-    app.state.stock_repository = stock_repository
+    app.state.daily_stock_repository = daily_stock_repository
     app.state.hk_stock_repository = hk_stock_repository
     app.state.us_stock_repository = us_stock_repository
-    app.state.stock_daily_basic_repository = stock_daily_basic_repository
+    app.state.daily_basic_repository = daily_basic_repository
     app.state.daily_repository = daily_repository
     app.state.hk_daily_repository = hk_daily_repository
     app.state.us_daily_repository = us_daily_repository
-    app.state.stock_hot_repository = stock_hot_repository
+    app.state.daily_hot_repository = daily_hot_repository
     app.state.hk_stock_hot_repository = hk_stock_hot_repository
     app.state.us_stock_hot_repository = us_stock_hot_repository
     app.state.cn_market_service = cn_market_service

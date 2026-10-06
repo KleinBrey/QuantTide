@@ -13,10 +13,10 @@ class Strategy(Protocol):
     def generate_entries_range(
         self,
         trade_dates: pd.DatetimeIndex,
-        stocks: pd.DataFrame,
+        historical_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """返回 symbol、name、entry_date、signal_date、selection_rank、entry_reason。
 

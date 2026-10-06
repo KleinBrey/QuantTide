@@ -1,16 +1,18 @@
--- 股票基础信息表：每只股票保存一条记录。
-CREATE TABLE IF NOT EXISTS stocks (
-  symbol VARCHAR NOT NULL PRIMARY KEY,
+-- 每个交易日的完整股票池快照，不使用当前资料回填历史。
+CREATE TABLE IF NOT EXISTS daily_stocks (
+  symbol VARCHAR NOT NULL,
+  trade_date DATE NOT NULL,
   name VARCHAR NOT NULL,
   exchange VARCHAR NOT NULL, 
   market VARCHAR NOT NULL, 
   source VARCHAR NOT NULL,
   -- 记录更新时间；插入时未指定则使用数据库当前时间。
-  update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (trade_date, symbol)
 );
 
 -- 股票每日指标：保存股票每个交易日的动态基本面数据。
-CREATE TABLE IF NOT EXISTS stock_daily_basic (
+CREATE TABLE IF NOT EXISTS daily_basic (
   symbol VARCHAR NOT NULL,
   trade_date DATE NOT NULL,
   market_cap DOUBLE NOT NULL,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS daily_bars (
 );
 
 -- 股票热度指标：保存每日热榜快照及个股历史热度排名。
-CREATE TABLE IF NOT EXISTS stock_hot_daily (
+CREATE TABLE IF NOT EXISTS daily_hot (
   -- 热度所属交易日。
   trade_date DATE NOT NULL,
   -- 股票代码。

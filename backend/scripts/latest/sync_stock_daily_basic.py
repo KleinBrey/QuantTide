@@ -2,7 +2,7 @@
 
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
-from backend.app.repository import StockDailyBasicRepository
+from backend.app.repository import DailyBasicRepository
 from backend.app.services import CNMarketService
 
 
@@ -16,7 +16,7 @@ def sync_stock_daily_basic(
 
     cn_market_service = CNMarketService(
         tushare_provider=TushareProvider(),
-        stock_daily_basic_repository=StockDailyBasicRepository(database),
+        daily_basic_repository=DailyBasicRepository(database),
     )
     return cn_market_service.update_stock_daily_basic(lookback_days)
 

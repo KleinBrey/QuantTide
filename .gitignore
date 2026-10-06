@@ -21,3 +21,4 @@ data/hk_market.duckdb
 data/hk_market.duckdb.wal
 data/us_market.duckdb
 data/us_market.duckdb.wal
+data/migration_backups/

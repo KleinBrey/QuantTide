@@ -5,7 +5,7 @@ from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatab
 from backend.app.provider import IwencaiProvider
 from backend.app.repository import (
     HKStockHotDailyRepository,
-    StockHotDailyRepository,
+    DailyHotRepository,
     USStockHotDailyRepository,
 )
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
@@ -23,7 +23,7 @@ def sync_hot_stock_latest() -> None:
     us_database.initialize()
 
     # 注册股票热度 Repository。
-    stock_hot_repository = StockHotDailyRepository(database)
+    daily_hot_repository = DailyHotRepository(database)
     hk_stock_hot_repository = HKStockHotDailyRepository(hk_database)
     us_stock_hot_repository = USStockHotDailyRepository(us_database)
 
@@ -33,7 +33,7 @@ def sync_hot_stock_latest() -> None:
     # 三个市场分别组装业务服务。
     cn_market_service = CNMarketService(
         iwencai_provider=iwencai_provider,
-        stock_hot_repository=stock_hot_repository,
+        daily_hot_repository=daily_hot_repository,
     )
     hk_market_service = HKMarketService(
         iwencai_provider=iwencai_provider,

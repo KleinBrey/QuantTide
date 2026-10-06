@@ -7,7 +7,7 @@ import duckdb
 import pandas as pd
 
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
-from backend.app.repository.cn_market_db import StockHotDailyRepository
+from backend.app.repository.cn_market_db import DailyHotRepository
 from backend.app.repository.hk_market_db import HKStockHotDailyRepository
 from backend.app.repository.us_market_db import USStockHotDailyRepository
 from backend.app.services.hot_stock_service import HotStockService
@@ -17,7 +17,7 @@ from backend.app.provider.iwencai_provider import IwencaiProvider, IwencaiError
 class HotStockSnapshotTests(unittest.TestCase):
     def test_replace_swap_shrink_and_rollback_in_all_markets(self):
         for database, repository in [
-            (DuckDBDatabase, StockHotDailyRepository),
+            (DuckDBDatabase, DailyHotRepository),
             (HKDuckDBDatabase, HKStockHotDailyRepository),
             (USDuckDBDatabase, USStockHotDailyRepository),
         ]:
@@ -35,13 +35,13 @@ class HotStockSnapshotTests(unittest.TestCase):
                 repo.upsert_stock_hot_daily(rows(['H'], '2026-09-29'))
                 repo.upsert_stock_hot_daily(rows(['A', 'B']))
                 repo.upsert_stock_hot_daily(rows(['B', 'A']))
-                self.assertEqual(repo.get_latest().symbol.tolist(), ['B', 'A'])
+                self.assertEqual(repo.get_latest_data().symbol.tolist(), ['B', 'A'])
                 repo.upsert_stock_hot_daily(rows(['B', 'C']))
-                self.assertEqual(repo.get_latest().symbol.tolist(), ['B', 'C'])
+                self.assertEqual(repo.get_latest_data().symbol.tolist(), ['B', 'C'])
                 repo.upsert_stock_hot_daily(rows(['C']))
-                self.assertEqual(repo.get_latest().symbol.tolist(), ['C'])
+                self.assertEqual(repo.get_latest_data().symbol.tolist(), ['C'])
                 self.assertEqual(repo.get_by_trade_date('2026-09-29').symbol.tolist(), ['H'])
-                before = repo.get_latest()
+                before = repo.get_latest_data()
                 invalid = rows(['X', 'Y'])
                 invalid['rank'] = 1
                 with self.assertRaises(ValueError):
@@ -53,10 +53,11 @@ class HotStockSnapshotTests(unittest.TestCase):
                 with self.assertRaises(duckdb.ConstraintException):
                     repo.upsert_stock_hot_daily(invalid)
                 self.assertEqual(repo.upsert_stock_hot_daily(pd.DataFrame()), 0)
-                pd.testing.assert_frame_equal(repo.get_latest(), before)
+                pd.testing.assert_frame_equal(repo.get_latest_data(), before)
                 with db.connection() as connection:
                     with self.assertRaises(duckdb.ConstraintException):
-                        connection.execute("""INSERT INTO stock_hot_daily
+                        table = "daily_hot" if database is DuckDBDatabase else "stock_hot_daily"
+                        connection.execute(f"""INSERT INTO {table}
                             (trade_date, symbol, name, rank)
                             VALUES ('2026-09-30', 'Z', 'Z', 1)""")
 

@@ -94,30 +94,30 @@ class TodayConfirmedBreakoutStrategy:
     def generate_entries(
         self,
         trade_date: DateLike,
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """为一个交易日生成包含风控价格的入场候选。"""
 
         signals = self.pattern.scan(
-            trade_date, stocks, daily_bars, hot_stocks, stock_daily_basic
+            trade_date, latest_stocks, daily_bars, latest_hot, latest_basic
         )
         return self._apply_entry_rules(signals)
 
     def generate_entries_range(
         self,
         trade_dates: Iterable[DateLike],
-        stocks: pd.DataFrame,
+        historical_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """为多个交易日生成包含风控价格的入场候选。"""
 
         signals = self.pattern.scan_range(
-            trade_dates, stocks, daily_bars, hot_stocks, stock_daily_basic
+            trade_dates, historical_stocks, daily_bars, historical_hot, historical_basic
         )
         return self._apply_entry_rules(signals)
 

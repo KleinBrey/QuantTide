@@ -2,18 +2,18 @@
 
 from backend.app.database import DuckDBDatabase
 from backend.app.provider import TushareProvider
-from backend.app.repository import DailyBarRepository, StockRepository
+from backend.app.repository import DailyBarRepository, DailyStockRepository
 from backend.app.services import CNMarketService
 
 
-def sync_stock_daily_bars(lookback_days: int = 3, batch_size: int = 100) -> None:
+def sync_stock_daily_bars(lookback_days: int = 3, batch_size: int = 100, *, historical: bool = False) -> None:
     """更新最近指定自然日范围内的日 K 数据。"""
     # 初始化数据库
     database = DuckDBDatabase()
     database.initialize()
 
     # 注册stock表的repository，用来统一处理增删改查
-    stock_repository = StockRepository(database)
+    daily_stock_repository = DailyStockRepository(database)
 
     daily_repository = DailyBarRepository(database)
 
@@ -24,11 +24,11 @@ def sync_stock_daily_bars(lookback_days: int = 3, batch_size: int = 100) -> None
     # 业务逻辑处理
     cn_market_service = CNMarketService(
         tushare_provider=tushare_provider,
-        stock_repository=stock_repository,
+        daily_stock_repository=daily_stock_repository,
         daily_repository=daily_repository,
     )
 
-    cn_market_service.update_daily_bar(lookback_days, batch_size)
+    cn_market_service.update_daily_bar(lookback_days, batch_size, historical=historical)
 
 
 def main() -> None:

@@ -14,9 +14,9 @@ from tqdm.auto import tqdm
 from ..provider import HithinkProvider, IwencaiProvider, TushareProvider
 from ..repository import (
     DailyBarRepository,
-    StockHotDailyRepository,
-    StockDailyBasicRepository,
-    StockRepository,
+    DailyHotRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
 )
 from ..utils.symbol import chunked
 from .hot_stock_service import HotStockService
@@ -29,22 +29,22 @@ class CNMarketService(HotStockService):
         self,
         hithink_provider: HithinkProvider | None = None,
         tushare_provider: TushareProvider | None = None,
-        stock_repository: StockRepository | None = None,
-        stock_daily_basic_repository: StockDailyBasicRepository | None = None,
+        daily_stock_repository: DailyStockRepository | None = None,
+        daily_basic_repository: DailyBasicRepository | None = None,
         daily_repository: DailyBarRepository | None = None,
         iwencai_provider: IwencaiProvider | None = None,
-        stock_hot_repository: StockHotDailyRepository | None = None,
+        daily_hot_repository: DailyHotRepository | None = None,
     ) -> None:
         super().__init__(
             iwencai_provider=iwencai_provider,
-            stock_hot_repository=stock_hot_repository,
+            stock_hot_repository=daily_hot_repository,
             fetch_method_name="fetch_hot_rank",
             market_name="A 股",
         )
         self.hithink_provider = hithink_provider
         self.tushare_provider = tushare_provider
-        self.stock_repository = stock_repository
-        self.stock_daily_basic_repository = stock_daily_basic_repository
+        self.daily_stock_repository = daily_stock_repository
+        self.daily_basic_repository = daily_basic_repository
         self.daily_repository = daily_repository
 
     @staticmethod
@@ -52,7 +52,7 @@ class CNMarketService(HotStockService):
         """格式化股票列表数据"""
 
         frame = pd.DataFrame(value)
-        columns = ["symbol", "name", "exchange", "market", "source"]
+        columns = ["symbol", "trade_date", "name", "exchange", "market", "source"]
         # 交易所
         exchange_map = {
             "SSE": "SH",
@@ -64,7 +64,7 @@ class CNMarketService(HotStockService):
             return pd.DataFrame(columns=columns)
         # 格式转换
         frame["symbol"] = frame["ts_code"]
-        frame["exchange"] = frame["exchange"].map(exchange_map)
+        frame["exchange"] = frame["exchange"].replace(exchange_map)
         frame["source"] = source
         # 只保留目标列，并按 columns 中的顺序排列
         return frame[columns].reset_index(drop=True)
@@ -142,20 +142,21 @@ class CNMarketService(HotStockService):
         # 只保留目标列，并按 columns 中的顺序排列
         return frame[columns].reset_index(drop=True)
 
-    def update_stocks_list(self):
+    def update_stocks_list(self, trade_date: date | None = None):
         """获取股票列表数据"""
         try:
             # API 请求数据
-            result = self.tushare_provider.fetch_stock_list()
+            result = self.tushare_provider.fetch_stock_list(trade_date)
             # 格式化清洗数据
             stock_list = self.format_stock_list(result, "Tushare")
             # 存到数据库
-            self.stock_repository.insert_stocks(stock_list)
+            affected = self.daily_stock_repository.upsert_stocks(stock_list)
         except Exception as e:
             print(f"股票列表更新失败: {e}")
             raise
         else:
             print("股票列表更新成功!")
+            return affected
 
     def update_stock_daily_basic(
         self,
@@ -225,7 +226,7 @@ class CNMarketService(HotStockService):
 
                 # DuckDB 写入集中在主线程，避免多个连接并发写同一张表。
                 affected_rows += (
-                    self.stock_daily_basic_repository.upsert_stock_daily_basic(
+                    self.daily_basic_repository.upsert_stock_daily_basic(
                         daily_basic
                     )
                 )
@@ -243,6 +244,8 @@ class CNMarketService(HotStockService):
         self,
         lookback_days: int = 60,
         batch_size: int = 50,
+        *,
+        historical: bool = False,
     ):
         """获取股票历史日K线数据"""
         # batch_size 请求一次包含50支股票
@@ -252,11 +255,18 @@ class CNMarketService(HotStockService):
 
         start = end - lookback_days * 24 * 60 * 60 * 1000
 
-        stocks_list_from_db = self.stock_repository.get_table_data()
+        stocks_list_from_db = self.daily_stock_repository.get_latest_data()
 
         symbols = [
             f"{stock.symbol}" for stock in stocks_list_from_db.itertuples(index=False)
         ]
+        if historical:
+            symbols = self.daily_stock_repository.get_symbols_in_range(
+                pd.Timestamp(start, unit="ms", tz="Asia/Shanghai"),
+                pd.Timestamp(end, unit="ms", tz="Asia/Shanghai"),
+            )
+            if not symbols:
+                raise ValueError("区间内无历史股票池，请先补齐 daily_stocks")
 
         batches = list(
             chunked(
@@ -362,7 +372,7 @@ class CNMarketService(HotStockService):
 
         start = end - 30 * 24 * 60 * 60 * 1000
 
-        stocks_list_from_db = self.stock_repository.get_table_data()
+        stocks_list_from_db = self.daily_stock_repository.get_latest_data()
 
         with ThreadPoolExecutor(
             max_workers=10,

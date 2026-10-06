@@ -5,9 +5,9 @@ from backend.app.repository import (
     HKDailyBarRepository,
     HKStockHotDailyRepository,
     HKStockRepository,
-    StockHotDailyRepository,
-    StockDailyBasicRepository,
-    StockRepository,
+    DailyHotRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
     USDailyBarRepository,
     USStockHotDailyRepository,
     USStockRepository,
@@ -15,8 +15,8 @@ from backend.app.repository import (
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 
 
-def get_stock_repository(request: Request) -> StockRepository:
-    return request.app.state.stock_repository
+def get_daily_stock_repository(request: Request) -> DailyStockRepository:
+    return request.app.state.daily_stock_repository
 
 
 def get_hk_stock_repository(request: Request) -> HKStockRepository:
@@ -39,12 +39,12 @@ def get_us_daily_repository(request: Request) -> USDailyBarRepository:
     return request.app.state.us_daily_repository
 
 
-def get_stock_daily_basic_repository(request: Request) -> StockDailyBasicRepository:
-    return request.app.state.stock_daily_basic_repository
+def get_daily_basic_repository(request: Request) -> DailyBasicRepository:
+    return request.app.state.daily_basic_repository
 
 
-def get_stock_hot_repository(request: Request) -> StockHotDailyRepository:
-    return request.app.state.stock_hot_repository
+def get_daily_hot_repository(request: Request) -> DailyHotRepository:
+    return request.app.state.daily_hot_repository
 
 
 def get_hk_stock_hot_repository(request: Request) -> HKStockHotDailyRepository:

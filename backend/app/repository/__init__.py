@@ -6,9 +6,9 @@ Repository 层：数据访问对象（DAO）。
 from .cn_market_db import (
     BaseRepository,
     DailyBarRepository,
-    StockHotDailyRepository,
-    StockDailyBasicRepository,
-    StockRepository,
+    DailyHotRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
 )
 
 from .hk_market_db import (
@@ -25,10 +25,10 @@ from .us_market_db import (
 
 __all__ = [
     "BaseRepository",
-    "StockRepository",
-    "StockDailyBasicRepository",
+    "DailyStockRepository",
+    "DailyBasicRepository",
     "DailyBarRepository",
-    "StockHotDailyRepository",
+    "DailyHotRepository",
     "HKStockRepository",
     "HKDailyBarRepository",
     "HKStockHotDailyRepository",

@@ -17,10 +17,10 @@ def main() -> None:
 
     match choice:
         case "1":
-            sync_stock_daily_bars(60, 50)
+            sync_stock_daily_bars(60, 50, historical=True)
 
         case "2":
-            sync_stock_daily_bars(365, 10)
+            sync_stock_daily_bars(365, 10, historical=True)
 
         case "e":
             print("退出")

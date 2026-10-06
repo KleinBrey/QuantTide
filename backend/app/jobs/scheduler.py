@@ -25,16 +25,16 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
     }
 
     """更新股票列表"""
-    # 每月更新：每月 1 日 10:00 触发
+    # 每个工作日收盘后保存最新交易日股票池快照
     scheduler.add_job(
         run_stock_list_sync,
         CronTrigger(
-            day=1,
-            hour=10,
+            day_of_week="mon-fri",
+            hour=18,
             minute=0,
             timezone=settings.scheduler_timezone,
         ),
-        id="monthly-stock-list-sync",
+        id="weekday-stock-list-sync",
         **common,
     )
 

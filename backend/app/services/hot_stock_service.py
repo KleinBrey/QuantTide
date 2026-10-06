@@ -19,7 +19,7 @@ class _HotStockRepository(Protocol):
 
     def upsert_stock_hot_daily(self, rows: pd.DataFrame) -> int: ...
 
-    def get_latest(self) -> pd.DataFrame: ...
+    def get_latest_data(self) -> pd.DataFrame: ...
 
 
 class HotStockService:
@@ -124,7 +124,7 @@ class HotStockService:
                     trade_date = self._to_shanghai_naive(current_time).date()
                     self.update_hot_stock(trade_date)
 
-        return self.stock_hot_repository.get_latest()
+        return self.stock_hot_repository.get_latest_data()
 
     def _is_hot_stock_fresh(
         self,

@@ -12,7 +12,7 @@ from tqdm import tqdm
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase
 from backend.app.provider.hithink_provider import HithinkProvider
-from backend.app.repository import StockHotDailyRepository, StockRepository
+from backend.app.repository import DailyHotRepository, DailyStockRepository
 
 
 def fetch_stock_rank(symbol: str, name: str, start: str, end: str) -> pd.DataFrame:
@@ -41,15 +41,24 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
     settings = get_settings()
     database = DuckDBDatabase(settings.database_path)
     database.initialize()
-    stocks = StockRepository(database).get_table_data()
-    if stocks.empty:
-        raise RuntimeError("股票池为空，请先运行 backend.scripts.latest.sync_stock_list")
-    repository = StockHotDailyRepository(database)
-
     end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     start = end - timedelta(days=lookback_days - 1)
+    daily_stock_repository = DailyStockRepository(database)
+    symbols = daily_stock_repository.get_symbols_in_range(start, end)
+    if not symbols:
+        raise RuntimeError("区间内股票池为空，请先补齐历史 daily_stocks")
+    history = daily_stock_repository.get_table_data()
+    history["trade_date"] = pd.to_datetime(history["trade_date"])
+    snapshot_dates = history[["trade_date"]].drop_duplicates().rename(
+        columns={"trade_date": "snapshot_date"}
+    ).sort_values("snapshot_date")
+    names = {
+        symbol: group[["trade_date", "name"]].rename(columns={"trade_date": "snapshot_date"})
+        for symbol, group in history.groupby("symbol")
+    }
+    repository = DailyHotRepository(database)
     print(
-        f"同步 {len(stocks)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}"
+        f"同步 {len(symbols)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}"
     )
     total = 0
     failed, empty = [], []
@@ -57,12 +66,12 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
         futures = {
             executor.submit(
                 fetch_stock_rank,
-                stock.symbol,
-                stock.name,
+                symbol,
+                symbol,
                 start.isoformat(),
                 end.isoformat(),
-            ): stock.symbol
-            for stock in stocks.itertuples(index=False)
+            ): symbol
+            for symbol in symbols
         }
         for future in tqdm(
             as_completed(futures), total=len(futures), desc="同步历史热度"
@@ -73,6 +82,13 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
                 if rows.empty:
                     empty.append(symbol)
                     continue
+                # 热度中的名称也使用该日股票池；不能把当前名称填回历史。
+                rows = rows.drop(columns="name")
+                rows["trade_date"] = pd.to_datetime(rows["trade_date"])
+                rows = pd.merge_asof(
+                    rows.sort_values("trade_date"), snapshot_dates,
+                    left_on="trade_date", right_on="snapshot_date", direction="backward",
+                ).merge(names[symbol], on="snapshot_date", how="inner").drop(columns="snapshot_date")
                 total += repository.fill_stock_hot_daily(rows)
             except Exception as exc:
                 failed.append(symbol)

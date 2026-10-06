@@ -18,9 +18,9 @@ from rich.console import Console
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockHotDailyRepository,
-    StockRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
 )
 
 from backend.quant.stock import filter_stocks
@@ -88,32 +88,32 @@ class TodayVolumeBreakoutPattern:
 
     def scan(
         self,
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """计算指标并返回符合全部条件的股票。"""
 
-        if stocks.empty or daily_bars.empty:
+        if latest_stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        stocks = filter_stocks(
+        latest_stocks = filter_stocks(
             self.config.min_market_cap,
-            stocks,
-            stock_daily_basic,
+            latest_stocks,
+            latest_basic,
         )
 
         # 返回符合条件的股票的行情数据
-        daily_bars = self.filter_daily_bars(daily_bars, stocks["symbol"])
+        daily_bars = self.filter_daily_bars(daily_bars, latest_stocks["symbol"])
         # 计算指标
         daily_bars = self.calculate_indicators(daily_bars)
 
         # 筛选过滤排序
-        result = stocks.merge(daily_bars, on="symbol", how="inner")
+        result = latest_stocks.merge(daily_bars, on="symbol", how="inner")
         result = self._filter_volume_ratio(result)
         result = self._filter_return(result)
-        return self._sort_filter_by_hot(result, hot_stocks)
+        return self._sort_filter_by_hot(result, latest_hot)
 
     @staticmethod
     def filter_daily_bars(
@@ -191,18 +191,18 @@ class TodayVolumeBreakoutPattern:
 
     @staticmethod
     def _sort_filter_by_hot(
-        result: pd.DataFrame, hot_stocks: pd.DataFrame
+        result: pd.DataFrame, latest_hot: pd.DataFrame
     ) -> pd.DataFrame:
         """按热度进行筛选和排序"""
 
-        if result.empty or hot_stocks.empty:
+        if result.empty or latest_hot.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-        hot_stocks["hot_rank"] = hot_stocks["rank"]
+        latest_hot = latest_hot.drop_duplicates("symbol").reset_index(drop=True)
+        latest_hot["hot_rank"] = latest_hot["rank"]
 
         return (
-            result.merge(hot_stocks[["symbol", "hot_rank"]], on="symbol")
+            result.merge(latest_hot[["symbol", "hot_rank"]], on="symbol")
             .sort_values("hot_rank")[RESULT_COLUMNS]
             .reset_index(drop=True)
         )
@@ -210,18 +210,18 @@ class TodayVolumeBreakoutPattern:
 
 def run_signal(
     *,
-    stocks: pd.DataFrame,
+    latest_stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
-    hot_stocks: pd.DataFrame,
-    stock_daily_basic: pd.DataFrame,
+    latest_hot: pd.DataFrame,
+    latest_basic: pd.DataFrame,
 ) -> pd.DataFrame:
     """供信号 API 调用的形态识别入口。"""
 
     return TodayVolumeBreakoutPattern().scan(
-        stocks,
+        latest_stocks,
         daily_bars,
-        hot_stocks,
-        stock_daily_basic,
+        latest_hot,
+        latest_basic,
     )
 
 
@@ -236,33 +236,33 @@ def load_market_data() -> tuple[
     database = DuckDBDatabase()
 
     # 全部股票列表
-    stocks = StockRepository(database).get_table_data()
+    latest_stocks = DailyStockRepository(database).get_latest_data()
 
     # 全部股票日线数据
     daily_bars = DailyBarRepository(database).get_table_data()
 
     # 最新股票热度
-    hot_stocks = StockHotDailyRepository(database).get_latest()
+    latest_hot = DailyHotRepository(database).get_latest_data()
 
     # 股票最新动态指标
-    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
+    latest_basic = DailyBasicRepository(database).get_latest_data()
 
-    return stocks, daily_bars, hot_stocks, stock_daily_basic
+    return latest_stocks, daily_bars, latest_hot, latest_basic
 
 
 if __name__ == "__main__":
     with console.status("[bold green]正在请求股票数据..."):
-        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+        latest_stocks, daily_bars, latest_hot, latest_basic = load_market_data()
         # 数据库最新交易日
         latest_trade_date = (
             pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y-%m-%d")
         )
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
         selected_stocks = TodayVolumeBreakoutPattern().scan(
-            stocks,
+            latest_stocks,
             daily_bars,
-            hot_stocks,
-            stock_daily_basic,
+            latest_hot,
+            latest_basic,
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:

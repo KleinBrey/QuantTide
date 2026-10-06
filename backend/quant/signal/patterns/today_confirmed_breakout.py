@@ -34,12 +34,13 @@ from rich.console import Console
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockHotDailyRepository,
-    StockRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
 )
 from backend.quant.factor import calculate_volume_ratio
 from backend.quant.stock import filter_market_cap, filter_static_stocks
+from backend.quant.stock.universe import match_stock_snapshots
 
 console = Console()
 
@@ -128,45 +129,43 @@ class TodayConfirmedBreakoutPattern:
     def scan(
         self,
         trade_date: DateLike,
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """返回在 trade_date 当天通过二次确认的股票。"""
 
-        # 实盘/命令行通常只有“最新”市值快照，匹配不到历史市值时允许回退到最新值；
-        # 历史扫描（scan_range）默认不回退，避免使用未来市值。
         return self.scan_range(
             [trade_date],
-            stocks,
+            latest_stocks,
             daily_bars,
-            hot_stocks,
-            stock_daily_basic,
-            latest_market_cap_fallback=True,
+            latest_hot,
+            latest_basic,
         )
 
     def scan_range(
         self,
         trade_dates: Iterable[DateLike],
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
-        *,
-        latest_market_cap_fallback: bool = False,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """一次计算多个确认日的信号，避免逐日重复扫描行情。"""
 
         confirm_dates = self._normalize_dates(trade_dates)
-        if confirm_dates.empty or stocks.empty or daily_bars.empty:
+        if confirm_dates.empty or latest_stocks.empty or daily_bars.empty:
             return _empty_result()
-        eligible = filter_static_stocks(stocks)
+        if "trade_date" not in latest_stocks:
+            raise ValueError("股票池必须包含 trade_date")
 
         # 1. 行情准备：确认日配突破日，清洗行情，只留用得到的时间段。
         date_pairs = self._pair_dates(daily_bars, confirm_dates)
-        bars = self._prepare_bars(daily_bars, eligible["symbol"])
+        bars = self._prepare_bars(daily_bars, latest_stocks["symbol"])
         bars = self._trim_bars(bars, date_pairs, confirm_dates.max())
+        if bars.empty:
+            return _empty_result()
 
         # 2. 突破阶段：计算指标并筛选突破日。
         bars = self._add_breakout_indicators(bars)
@@ -179,12 +178,13 @@ class TodayConfirmedBreakoutPattern:
             return _empty_result()
 
         # 4. 补充基本面与热度，最后排名。只处理已通过形态的少量信号。
-        signals = signals.merge(eligible[["symbol", "name", "exchange"]], on="symbol")
-        signals = self._merge_market_cap(
-            signals, stock_daily_basic, fallback_to_latest=latest_market_cap_fallback
-        )
+        signals = match_stock_snapshots(signals, latest_stocks, date_column="confirm_date")
+        signals = filter_static_stocks(signals)
+        if signals.empty:
+            return _empty_result()
+        signals = self._merge_market_cap(signals, latest_basic)
         signals = filter_market_cap(self.config.min_market_cap, signals)
-        signals = self._merge_heat(signals, hot_stocks)
+        signals = self._merge_heat(signals, latest_hot)
         signals = signals.sort_values(
             ["confirm_date", "hot_rank", "breakout_volume_ratio"],
             ascending=[True, True, False],
@@ -388,16 +388,13 @@ class TodayConfirmedBreakoutPattern:
     @staticmethod
     def _merge_market_cap(
         signals: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
-        *,
-        fallback_to_latest: bool,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
-        """按确认日向前匹配每只股票最近一次的历史市值，避免使用未来市值。
+        """按确认日向前匹配历史市值；缺失时不使用未来值补齐。"""
 
-        fallback_to_latest=True 时，匹配不到的股票改用其最新市值，仅适用于实盘。
-        """
-
-        history = stock_daily_basic[["symbol", "trade_date", "market_cap"]].copy()
+        if latest_basic.empty:
+            return signals.assign(market_cap=float("nan"))
+        history = latest_basic[["symbol", "trade_date", "market_cap"]].copy()
         history["trade_date"] = pd.to_datetime(history["trade_date"]).dt.normalize()
         history["market_cap"] = pd.to_numeric(history["market_cap"], errors="coerce")
         history = history.dropna().sort_values("trade_date")
@@ -411,31 +408,25 @@ class TodayConfirmedBreakoutPattern:
             direction="backward",
         ).drop(columns="trade_date")
 
-        if fallback_to_latest:
-            latest = history.groupby("symbol")["market_cap"].last()
-            signals["market_cap"] = signals["market_cap"].fillna(
-                signals["symbol"].map(latest)
-            )
         return signals
 
     @staticmethod
-    def _merge_heat(signals: pd.DataFrame, hot_stocks: pd.DataFrame) -> pd.DataFrame:
-        """补充热度排名；直接使用热度表存储的排名，没有热度的信号排在有热度者之后。"""
+    def _merge_heat(signals: pd.DataFrame, latest_hot: pd.DataFrame) -> pd.DataFrame:
+        """按股票匹配突破日或此前最近的热度排名，缺失时保留 NaN。"""
 
-        heat = hot_stocks.copy()
-        if "trade_date" in heat.columns:
-            # 历史热度：每个突破日各有一份排名。
-            heat["breakout_date"] = pd.to_datetime(heat["trade_date"]).dt.normalize()
-            keys = ["breakout_date", "symbol"]
-            heat = heat.drop_duplicates(keys)
-            heat["hot_rank"] = heat["rank"]
-        else:
-            # 最新热度快照：整体一份排名。
-            keys = ["symbol"]
-            heat = heat.drop_duplicates(keys)
-            heat["hot_rank"] = heat["rank"]
-        return signals.merge(
-            heat[[*keys, "hot_rank"]], on=keys, how="left"
+        if latest_hot.empty:
+            return signals.assign(hot_rank=float("nan"))
+
+        heat = latest_hot[["trade_date", "symbol", "rank"]].rename(
+            columns={"trade_date": "breakout_date", "rank": "hot_rank"}
+        )
+        heat["breakout_date"] = pd.to_datetime(heat["breakout_date"]).dt.normalize()
+        return pd.merge_asof(
+            signals.sort_values("breakout_date"),
+            heat.sort_values("breakout_date"),
+            on="breakout_date",
+            by="symbol",
+            direction="backward",
         )
 
 
@@ -449,26 +440,26 @@ def load_market_data() -> tuple[
 
     database = DuckDBDatabase()
     return (
-        StockRepository(database).get_table_data(),
+        DailyStockRepository(database).get_table_data(),
         DailyBarRepository(database).get_table_data(),
-        StockHotDailyRepository(database).get_latest(),
-        StockDailyBasicRepository(database).get_latest_data(),
+        DailyHotRepository(database).get_table_data(),
+        DailyBasicRepository(database).get_table_data(),
     )
 
 
 def run_signal(
     *,
-    stocks: pd.DataFrame,
+    latest_stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
-    hot_stocks: pd.DataFrame,
-    stock_daily_basic: pd.DataFrame,
+    latest_hot: pd.DataFrame,
+    latest_basic: pd.DataFrame,
     trade_date: DateLike | None = None,
 ) -> pd.DataFrame:
     """识别放量突破次日确认信号；未指定日期时使用最新交易日。"""
 
     trade_date = trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
     return TodayConfirmedBreakoutPattern().scan(
-        trade_date, stocks, daily_bars, hot_stocks, stock_daily_basic
+        trade_date, latest_stocks, daily_bars, latest_hot, latest_basic
     )
 
 
@@ -477,13 +468,13 @@ def main() -> None:
     parser.add_argument("--trade-date", help="确认日期，例如 2025-09-11")
     args = parser.parse_args()
 
-    stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+    latest_stocks, daily_bars, latest_hot, latest_basic = load_market_data()
     trade_date = args.trade_date or pd.to_datetime(daily_bars["trade_date"]).max()
     selected = run_signal(
-        stocks=stocks,
+        latest_stocks=latest_stocks,
         daily_bars=daily_bars,
-        hot_stocks=hot_stocks,
-        stock_daily_basic=stock_daily_basic,
+        latest_hot=latest_hot,
+        latest_basic=latest_basic,
         trade_date=trade_date,
     )
 
@@ -502,6 +493,7 @@ def main() -> None:
                 "breakout_volume_ratio",
                 "confirm_volume_ratio",
                 "confirm_close",
+                "hot_rank",
             ]
         ]
     )

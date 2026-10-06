@@ -80,17 +80,20 @@ uv run python -m backend.scripts.latest.sync_hot_stock
 同步入口按用途拆分到 `backend/scripts/latest/` 和 `backend/scripts/history/`。
 `quant-sync` 指向 `latest.sync_stock_daily_bars`，直接更新最近 3 个自然日的
 A 股日 K，每批 100 只。`latest` 下的每日指标和港美股日 K 同样直接更新最近 3 日，
-热度脚本同步当天数据，股票列表脚本更新 A 股基础资料。
+热度脚本同步当天数据，股票列表脚本保存最新交易日的完整股票池快照。
 
 需要补历史数据时使用：
 
 ```bash
+uv run python -m backend.scripts.history.sync_stock_list
 uv run python -m backend.scripts.history.sync_stock_daily_basic
 uv run python -m backend.scripts.history.sync_stock_daily_bars
 uv run python -m backend.scripts.history.sync_hk_us_daily_bars
 uv run python -m backend.scripts.history.sync_hot_stock
 ```
 
+历史股票池入口可选最近 60、180（半年）、365（一年）、1095（三年）个自然日（含今天），每次重新拉取并覆盖已有快照，
+支持 `--lookback-days 180 --workers 5` 直接运行；默认线程数使用 `SYNC_WORKERS` 配置。
 历史每日指标和日 K 入口提供最近 60、365 个自然日选项，A 股日 K 分别每批
 50、10 只；历史热度入口同样可选最近 60、365 个自然日（含今天），补齐 A 股排名。
 港美股日 K 从两个市场各自的 `stocks` 表读取股票，通过 `YFinanceProvider`
@@ -126,10 +129,16 @@ uv run uvicorn backend.app.main:app \
 
 FastAPI 启动时默认注册以下任务：
 
-- 每月 1 日 10:00：更新股票列表；
+- 工作日 18:00：保存最新交易日股票池快照；
 - 周一至周五 18:00：更新股票热度；
 - 周一至周五配置时间：更新最近 3 个自然日的日 K；
 - 每周六 09:00：校准最近 60 个自然日的日 K；
 - 每月 1 日 10:00：校准最近 365 个自然日的日 K。
 
 数据仅用于研究，不构成投资建议。
+
+A 股库表名统一为 `daily_stocks`、`daily_bars`、`daily_basic`、`daily_hot`。
+`daily_stocks` 按 `(trade_date, symbol)` 保存历史股票池，普通股票列表读取最新完整快照。
+历史股票池按所选最近时间范围重新拉取，以新快照完整替换对应交易日的旧数据。
+回测按当日或此前最近快照选股，市值、热度与行情禁止引用未来日期。
+历史补数及缺失数据规则见 [后端说明](backend/README.md)。

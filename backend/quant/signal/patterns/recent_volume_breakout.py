@@ -18,9 +18,9 @@ from rich.console import Console
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockRepository,
-    StockHotDailyRepository,
+    DailyBasicRepository,
+    DailyStockRepository,
+    DailyHotRepository,
 )
 
 console = Console()
@@ -71,18 +71,18 @@ def load_market_data() -> tuple[
     database = DuckDBDatabase()
 
     # 全部股票列表
-    stocks = StockRepository(database).get_table_data()
+    latest_stocks = DailyStockRepository(database).get_latest_data()
 
     # 全部股票日线数据
     daily_bars = DailyBarRepository(database).get_table_data()
 
     # 最新股票热度
-    hot_stocks = StockHotDailyRepository(database).get_latest()
+    latest_hot = DailyHotRepository(database).get_latest_data()
 
     # 股票最新动态指标
-    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
+    latest_basic = DailyBasicRepository(database).get_latest_data()
 
-    return stocks, daily_bars, hot_stocks, stock_daily_basic
+    return latest_stocks, daily_bars, latest_hot, latest_basic
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,54 +113,54 @@ class VolumeBreakoutPattern:
 
     def scan(
         self,
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """计算指标并返回符合全部条件的股票。"""
 
-        if stocks.empty or daily_bars.empty:
+        if latest_stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
         # 合并股票市值动态字段
-        stocks = self.merge_stock_basic(stocks, stock_daily_basic)
+        latest_stocks = self.merge_stock_basic(latest_stocks, latest_basic)
         # 过滤掉 ST、科创板和北交所股票
-        stocks = self.filter_stocks(stocks)
+        latest_stocks = self.filter_stocks(latest_stocks)
 
         # 返回符合条件的股票的行情数据
-        daily_bars = self.filter_daily_bars(daily_bars, stocks["symbol"])
+        daily_bars = self.filter_daily_bars(daily_bars, latest_stocks["symbol"])
         # 计算指标
         daily_bars = self.calculate_indicators(daily_bars)
 
         # 筛选过滤排序
-        result = stocks.merge(daily_bars, on="symbol", how="inner")
+        result = latest_stocks.merge(daily_bars, on="symbol", how="inner")
         result = self._filter_volume_ratio(result)
         result = self._filter_return(result)
-        return self._sort_filter_by_hot(result, hot_stocks)
+        return self._sort_filter_by_hot(result, latest_hot)
 
     @staticmethod
     def merge_stock_basic(
-        stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """补齐股票市值动态字段。"""
 
-        return stocks.merge(stock_daily_basic, on="symbol", how="left")
+        return latest_stocks.drop(columns=["trade_date", "update_time"], errors="ignore").merge(latest_basic, on="symbol", how="left")
 
-    def filter_stocks(self, stocks: pd.DataFrame) -> pd.DataFrame:
+    def filter_stocks(self, latest_stocks: pd.DataFrame) -> pd.DataFrame:
         """排除 ST、科创板和北交所股票。"""
 
         # 是否是ST
-        is_st = stocks["name"].str.contains("ST", na=False)
+        is_st = latest_stocks["name"].str.contains("ST", na=False)
         # 是否科创板
-        is_star_market = stocks["market"] == "科创板"
+        is_star_market = latest_stocks["market"] == "科创板"
         # 是否北交所
-        is_beijing = stocks["exchange"] == "BJ"
+        is_beijing = latest_stocks["exchange"] == "BJ"
         # 是否符合市值
-        is_big_market_cap = stocks["market_cap"] >= self.config.min_market_cap
+        is_big_market_cap = latest_stocks["market_cap"] >= self.config.min_market_cap
 
-        result = stocks.loc[~is_st & ~is_star_market & ~is_beijing & is_big_market_cap]
+        result = latest_stocks.loc[~is_st & ~is_star_market & ~is_beijing & is_big_market_cap]
 
         return result
 
@@ -251,18 +251,18 @@ class VolumeBreakoutPattern:
 
     @staticmethod
     def _sort_filter_by_hot(
-        result: pd.DataFrame, hot_stocks: pd.DataFrame
+        result: pd.DataFrame, latest_hot: pd.DataFrame
     ) -> pd.DataFrame:
         """按热度进行筛选和排序"""
 
-        if result.empty or hot_stocks.empty:
+        if result.empty or latest_hot.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-        hot_stocks["hot_rank"] = hot_stocks["rank"]
+        latest_hot = latest_hot.drop_duplicates("symbol").reset_index(drop=True)
+        latest_hot["hot_rank"] = latest_hot["rank"]
 
         return (
-            result.merge(hot_stocks[["symbol", "hot_rank"]], on="symbol")
+            result.merge(latest_hot[["symbol", "hot_rank"]], on="symbol")
             .sort_values("hot_rank")[RESULT_COLUMNS]
             .reset_index(drop=True)
         )
@@ -270,34 +270,34 @@ class VolumeBreakoutPattern:
 
 def run_signal(
     *,
-    stocks: pd.DataFrame,
+    latest_stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
-    hot_stocks: pd.DataFrame,
-    stock_daily_basic: pd.DataFrame,
+    latest_hot: pd.DataFrame,
+    latest_basic: pd.DataFrame,
 ) -> pd.DataFrame:
     """供信号 API 调用的形态识别入口。"""
 
     return VolumeBreakoutPattern().scan(
-        stocks,
+        latest_stocks,
         daily_bars,
-        hot_stocks,
-        stock_daily_basic,
+        latest_hot,
+        latest_basic,
     )
 
 
 if __name__ == "__main__":
     with console.status("[bold green]正在请求股票数据..."):
-        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+        latest_stocks, daily_bars, latest_hot, latest_basic = load_market_data()
         # 数据库最新交易日
         latest_trade_date = (
             pd.to_datetime(daily_bars["trade_date"]).max().strftime("%Y-%m-%d")
         )
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
         selected_stocks = VolumeBreakoutPattern().scan(
-            stocks,
+            latest_stocks,
             daily_bars,
-            hot_stocks,
-            stock_daily_basic,
+            latest_hot,
+            latest_basic,
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:

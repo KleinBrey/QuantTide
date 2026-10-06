@@ -56,10 +56,11 @@ uv run uvicorn backend.app.main:app \
 
 主要表：
 
-- `cn_market.duckdb.stocks`：A 股代码、名称、交易所、市场和来源；
+- `cn_market.duckdb.daily_stocks`：每日完整 A 股股票池，包含 `trade_date DATE NOT NULL`、代码、名称、交易所、市场和来源，主键 `(trade_date, symbol)`；
+- `cn_market.duckdb.daily_basic`：每日市值（元），主键 `(symbol, trade_date)`；
 - `hk_market.duckdb.stocks`、`us_market.duckdb.stocks`：对应市场的股票代码、名称和来源；
 - `daily_bars`：股票日 K，主键为 `symbol + trade_date`；
-- `stock_hot_daily`：问财每日股票热度，主键为 `trade_date + symbol`；
+- `cn_market.duckdb.daily_hot`：问财每日股票热度，主键为 `trade_date + symbol`；
 - `hk_market.duckdb.stock_hot_daily`：问财每日港股热度，主键为 `trade_date + symbol`；
 - `us_market.duckdb.stock_hot_daily`：问财每日美股热度，主键为 `trade_date + symbol`。
 
@@ -91,7 +92,7 @@ uv run python -m backend.app.provider.example.futu_smoke_test
 
 Repository 按物理数据库拆分：
 
-- `cn_market_db.py`：A 股股票、日 K、每日指标和热度榜；
+- `cn_market_db.py`：`DailyStockRepository`、`DailyBarRepository`、`DailyBasicRepository`、`DailyHotRepository`，分别对应 A 股四张日频表；
 - `hk_market_db.py`：港股股票池、日 K 和热度榜；
 - `us_market_db.py`：美股股票池、日 K 和热度榜。
 
@@ -108,7 +109,7 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 默认任务：
 
-- 每月 1 日 10:00 更新股票列表；
+- 工作日 18:00 更新最新交易日股票池（Tushare 交易日历确认日期）；
 - 工作日 15:00 更新 A 股、港股和美股热度；
 - 工作日配置时间更新最近 3 日的日 K；
 - 周六 09:00 校准最近 60 日的日 K；
@@ -225,7 +226,7 @@ uv run python -m backend.scripts.latest.sync_hot_stock
 
 日常更新入口位于 `backend/scripts/latest/`，直接执行，不再弹出日期选择菜单。
 日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表
-更新 A 股基础资料。同步脚本会在写入前自动初始化数据库。
+保存最新交易日的完整股票池快照。同步脚本会在写入前自动初始化数据库。
 
 历史补数入口位于 `backend/scripts/history/`。每日指标和日 K 可交互式选择
 最近 60 或 365 个自然日，与日常入口共用同步函数；A 股日 K 分别每批 50、10 只：
@@ -242,10 +243,10 @@ uv run python -m backend.scripts.history.sync_hk_us_daily_bars
 uv run python -m backend.scripts.history.sync_hot_stock
 ```
 
-读取 A 股库 `stocks` 中的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
+读取 A 股库 `daily_stocks` 在历史区间内出现过的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
 并发数使用配置 `sync_workers`（默认 4，可用环境变量 `SYNC_WORKERS` 调低），每次请求随机等待 1～2 秒，超时为 30 秒。
-主线程逐股写入 `stock_hot_daily`，以本次接口数据为准覆盖同日同股票的记录，可重跑。
-名称取股票池当前名称，`price`、`change_pct` 留空，`source` 为 `Hithink`，只保存接口实际返回的日期点位，不填造缺失日期。
+主线程逐股写入 `daily_hot`，以本次接口数据为准覆盖同日同股票的记录，可重跑。
+名称取数据日期当日或此前最近完整股票池中的名称，`price`、`change_pct` 留空，`source` 为 `Hithink`，只保存接口实际返回的日期点位，不填造缺失日期。
 保留表的同日排名唯一约束：若该排名已被其他股票占用，删除冲突旧记录并写入本次数据；删除和写入在同一事务中完成，失败回滚，不影响无冲突记录。请求或写入失败不影响其他股票，最后汇总失败和无数据股票。
 有失败时脚本以非零状态退出；限流时可调低并发后重跑。随机延迟不能保证不会被限流。
 
@@ -295,3 +296,47 @@ uv run quant-backtest
 | 增加或调整买卖规则、交易策略 | `quant/strategy/` |
 | 增加模拟执行或绩效评估 | `quant/backtest/` |
 | 增加股票池或通用过滤 | `quant/stock/` |
+
+## A 股股票池历史与无未来数据约束
+
+```text
+cn_market
+├── daily_stocks  股票池历史快照
+├── daily_bars    股票日 K
+├── daily_basic   每日市值指标
+└── daily_hot     每日热度排名
+```
+
+`DailyStockRepository.get_latest_data()` 读取最新交易日的完整股票池；
+`get_table_data()` 返回全部交易日的历史快照；`get_as_of(day)` 读取不晚于指定日期的最近完整快照。
+股票池写入要求完整的一日数据，按日期事务替换，因此退池成员不会残留，同一日期重跑不会重复。
+港股、美股表名保持现状。
+
+历史股票池使用 [Tushare bak_basic](https://tushare.pro/document/2?doc_id=262)，接口自 2016 年起提供数据，
+官方权限要求 5000 积分，单次最多 7000 条。名称来自对应日期，交易所及板块按当日代码判断，
+不借用当前 `stock_basic` 的名称或 ST 状态。尚未上市或无法确认上市日期的记录排除。
+返回日期不符、空快照、重复代码或达到接口条数上限时拒绝写入并报告失败。
+
+```bash
+# 交互选择近 60 日、近半年（180 日）、近一年（365 日）、近三年（1095 日）
+uv run python -m backend.scripts.history.sync_stock_list
+# 直接指定自然日范围（含今天）和线程数；每次重新拉取并覆盖已有快照
+uv run python -m backend.scripts.history.sync_stock_list --lookback-days 180 --workers 5
+```
+
+线程数默认读取 `sync_workers`（可用环境变量 `SYNC_WORKERS` 设置），`--workers` 可覆盖。
+各交易日并发拉取，保留请求启动间隔限速，数据库由主线程统一写入。
+所有范围均截至上海时区今天，不需要输入开始或结束日期。新拉取的完整快照按交易日替换旧数据。
+
+先补股票池，再补历史日 K；历史日 K 同步覆盖区间内出现过的股票（含后来退池成员）。
+历史快照同步失败会以非零状态退出，失败日期的旧快照保留，已成功日期更新；重跑会重新拉取整个所选范围。
+每日列表同步同样使用 `bak_basic`，遇到尚未发布的当日数据会报错并保留已有快照。
+
+数据库初始化直接使用当前表结构建表，已有表与数据保留。
+
+回测 API 和命令行加载历史股票池。确认日先向前找到最近的整日快照，再匹配股票代码和当时名称、板块，
+不能逐股寻找最后一条记录来复活已退池成员。没有历史快照则不产生选股信号。
+市值按股票向前匹配确认日或此前值，热度按突破日或此前值，缺失热度按放量强度排序。
+单日扫描同样禁止使用未来市值或无日期热度；行情指标只依赖当日及此前 K 线。
+回测引擎还会将所有输入截断到结束日期；新增策略须遵守 `Strategy` 的逐日因果计算约定。
+收盘信号按当日收盘价成交仍是原有回测假设，不等同于盘中可执行价格。

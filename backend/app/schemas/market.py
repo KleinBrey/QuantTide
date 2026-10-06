@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 
 class Stock(BaseModel):
+    trade_date: date
     symbol: str
     name: str
     exchange: str

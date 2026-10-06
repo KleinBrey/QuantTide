@@ -9,7 +9,7 @@ import duckdb
 
 from backend.app.database import DuckDBDatabase
 from backend.app.provider.hithink_provider import HithinkProvider
-from backend.app.repository import StockHotDailyRepository, StockRepository
+from backend.app.repository import DailyHotRepository, DailyStockRepository
 from backend.scripts.history.sync_hot_stock import sync_hot_stock_history
 
 
@@ -33,8 +33,8 @@ class HotStockDailyRankTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             database = DuckDBDatabase(Path(tmp) / "market.duckdb")
             database.initialize()
-            StockRepository(database).upsert_stocks(pd.DataFrame([
-                dict(symbol=symbol, name=symbol, exchange="SZ", market="a-share", source="test")
+            DailyStockRepository(database).upsert_stocks(pd.DataFrame([
+                dict(symbol=symbol, trade_date="2025-10-01", name=symbol, exchange="SZ", market="a-share", source="test")
                 for symbol in ["300034.SZ", "000001.SZ", "000002.SZ"]
             ]))
             settings = SimpleNamespace(database_path=database.database_path, sync_workers=2)
@@ -52,7 +52,7 @@ class HotStockDailyRankTests(unittest.TestCase):
                 for _ in range(2):
                     with self.assertRaisesRegex(RuntimeError, "同步未完全完成"):
                         sync_hot_stock_history()
-                repo = StockHotDailyRepository(database)
+                repo = DailyHotRepository(database)
                 history = repo.get_table_data()
                 self.assertEqual(len(history), 2)
                 self.assertEqual(history["rank"].tolist(), [1740, 2147])

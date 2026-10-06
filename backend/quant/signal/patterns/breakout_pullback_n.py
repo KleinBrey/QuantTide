@@ -11,9 +11,9 @@ from rich.console import Console
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockHotDailyRepository,
-    StockRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
 )
 
 console = Console()
@@ -97,11 +97,11 @@ def load_market_data() -> tuple[
     """读取本地股票、日 K 和最新热度数据。"""
 
     database = DuckDBDatabase()
-    stocks = StockRepository(database).get_table_data()
+    latest_stocks = DailyStockRepository(database).get_latest_data()
     daily_bars = DailyBarRepository(database).get_table_data()
-    hot_stocks = StockHotDailyRepository(database).get_latest()
-    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
-    return stocks, daily_bars, hot_stocks, stock_daily_basic
+    latest_hot = DailyHotRepository(database).get_latest_data()
+    latest_basic = DailyBasicRepository(database).get_latest_data()
+    return latest_stocks, daily_bars, latest_hot, latest_basic
 
 
 def find_latest_signal(
@@ -227,10 +227,10 @@ def detect_strong_breakout_pullback(
 
 def run_signal(
     *,
-    stocks: pd.DataFrame,
+    latest_stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
-    hot_stocks: pd.DataFrame,
-    stock_daily_basic: pd.DataFrame,
+    latest_hot: pd.DataFrame,
+    latest_basic: pd.DataFrame,
     config: SignalConfig = DEFAULT_CONFIG,
 ) -> pd.DataFrame:
     """计算最新交易日的突破回调企稳信号。"""
@@ -253,19 +253,19 @@ def run_signal(
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
     signals["signal_stage"] = "放量企稳"
-    stock_info = stocks.merge(
-        stock_daily_basic,
+    stock_info = latest_stocks.drop(columns=["trade_date", "update_time"], errors="ignore").merge(
+        latest_basic,
         on="symbol",
         how="left",
     )
 
-    hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-    hot_stocks["hot_rank"] = hot_stocks["rank"]
+    latest_hot = latest_hot.drop_duplicates("symbol").reset_index(drop=True)
+    latest_hot["hot_rank"] = latest_hot["rank"]
 
     return (
         stock_info.merge(signals, on="symbol")
         .merge(
-            hot_stocks[["symbol", "hot_rank"]],
+            latest_hot[["symbol", "hot_rank"]],
             on="symbol",
             how="left",
         )
@@ -280,16 +280,16 @@ def run_signal(
 
 if __name__ == "__main__":
     with console.status("[bold green]正在读取本地数据并识别突破回调信号..."):
-        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+        latest_stocks, daily_bars, latest_hot, latest_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
         )
         selected_stocks = run_signal(
-            stocks=stocks,
+            latest_stocks=latest_stocks,
             daily_bars=daily_bars,
-            hot_stocks=hot_stocks,
-            stock_daily_basic=stock_daily_basic,
+            latest_hot=latest_hot,
+            latest_basic=latest_basic,
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")

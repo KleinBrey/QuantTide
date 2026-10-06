@@ -18,9 +18,9 @@ from rich.console import Console
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
     DailyBarRepository,
-    StockDailyBasicRepository,
-    StockHotDailyRepository,
-    StockRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
 )
 
 console = Console()
@@ -70,11 +70,11 @@ def load_market_data() -> tuple[
     """读取本地数据。"""
 
     database = DuckDBDatabase()
-    stocks = StockRepository(database).get_table_data()
+    latest_stocks = DailyStockRepository(database).get_latest_data()
     daily_bars = DailyBarRepository(database).get_table_data()
-    hot_stocks = StockHotDailyRepository(database).get_latest()
-    stock_daily_basic = StockDailyBasicRepository(database).get_latest_data()
-    return stocks, daily_bars, hot_stocks, stock_daily_basic
+    latest_hot = DailyHotRepository(database).get_latest_data()
+    latest_basic = DailyBasicRepository(database).get_latest_data()
+    return latest_stocks, daily_bars, latest_hot, latest_basic
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,46 +101,46 @@ class PanicReversalVPattern:
 
     def scan(
         self,
-        stocks: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """计算指标并返回符合全部条件的股票。"""
 
-        if stocks.empty or daily_bars.empty:
+        if latest_stocks.empty or daily_bars.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        stocks = self.merge_stock_basic(stocks, stock_daily_basic)
-        stocks = self.filter_stocks(stocks)
-        if stocks.empty:
+        latest_stocks = self.merge_stock_basic(latest_stocks, latest_basic)
+        latest_stocks = self.filter_stocks(latest_stocks)
+        if latest_stocks.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        daily_bars = self.filter_daily_bars(daily_bars, stocks["symbol"])
+        daily_bars = self.filter_daily_bars(daily_bars, latest_stocks["symbol"])
         indicators = self.calculate_indicators(daily_bars)
 
-        result = stocks.merge(indicators, on="symbol", how="inner")
+        result = latest_stocks.merge(indicators, on="symbol", how="inner")
         result = self.filter_indicators(result)
-        return self._sort_filter_by_hot(result, hot_stocks)
+        return self._sort_filter_by_hot(result, latest_hot)
 
     @staticmethod
     def merge_stock_basic(
-        stocks: pd.DataFrame,
-        stock_daily_basic: pd.DataFrame,
+        latest_stocks: pd.DataFrame,
+        latest_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """补齐股票市值字段。"""
 
-        return stocks.merge(stock_daily_basic, on="symbol", how="left")
+        return latest_stocks.drop(columns=["trade_date", "update_time"], errors="ignore").merge(latest_basic, on="symbol", how="left")
 
-    def filter_stocks(self, stocks: pd.DataFrame) -> pd.DataFrame:
+    def filter_stocks(self, latest_stocks: pd.DataFrame) -> pd.DataFrame:
         """保留大市值股票，并排除 ST、科创板和北交所股票。"""
 
-        is_st = stocks["name"].str.contains("ST", case=False, na=False)
-        is_star_market = stocks["market"] == "科创板"
-        is_beijing = stocks["exchange"] == "BJ"
-        is_big_market_cap = stocks["market_cap"] > self.config.min_market_cap
+        is_st = latest_stocks["name"].str.contains("ST", case=False, na=False)
+        is_star_market = latest_stocks["market"] == "科创板"
+        is_beijing = latest_stocks["exchange"] == "BJ"
+        is_big_market_cap = latest_stocks["market_cap"] > self.config.min_market_cap
 
-        return stocks.loc[~is_st & ~is_star_market & ~is_beijing & is_big_market_cap]
+        return latest_stocks.loc[~is_st & ~is_star_market & ~is_beijing & is_big_market_cap]
 
     @staticmethod
     def filter_daily_bars(
@@ -210,19 +210,19 @@ class PanicReversalVPattern:
     @staticmethod
     def _sort_filter_by_hot(
         result: pd.DataFrame,
-        hot_stocks: pd.DataFrame,
+        latest_hot: pd.DataFrame,
     ) -> pd.DataFrame:
         """只保留当前热度榜股票，并按热度排名排序。"""
 
-        if result.empty or hot_stocks.empty:
+        if result.empty or latest_hot.empty:
             return pd.DataFrame(columns=RESULT_COLUMNS)
 
-        hot_stocks = hot_stocks.drop_duplicates("symbol").reset_index(drop=True)
-        hot_stocks["hot_rank"] = hot_stocks["rank"]
+        latest_hot = latest_hot.drop_duplicates("symbol").reset_index(drop=True)
+        latest_hot["hot_rank"] = latest_hot["rank"]
 
         return (
             result.merge(
-                hot_stocks[["symbol", "hot_rank"]],
+                latest_hot[["symbol", "hot_rank"]],
                 on="symbol",
             )
             .sort_values("hot_rank")[RESULT_COLUMNS]
@@ -232,33 +232,33 @@ class PanicReversalVPattern:
 
 def run_signal(
     *,
-    stocks: pd.DataFrame,
+    latest_stocks: pd.DataFrame,
     daily_bars: pd.DataFrame,
-    hot_stocks: pd.DataFrame,
-    stock_daily_basic: pd.DataFrame,
+    latest_hot: pd.DataFrame,
+    latest_basic: pd.DataFrame,
 ) -> pd.DataFrame:
     """供信号 API 调用的形态识别入口。"""
 
     return PanicReversalVPattern().scan(
-        stocks,
+        latest_stocks,
         daily_bars,
-        hot_stocks,
-        stock_daily_basic,
+        latest_hot,
+        latest_basic,
     )
 
 
 if __name__ == "__main__":
     with console.status("[bold green]正在读取本地数据并识别恐慌反转信号..."):
-        stocks, daily_bars, hot_stocks, stock_daily_basic = load_market_data()
+        latest_stocks, daily_bars, latest_hot, latest_basic = load_market_data()
         latest_date = pd.to_datetime(daily_bars["trade_date"]).max()
         latest_trade_date = (
             latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "无数据"
         )
         selected_stocks = PanicReversalVPattern().scan(
-            stocks,
+            latest_stocks,
             daily_bars,
-            hot_stocks,
-            stock_daily_basic,
+            latest_hot,
+            latest_basic,
         )
 
     console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")

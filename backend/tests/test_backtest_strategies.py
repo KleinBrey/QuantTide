@@ -23,9 +23,10 @@ class HoldOneDayStrategy:
     name = "持有一天"
     description = "只用于测试"
 
-    def generate_entries_range(self, trade_dates, stocks, daily_bars, hot_stocks, stock_daily_basic):
+    def generate_entries_range(self, trade_dates, historical_stocks, daily_bars, historical_hot, historical_basic):
         self.calendar = trade_dates
         self.bars_end = daily_bars.trade_date.max()
+        self.history = (historical_stocks, historical_hot, historical_basic)
         return pd.DataFrame([
             dict(symbol=symbol, name=symbol, entry_date=trade_dates[0],
                  signal_date=trade_dates[0], selection_rank=rank, entry_reason="test_buy")
@@ -57,8 +58,8 @@ def sample_data():
         for day, price in zip(dates, [10.0, 11.0, 12.0])
         for symbol in ["A", "B"]
     ])
-    return dict(stocks=pd.DataFrame(), daily_bars=bars,
-                hot_stocks=pd.DataFrame(), stock_daily_basic=pd.DataFrame())
+    return dict(historical_stocks=pd.DataFrame(), daily_bars=bars,
+                historical_hot=pd.DataFrame(), historical_basic=pd.DataFrame())
 
 
 class BacktestStrategyTests(unittest.TestCase):
@@ -96,6 +97,19 @@ class BacktestStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.bars_end, pd.Timestamp("2026-09-22"))
         self.assertEqual(len(result.equity_curve), 2)
 
+    def test_all_dated_inputs_are_cut_at_end_and_undated_data_is_rejected(self):
+        strategy = HoldOneDayStrategy()
+        config = BacktestConfig(start_date="2026-09-21", end_date="2026-09-22")
+        data = sample_data()
+        for key in ("historical_stocks", "historical_hot", "historical_basic"):
+            data[key] = pd.DataFrame({"trade_date": ["2026-09-21", "2026-09-23"]})
+        BacktestEngine(strategy, config).run(**data)
+        for frame in strategy.history:
+            self.assertEqual(frame.trade_date.tolist(), [pd.Timestamp("2026-09-21")])
+        data["historical_stocks"] = pd.DataFrame({"symbol": ["A"]})
+        with self.assertRaisesRegex(ValueError, "trade_date"):
+            BacktestEngine(strategy, config).run(**data)
+
     def test_breakout_maps_dates_and_keeps_its_exit_rules(self):
         signal = {column: None for column in ENTRY_COLUMNS}
         signal.update(symbol="A", name="A", confirm_date=pd.Timestamp("2026-09-21"),
@@ -126,9 +140,9 @@ class BacktestApiTests(unittest.TestCase):
         app.include_router(router, prefix="/api")
         data = sample_data()
         for attribute, key in [
-            ("stock_repository", "stocks"), ("daily_repository", "daily_bars"),
-            ("stock_hot_repository", "hot_stocks"),
-            ("stock_daily_basic_repository", "stock_daily_basic"),
+            ("daily_stock_repository", "historical_stocks"), ("daily_repository", "daily_bars"),
+            ("daily_hot_repository", "historical_hot"),
+            ("daily_basic_repository", "historical_basic"),
         ]:
             repository = Mock()
             repository.get_table_data.return_value = data[key]
