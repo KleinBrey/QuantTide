@@ -1,4 +1,4 @@
-"""SQLite 业务边界、一次性迁移和跨市场自选 API 的集成回归。"""
+"""SQLite 业务边界和跨市场自选 API 的集成回归。"""
 import sqlite3
 import tempfile
 import unittest
@@ -37,7 +37,11 @@ class WatchlistTests(unittest.TestCase):
         self.cn.upsert_stocks(pd.DataFrame([dict(trade_date='2026-10-06', symbol='300308.SZ', name='中际旭创', exchange='SZ', market='创业板', source='Test')]))
         self.hk.upsert_stocks(pd.DataFrame([dict(symbol='00700.HK', name='腾讯控股', source='Test')]))
         self.us.upsert_stocks(pd.DataFrame([dict(symbol='NVDA', name='英伟达', source='Test'), dict(symbol='AAPL', name='苹果', source='Test')]))
-        self.repository.migrate_stock_pools(['00700.HK'], ['NVDA', 'AAPL'])
+        hk_pool = self.repository.ensure_default_pool('HK')['id']
+        us_pool = self.repository.ensure_default_pool('US')['id']
+        self.repository.add_item(hk_pool, 'HK', '00700.HK')
+        for symbol in ['NVDA', 'AAPL']:
+            self.repository.add_item(us_pool, 'US', symbol)
         self.service = WatchlistService(self.repository, self.cn, self.hk, self.us)
         app = FastAPI()
         app.include_router(router, prefix='/api')
@@ -60,15 +64,15 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(response.status_code, status, response.text)
         return response.json()
 
-    def test_migration_only_once_and_has_two_business_tables(self):
+    def test_default_pools_are_explicit_and_have_two_business_tables(self):
         groups = self.repository.list_groups()
         pools = [group for group in groups if group['is_default']]
         self.assertEqual([(group['market'], group['name'], group['item_count']) for group in pools], [('HK', 'stock_pool', 1), ('US', 'stock_pool', 2)])
         us_id = self.repository.get_pool('US')['id']
         self.repository.remove_stock(us_id, 'US', 'NVDA')
         fresh = WatchlistRepository(self.business)
-        fresh.migrate_stock_pools(['00700.HK'], ['NVDA', 'AAPL', 'MSFT'])
         self.assertEqual([item['symbol'] for item in fresh.list_items(us_id)], ['AAPL'])
+        self.assertEqual(fresh.ensure_default_pool('US')['id'], us_id)
         with self.business.connection() as connection:
             tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
             self.assertEqual(tables, ['watchlist_groups', 'watchlist_items'])
@@ -191,19 +195,6 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(results['us']['stocks'], 1)
         self.assertEqual({call.args[0] for call in provider.fetch_historical.call_args_list}, {'00700.HK', 'AAPL'})
         self.assertEqual(len(self.us.get_table_data()), 2)
-
-    def test_failed_migration_rolls_back_groups_and_version(self):
-        db = SQLiteDatabase(self.business.database_path.parent / 'failed.sqlite')
-        db.initialize()
-        repository = WatchlistRepository(db)
-        with self.assertRaises(sqlite3.IntegrityError):
-            repository.migrate_stock_pools([''], ['NVDA'])
-        self.assertEqual(repository.list_groups(), [])
-        with db.connection() as connection:
-            self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 0)
-        repository.migrate_stock_pools(['00700.HK'], ['NVDA'])
-        self.assertEqual(len(repository.list_groups()), 3)
-
 
 if __name__ == '__main__':
     unittest.main()

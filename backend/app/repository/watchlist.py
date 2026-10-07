@@ -15,23 +15,23 @@ class WatchlistRepository:
     def __init__(self, db: SQLiteDatabase):
         self.db = db
 
-    def migrate_stock_pools(self, hk_symbols, us_symbols):
-        """原子迁移一次；不重复导入已从股票池移除的股票。"""
+    def ensure_default_pool(self, market):
+        """确保指定市场存在默认股票池；仅供显式初始化脚本使用。"""
+        if market not in {'HK', 'US'}:
+            raise ValueError('默认股票池仅支持 HK 和 US 市场')
         with self.db.connection() as connection:
             connection.execute('BEGIN IMMEDIATE')
-            if connection.execute('PRAGMA user_version').fetchone()[0] >= 1:
-                return
-            connection.execute("INSERT INTO watchlist_groups (name, sort_order) VALUES ('默认自选', 0)")
-            for order, (market, symbols) in enumerate([('HK', hk_symbols), ('US', us_symbols)], 1):
-                group_id = connection.execute(
-                    "INSERT INTO watchlist_groups (name, market, is_default, sort_order) VALUES ('stock_pool', ?, 1, ?)",
-                    (market, order),
-                ).lastrowid
-                connection.executemany(
-                    'INSERT INTO watchlist_items (group_id, market, symbol, sort_order) VALUES (?, ?, ?, ?)',
-                    [(group_id, market, symbol, index) for index, symbol in enumerate(dict.fromkeys(symbols))],
-                )
-            connection.execute('PRAGMA user_version = 1')
+            row = connection.execute(
+                'SELECT * FROM watchlist_groups WHERE market = ? AND is_default = 1',
+                (market,),
+            ).fetchone()
+            if row is not None:
+                return dict(row)
+            group_id = connection.execute(
+                "INSERT INTO watchlist_groups (name, market, is_default) VALUES ('stock_pool', ?, 1)",
+                (market,),
+            ).lastrowid
+            return self._group(connection, group_id)
 
     @staticmethod
     def _group(connection, group_id):

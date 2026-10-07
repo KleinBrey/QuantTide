@@ -277,9 +277,8 @@ uv run python -m backend.scripts.init_hk_us_stock_pools
 
 自选分组和股票池成员现在保存在 `data/app.sqlite`，仅使用 `watchlist_groups`
 和 `watchlist_items` 两张业务表。HK、US 各有一个不可删除、不可重命名的
-`stock_pool` 默认分组；CN 不创建此分组。首次启动自动迁入 DuckDB `stocks`
-表中的成员，此后只执行一次，移出的成员不会在重启时恢复。
-显式运行上述初始化脚本则会将脚本名单重新加入默认分组。
+`stock_pool` 默认分组；CN 不创建此分组。显式运行上述初始化脚本会创建默认分组并
+将脚本名单加入其中。
 DuckDB 继续保存股票基础信息和历史行情，港美股日 K 同步读取 SQLite 默认分组成员。
 业务 API 位于 `/api/watchlists/groups`，支持分组增删改、成员管理和排序；
 `APP_DATABASE_PATH` 可覆盖 SQLite 路径。前端入口在港美股行情页顶部独立分组栏的标签及下拉菜单。

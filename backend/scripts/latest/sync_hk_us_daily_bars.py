@@ -16,9 +16,7 @@ from backend.app.provider import YFinanceProvider
 from backend.app.utils.progress import progress_bar, progress_write
 from backend.app.repository import (
     HKDailyBarRepository,
-    HKStockRepository,
     USDailyBarRepository,
-    USStockRepository,
 )
 
 
@@ -83,7 +81,6 @@ def format_yfinance_daily_bars(
 
 def sync_market_daily_k(
     database: DuckDBDatabase,
-    stock_repository: HKStockRepository | USStockRepository,
     daily_repository: HKDailyBarRepository | USDailyBarRepository,
     provider: YFinanceProvider,
     market_name: str,
@@ -94,7 +91,7 @@ def sync_market_daily_k(
     now_ms: int | None = None,
     symbols: list[str] | None = None,
 ) -> dict[str, Any]:
-    """同步单个市场 ``stocks`` 表内全部股票的历史日 K。"""
+    """同步指定股票代码的历史日 K。"""
 
     if lookback_days <= 0:
         raise ValueError("lookback_days 必须大于 0")
@@ -105,8 +102,7 @@ def sync_market_daily_k(
 
     database.initialize()
     if symbols is None:
-        stocks = stock_repository.get_table_data()
-        symbols = stocks["symbol"].astype("string").dropna().tolist()
+        raise ValueError("symbols 必须由 SQLite stock_pool 提供")
     if not symbols:
         print(f"{market_name}股票池为空，跳过日 K 同步")
         return {"stocks": 0, "rows": 0, "failed_symbols": []}
@@ -196,14 +192,12 @@ def sync_hk_us_daily_bars(
     hk_db.initialize()
     us_db.initialize()
     business_db = app_database or SQLiteDatabase(
-        hk_db.database_path.parent / 'app.sqlite' if hk_database is not None else settings.app_database_path
+        hk_db.database_path.parent / "app.sqlite"
+        if hk_database is not None
+        else settings.app_database_path
     )
     business_db.initialize()
     watchlists = WatchlistRepository(business_db)
-    watchlists.migrate_stock_pools(
-        HKStockRepository(hk_db).get_table_data()['symbol'].tolist(),
-        USStockRepository(us_db).get_table_data()['symbol'].tolist(),
-    )
 
     def pool_symbols(market):
         return [row['symbol'] for row in watchlists.list_items(watchlists.get_pool(market)['id'])]
@@ -211,7 +205,6 @@ def sync_hk_us_daily_bars(
     return {
         "hk": sync_market_daily_k(
             hk_db,
-            HKStockRepository(hk_db),
             HKDailyBarRepository(hk_db),
             quote_provider,
             "港股",
@@ -222,7 +215,6 @@ def sync_hk_us_daily_bars(
         ),
         "us": sync_market_daily_k(
             us_db,
-            USStockRepository(us_db),
             USDailyBarRepository(us_db),
             quote_provider,
             "美股",

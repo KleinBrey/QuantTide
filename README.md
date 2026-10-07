@@ -138,11 +138,9 @@ uv run uvicorn backend.app.main:app \
 界面新建的分组归属当前市场；API 可通过 `market: null` 创建跨市场分组。
 SQLite 不复制股票名称或行情，这些信息按成员的 CN/HK/US 市场从 DuckDB 读取。
 
-后端或港美股同步脚本首次启动时，将两个 DuckDB 的现有 `stocks` 成员原子迁入
-各自的 `stock_pool`，通过 SQLite `user_version` 记录一次性迁移。HK、US 默认分组
-不可删除或重命名，CN 没有 `stock_pool`。移出自选、删除普通分组不会删除 DuckDB
-基础信息或历史行情；移出的股票不会在重启时被再次迁入。
-显式执行股票池初始化脚本会将脚本名单重新加入默认分组。
+显式执行股票池初始化脚本会创建 HK、US 的 `stock_pool` 默认分组，并将脚本名单加入
+其中。HK、US 默认分组不可删除或重命名，CN 没有 `stock_pool`。移出自选、删除普通
+分组不会删除 DuckDB 基础信息或历史行情。
 
 可通过 `APP_DATABASE_PATH` 配置 SQLite 路径；每次连接开启外键，删除普通分组时
 级联删除对应成员。已有后端进程需要重启以加载这些接口：
@@ -154,7 +152,7 @@ SQLite 不复制股票名称或行情，这些信息按成员的 CN/HK/US 市场
 - `DELETE /api/watchlists/groups/{id}/items/{item_id}`：移出成员。
 - `PUT /api/watchlists/groups/{id}/items/order`：提交该分组全部成员 ID 的顺序。
 - `GET /api/watchlists/stocks/search?q=名称或代码&market=HK`：查询 DuckDB 股票基础信息。
-- `GET/POST/DELETE /api/market-stocks`：兼容港美股默认分组增删入口。
+- `GET/POST/DELETE /api/market-stocks`：港美股默认分组增删入口。
 
 ## 定时任务
 

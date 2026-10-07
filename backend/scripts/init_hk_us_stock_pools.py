@@ -90,12 +90,8 @@ def init_hk_us_stock_pools(
     business_db = app_database or SQLiteDatabase(hk_database.database_path.parent / 'app.sqlite')
     business_db.initialize()
     watchlists = WatchlistRepository(business_db)
-    watchlists.migrate_stock_pools(
-        HKStockRepository(hk_database).get_table_data()['symbol'].tolist(),
-        USStockRepository(us_database).get_table_data()['symbol'].tolist(),
-    )
     for market, stocks in [('HK', HK_STOCKS), ('US', US_STOCKS)]:
-        group_id = watchlists.get_pool(market)['id']
+        group_id = watchlists.ensure_default_pool(market)['id']
         existing = {row['symbol'] for row in watchlists.list_items(group_id)}
         for symbol, _ in stocks:
             if symbol not in existing:

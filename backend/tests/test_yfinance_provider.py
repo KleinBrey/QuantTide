@@ -8,11 +8,12 @@ import pandas as pd
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase
+from backend.app.database import HKDuckDBDatabase, SQLiteDatabase, USDuckDBDatabase
 from backend.app.provider.yfinance_provider import YFinanceProvider, YFinanceProviderError
 from backend.app.repository import (
     HKStockRepository, USStockRepository, HKDailyBarRepository, USDailyBarRepository,
 )
+from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.schemas.market import DailyBar
 from backend.scripts.latest.sync_hk_us_daily_bars import (
     format_yfinance_daily_bars, sync_hk_us_daily_bars,
@@ -104,6 +105,11 @@ class YFinanceProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hk_db = HKDuckDBDatabase(Path(tmp) / "hk.duckdb")
             us_db = USDuckDBDatabase(Path(tmp) / "us.duckdb")
+            app_db = SQLiteDatabase(Path(tmp) / "app.sqlite")
+            app_db.initialize()
+            watchlists = WatchlistRepository(app_db)
+            hk_pool = watchlists.ensure_default_pool("HK")["id"]
+            us_pool = watchlists.ensure_default_pool("US")["id"]
             for db, stock_cls, bar_cls, symbol in [
                 (hk_db, HKStockRepository, HKDailyBarRepository, "00700.HK"),
                 (us_db, USStockRepository, USDailyBarRepository, "AAPL"),
@@ -114,9 +120,12 @@ class YFinanceProviderTests(unittest.TestCase):
                     symbol=symbol, trade_date="2026-03-06", open=10, high=12,
                     low=9, close=10, volume=100, amount=1000, source="Futu",
                 )]))
+                watchlists.add_item(hk_pool if symbol.endswith(".HK") else us_pool,
+                                    "HK" if symbol.endswith(".HK") else "US", symbol)
             USStockRepository(us_db).upsert_stocks(pd.DataFrame([
                 dict(symbol="FAIL", name="failure", source="Manual")
             ]))
+            watchlists.add_item(us_pool, "US", "FAIL")
 
             def factory(symbol):
                 ticker = Mock()
@@ -129,7 +138,10 @@ class YFinanceProviderTests(unittest.TestCase):
             provider = YFinanceProvider(ticker_factory=factory, max_attempts=1)
             with patch("backend.scripts.latest.sync_hk_us_daily_bars.time.time", return_value=timestamp("2026-03-10T08:00:00Z") / 1000):
                 for _ in range(2):
-                    result = sync_hk_us_daily_bars(10, 1, 0, provider=provider, hk_database=hk_db, us_database=us_db)
+                    result = sync_hk_us_daily_bars(
+                        10, 1, 0, provider=provider, hk_database=hk_db,
+                        us_database=us_db, app_database=app_db,
+                    )
                     self.assertEqual(result["hk"]["rows"], 2)
                     self.assertEqual(result["us"]["failed_symbols"], ["FAIL"])
             for db, cls in [(hk_db, HKDailyBarRepository), (us_db, USDailyBarRepository)]:

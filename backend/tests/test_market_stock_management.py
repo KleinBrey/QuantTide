@@ -39,7 +39,8 @@ class MarketStockManagementTests(unittest.TestCase):
         sqlite = SQLiteDatabase(Path(temporary.name) / 'app.sqlite')
         sqlite.initialize()
         self.watchlists = WatchlistRepository(sqlite)
-        self.watchlists.migrate_stock_pools([], [])
+        self.watchlists.ensure_default_pool('HK')
+        self.watchlists.ensure_default_pool('US')
         service = WatchlistService(self.watchlists, None, self.repositories['hk-share'], self.repositories['us-share'])
         app.dependency_overrides[get_watchlist_service] = lambda: service
         self.client = TestClient(app)

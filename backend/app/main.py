@@ -53,10 +53,6 @@ async def lifespan(app: FastAPI):
     app_database = SQLiteDatabase(settings.app_database_path)
     app_database.initialize()
     watchlist_repository = WatchlistRepository(app_database)
-    watchlist_repository.migrate_stock_pools(
-        hk_stock_repository.get_table_data()['symbol'].tolist(),
-        us_stock_repository.get_table_data()['symbol'].tolist(),
-    )
     app.state.watchlist_service = WatchlistService(
         watchlist_repository, daily_stock_repository, hk_stock_repository, us_stock_repository,
     )
