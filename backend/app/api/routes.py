@@ -45,10 +45,10 @@ from backend.quant.backtest.result import format_backtest_result
 from backend.quant.strategy.registry import STRATEGIES, strategy_info, strategy_list
 from backend.quant.signal.result import format_signal_result
 from backend.app.utils.symbol import normalize_daily_bar_symbol
-from backend.scripts.latest.sync_stock_daily_bars import sync_stock_daily_bars
-from backend.scripts.latest.sync_hot_stock import sync_hot_stock_latest
-from backend.scripts.latest.sync_stock_daily_basic import sync_stock_daily_basic
-from backend.scripts.latest.sync_stock_list import sync_stock_list
+from backend.scripts.latest.sync_daily_bars import sync_daily_bars
+from backend.scripts.latest.sync_daily_hot import sync_daily_hot
+from backend.scripts.latest.sync_daily_basic import sync_daily_basic
+from backend.scripts.latest.sync_daily_stocks import sync_daily_stocks
 
 from .dependencies import (
     get_daily_repository,
@@ -157,46 +157,46 @@ async def _run_database_sync(
 
 
 @router.post("/database-sync/stock-list")
-async def sync_stock_list_database() -> dict[str, str | float]:
+async def sync_daily_stocks_database() -> dict[str, str | float]:
     """执行股票列表数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_stock_list.py",
+        "latest/sync_daily_stocks.py",
         "A 股股票列表同步完成",
-        sync_stock_list,
+        sync_daily_stocks,
     )
 
 
 @router.post("/database-sync/daily-k")
-async def sync_daily_k_database() -> dict[str, str | float]:
+async def sync_daily_bars_database() -> dict[str, str | float]:
     """执行最近 3 个自然日的日 K 数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_stock_daily_bars.py",
+        "latest/sync_daily_bars.py",
         "最近 3 个自然日的日 K 数据同步完成",
-        lambda: sync_stock_daily_bars(lookback_days=3, batch_size=100),
+        lambda: sync_daily_bars(lookback_days=3),
     )
 
 
 @router.post("/database-sync/stock-daily-basic")
-async def sync_stock_daily_basic_database() -> dict[str, str | float]:
+async def sync_daily_basic_database() -> dict[str, str | float]:
     """执行最新交易日股票指标数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_stock_daily_basic.py",
+        "latest/sync_daily_basic.py",
         "最新交易日股票指标同步完成",
-        lambda: sync_stock_daily_basic(lookback_days=3),
+        lambda: sync_daily_basic(lookback_days=3),
     )
 
 
 @router.post("/database-sync/hot-stock")
-async def sync_hot_stock_database() -> dict[str, str | float]:
+async def sync_daily_hot_database() -> dict[str, str | float]:
     """执行每日股票热度数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_hot_stock.py",
+        "latest/sync_daily_hot.py",
         "A 股、港股和美股每日热度同步完成",
-        sync_hot_stock_latest,
+        sync_daily_hot,
     )
 
 
@@ -255,10 +255,10 @@ def market_stocks(
 
 
 @router.post("/stocks-list")
-def update_stocks_list(cn_market_service: CNMarketServiceDep) -> dict[str, str]:
+def update_daily_stocks(cn_market_service: CNMarketServiceDep) -> dict[str, str]:
     """从数据源获取最新股票列表，并保存到本地数据库。"""
 
-    cn_market_service.update_stocks_list()
+    cn_market_service.update_daily_stocks()
 
     # 只有上面的更新操作没有抛出异常时，才会执行到这里。
     return {

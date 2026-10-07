@@ -3,10 +3,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from backend.app.config.config import Settings
 from backend.app.jobs.tasks import (
-    run_daily_k_sync,
-    run_stock_daily_basic_sync,
-    run_stock_hot_sync,
-    run_stock_list_sync,
+    run_daily_bars_sync,
+    run_daily_basic_sync,
+    run_daily_hot_sync,
+    run_daily_stocks_sync,
 )
 
 
@@ -27,7 +27,7 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
     """更新股票列表"""
     # 每个工作日收盘后保存最新交易日股票池快照
     scheduler.add_job(
-        run_stock_list_sync,
+        run_daily_stocks_sync,
         CronTrigger(
             day_of_week="mon-fri",
             hour=18,
@@ -41,7 +41,7 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
     """更新热门股列表"""
     # 每日更新：周一至周五执行，每天 15:00 触发
     scheduler.add_job(
-        run_stock_hot_sync,
+        run_daily_hot_sync,
         CronTrigger(
             day_of_week="mon-fri",
             hour=15,
@@ -55,7 +55,7 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
     """更新股票日K线列表"""
     # 每日更新：周一到周五，16:00 更新最近 3 日数据。
     scheduler.add_job(
-        run_daily_k_sync,
+        run_daily_bars_sync,
         CronTrigger(
             day_of_week="mon-fri",
             hour=16,
@@ -63,14 +63,14 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
             timezone=settings.scheduler_timezone,
         ),
         id="weekday-daily-k-sync",
-        args=[3, 100],
+        args=[3],
         **common,
     )
 
     """更新股票每日指标"""
     # 每日更新：周一至周五执行，每天 16:00 触发
     scheduler.add_job(
-        run_stock_daily_basic_sync,
+        run_daily_basic_sync,
         CronTrigger(
             day_of_week="mon-fri",
             hour=16,
@@ -83,7 +83,7 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
 
     # 每周校准：每周六 16:00 更新最近 60 日数据。
     scheduler.add_job(
-        run_daily_k_sync,
+        run_daily_bars_sync,
         CronTrigger(
             day_of_week="sat",
             hour=16,
@@ -91,13 +91,13 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
             timezone=settings.scheduler_timezone,
         ),
         id="weekly-daily-k-sync",
-        args=[60, 50],
+        args=[60],
         **common,
     )
 
     # 每月校准：每月 1 日 16:00 更新最近 365 日数据。
     scheduler.add_job(
-        run_daily_k_sync,
+        run_daily_bars_sync,
         CronTrigger(
             day=1,
             hour=16,
@@ -105,7 +105,7 @@ def create_scheduler(settings: Settings) -> BackgroundScheduler:
             timezone=settings.scheduler_timezone,
         ),
         id="monthly-daily-k-sync",
-        args=[365, 10],
+        args=[365],
         **common,
     )
     return scheduler

@@ -10,7 +10,7 @@ import duckdb
 from backend.app.database import DuckDBDatabase
 from backend.app.provider.hithink_provider import HithinkProvider
 from backend.app.repository import DailyHotRepository, DailyStockRepository
-from backend.scripts.history.sync_hot_stock import sync_hot_stock_history
+from backend.scripts.history.sync_daily_hot import sync_daily_hot
 
 
 class HotStockDailyRankTests(unittest.TestCase):
@@ -45,13 +45,13 @@ class HotStockDailyRankTests(unittest.TestCase):
                 return [dict(thscode=symbol, date=start, rank=1740 if symbol == "300034.SZ" else 2147)]
 
             with (
-                patch("backend.scripts.history.sync_hot_stock.get_settings", return_value=settings),
-                patch("backend.scripts.history.sync_hot_stock.time.sleep"),
+                patch("backend.scripts.history.sync_daily_hot.get_settings", return_value=settings),
+                patch("backend.scripts.history.sync_daily_hot.time.sleep"),
                 patch.object(HithinkProvider, "fetch_hot_stock_rank_trend", side_effect=fetch),
             ):
                 for _ in range(2):
                     with self.assertRaisesRegex(RuntimeError, "同步未完全完成"):
-                        sync_hot_stock_history()
+                        sync_daily_hot()
                 repo = DailyHotRepository(database)
                 history = repo.get_table_data()
                 self.assertEqual(len(history), 2)

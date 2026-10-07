@@ -11,7 +11,7 @@ from backend.app.repository import (
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 
 
-def sync_hot_stock_latest() -> None:
+def sync_daily_hot() -> None:
     settings = get_settings()
 
     # 三个市场分别初始化自己的数据库。
@@ -45,13 +45,13 @@ def sync_hot_stock_latest() -> None:
     )
 
     # 获取并保存当天 A 股、港股和美股热度。
-    cn_market_service.update_hot_stock()
-    hk_market_service.update_hot_stock()
-    us_market_service.update_hot_stock()
+    cn_market_service.update_daily_hot()
+    hk_market_service.update_daily_hot()
+    us_market_service.update_daily_hot()
 
 
 def main() -> None:
-    sync_hot_stock_latest()
+    sync_daily_hot()
 
 
 if __name__ == "__main__":

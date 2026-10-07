@@ -119,8 +119,68 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `app/utils/` 和 `app/view/`
 
-- `utils/`：日期、交易所和股票代码处理；
+- `utils/`：日期、交易所、股票代码处理，以及统一的并发请求和终端进度展示；
 - `view/`：Rich 命令行展示示例。
+
+进度条统一从 `backend.app.utils.progress` 导入，业务代码不直接设置 tqdm 样式：
+
+```python
+from backend.app.utils.progress import progress_bar, progress_write
+
+for future in progress_bar(
+    as_completed(futures),
+    total=len(futures),
+    desc="同步历史热度",
+    unit="只",
+    range_text=f"{start} 至 {end}",
+    workers=max_workers,
+):
+    try:
+        result = future.result()
+    except Exception as error:
+        progress_write(f"获取失败：{error}")
+```
+
+任务说明统一展示名称、总量、范围和最大并发数；进度条统一展示百分比、完成数、
+单位、耗时、剩余时间和速度。股票使用“只”，日期使用“日”，批量请求使用“批”，
+总量必须与实际迭代项一致。`range_text` 和 `workers` 可省略。
+返回的进度条仍支持 `with`、`update()` 和 `set_postfix()`。
+样式只需修改 `utils/progress.py`；任务说明、进度条和 `progress_write()` 消息
+默认统一写入 stderr，`disable=True` 可关闭任务说明和进度条。
+
+`utils/concurrency.py` 提供 `concurrent_requests()`，封装线程池、请求启动限速锁、
+按完成顺序收集结果和线程清理。A 股股票池、每日指标和日 K 服务共用它：
+
+```python
+from backend.app.utils.concurrency import concurrent_requests
+
+with concurrent_requests(
+    dates,
+    provider.fetch_daily_bar,
+    max_workers=10,
+    request_interval=(0.5, 1.0),
+) as results:
+    for trade_date, future in results:
+        rows = future.result()  # 请求异常在这里抛出，由业务层处理。
+        # 格式化及数据库写入由当前调用线程执行。
+```
+
+`request_interval` 可传固定秒数或随机范围，传 0 不限制启动间隔。
+锁在请求发出前释放，网络请求可并发执行；每次调用独立限速，不跨任务或进程共享。
+股票池保留 0.6 秒间隔，每日指标和日 K 保留 0.5～1 秒随机间隔，默认最多 10 个线程。
+退出 `with` 时通过 `stop.set()` 立即唤醒正在限速等待的线程，取消尚未启动的任务，等待已放行的请求结束。
+限速等待使用 `stop.wait()`，并保留锁内按实际放行时间计算下一次间隔，避免延迟唤醒后集中补发请求。
+
+这里以限制请求频率为主，`max_workers` 表示并发上限，不保证线程始终满载。
+设平均启动间隔为 `I > 0`、单次 `fetch` 平均耗时为 `T`，稳定状态下的吞吐上限
+约为 `min(1 / I, max_workers / T)`，平均在途请求数约为 `实际吞吐 × T`。
+默认间隔平均为 0.75 秒，因此限速吞吐上限约 1.33 次/秒；请求平均耗时 2.6 秒时，
+达到该吞吐所需的平均在途数量约为 3.5，而不是 10。
+
+在默认间隔下，维持平均 10 个请求在途需要平均请求耗时约 7.5 秒。
+这是稳态估算，不是“低于这个耗时就绝不可能达到 10 并发”的硬阈值，
+响应耗时和随机间隔的波动会影响峰值。线程已足够覆盖请求等待时间、限速成为瓶颈后，
+继续调大 `max_workers` 通常不会提速；处理和写库也可能限制整体同步速度。
 
 ## 量化计算目录
 
@@ -213,34 +273,36 @@ uv run python -m backend.scripts.init_hk_us_stock_pools
 
 ```bash
 # A 股股票列表
-uv run python -m backend.scripts.latest.sync_stock_list
+uv run python -m backend.scripts.latest.sync_daily_stocks
 
 # 最近 3 个自然日的每日指标和日 K
-uv run python -m backend.scripts.latest.sync_stock_daily_basic
-uv run python -m backend.scripts.latest.sync_stock_daily_bars
+uv run python -m backend.scripts.latest.sync_daily_basic
+uv run python -m backend.scripts.latest.sync_daily_bars
 uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
 
 # 股票热度
-uv run python -m backend.scripts.latest.sync_hot_stock
+uv run python -m backend.scripts.latest.sync_daily_hot
 ```
 
 日常更新入口位于 `backend/scripts/latest/`，直接执行，不再弹出日期选择菜单。
 日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表
-保存最新交易日的完整股票池快照。同步脚本会在写入前自动初始化数据库。
+同步最近 3 个自然日内的完整交易日股票池快照。同步脚本会在写入前自动初始化数据库。
+每日指标按交易日历过滤休市日，进度总数为范围内的交易日数量；范围内无交易日时直接跳过。
 
-历史补数入口位于 `backend/scripts/history/`。每日指标和日 K 可交互式选择
-最近 60 或 365 个自然日，与日常入口共用同步函数；A 股日 K 分别每批 50、10 只：
+历史补数入口位于 `backend/scripts/history/`。A 股每日指标和日 K 可交互式选择
+最近 60、180、365 或 1095 个自然日（含今天），与日常入口共用同步函数；A 股日 K 先查询交易日历，
+再按交易日调用 `daily(trade_date="YYYYMMDD")` 拉取全市场数据：
 
 ```bash
-uv run python -m backend.scripts.history.sync_stock_daily_basic
-uv run python -m backend.scripts.history.sync_stock_daily_bars
+uv run python -m backend.scripts.history.sync_daily_basic
+uv run python -m backend.scripts.history.sync_daily_bars
 uv run python -m backend.scripts.history.sync_hk_us_daily_bars
 ```
 
 补齐 A 股股票池历史热度排名，运行后可选择最近 60 或 365 个自然日（含今天）：
 
 ```bash
-uv run python -m backend.scripts.history.sync_hot_stock
+uv run python -m backend.scripts.history.sync_daily_hot
 ```
 
 读取 A 股库 `daily_stocks` 在历史区间内出现过的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
@@ -265,13 +327,13 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 ## 命令入口
 
 - `backend/run.py`：启动 FastAPI；
-- `backend/scripts/latest/sync_stock_list.py`：同步股票列表；
+- `backend/scripts/latest/sync_daily_stocks.py`：同步股票列表；
 - `backend/scripts/init_hk_us_stock_pools.py`：独立手动初始化或添加港股、美股股票池，可重复执行；
-- `backend/scripts/latest/sync_stock_daily_basic.py`：同步最近 3 日每日指标；
-- `backend/scripts/latest/sync_stock_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
+- `backend/scripts/latest/sync_daily_basic.py`：同步最近 3 日每日指标；
+- `backend/scripts/latest/sync_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
 - `backend/scripts/latest/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
   无需 OpenD；默认最多 2 个并发请求，单股失败记录到 `failed_symbols`；
-- `backend/scripts/latest/sync_hot_stock.py`：分别向三个市场数据库同步当天股票热度；
+- `backend/scripts/latest/sync_daily_hot.py`：分别向三个市场数据库同步当天股票热度；
 - `backend/scripts/history/`：每日指标、日 K 和 A 股热度的历史补数入口。
 
 ```bash
@@ -319,16 +381,19 @@ cn_market
 
 ```bash
 # 交互选择近 60 日、近半年（180 日）、近一年（365 日）、近三年（1095 日）
-uv run python -m backend.scripts.history.sync_stock_list
-# 直接指定自然日范围（含今天）和线程数；每次重新拉取并覆盖已有快照
-uv run python -m backend.scripts.history.sync_stock_list --lookback-days 180 --workers 5
+uv run python -m backend.scripts.history.sync_daily_stocks
 ```
 
-线程数默认读取 `sync_workers`（可用环境变量 `SYNC_WORKERS` 设置），`--workers` 可覆盖。
+股票池最多使用 10 个线程，并发数不超过范围内的交易日数量。
+日常与历史股票池脚本共用 `scripts/latest/sync_daily_stocks.py` 组装依赖，API 和定时任务也调用此入口。
+历史脚本处理菜单和参数，日常脚本提供共用初始化入口；交易日、快照写入及失败汇总由 `CNMarketService` 负责，线程池和限速交给 `utils/concurrency.py`。
+股票池统一调用 `update_daily_stocks(lookback_days=None)`：不传天数同步最新快照，指定天数同步该自然日范围内的交易日；无交易日时跳过。
 各交易日并发拉取，保留请求启动间隔限速，数据库由主线程统一写入。
 所有范围均截至上海时区今天，不需要输入开始或结束日期。新拉取的完整快照按交易日替换旧数据。
 
-先补股票池，再补历史日 K；历史日 K 同步覆盖区间内出现过的股票（含后来退池成员）。
+历史日 K 同步不依赖本地股票池，按交易日获取当日全市场行情（含后来退市的股票）。
+日 K 请求并发且保留限速，主线程写入；空数据、日期不符或达到 6000 条上限时报告失败，
+成功日期仍会保存，重跑按 `(symbol, trade_date)` 更新。历史回测仍需单独补齐股票池快照。
 历史快照同步失败会以非零状态退出，失败日期的旧快照保留，已成功日期更新；重跑会重新拉取整个所选范围。
 每日列表同步同样使用 `bak_basic`，遇到尚未发布的当日数据会报错并保留已有快照。
 

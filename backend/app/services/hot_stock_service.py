@@ -80,7 +80,7 @@ class HotStockService:
         frame = frame.drop_duplicates(subset=["trade_date", "symbol"], keep="last")
         return frame[columns].reset_index(drop=True)
 
-    def update_hot_stock(
+    def update_daily_hot(
         self,
         trade_date: date | datetime | str | None = None,
     ) -> int:
@@ -122,7 +122,7 @@ class HotStockService:
                 latest_update_time = self.stock_hot_repository.get_latest_update_time()
                 if not self._is_hot_stock_fresh(latest_update_time, current_time):
                     trade_date = self._to_shanghai_naive(current_time).date()
-                    self.update_hot_stock(trade_date)
+                    self.update_daily_hot(trade_date)
 
         return self.stock_hot_repository.get_latest_data()
 

@@ -7,15 +7,15 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from tqdm import tqdm
 
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase
 from backend.app.provider.hithink_provider import HithinkProvider
 from backend.app.repository import DailyHotRepository, DailyStockRepository
+from backend.app.utils.progress import progress_bar, progress_write
 
 
-def fetch_stock_rank(symbol: str, name: str, start: str, end: str) -> pd.DataFrame:
+def fetch_daily_hot(symbol: str, name: str, start: str, end: str) -> pd.DataFrame:
     """在线程中等待并获取数据；数据库统一由主线程写入。"""
     time.sleep(random.uniform(1.0, 2.0))
     items = HithinkProvider().fetch_hot_stock_rank_trend(symbol, start, end)
@@ -33,7 +33,7 @@ def fetch_stock_rank(symbol: str, name: str, start: str, end: str) -> pd.DataFra
     return rows
 
 
-def sync_hot_stock_history(lookback_days: int = 365) -> int:
+def sync_daily_hot(lookback_days: int = 365) -> int:
     """补齐最近指定自然日范围（含今天）的热度排名。"""
     if lookback_days <= 0:
         raise ValueError("lookback_days 必须大于 0")
@@ -57,15 +57,12 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
         for symbol, group in history.groupby("symbol")
     }
     repository = DailyHotRepository(database)
-    print(
-        f"同步 {len(symbols)} 只股票：{start} 至 {end}，并发数 {settings.sync_workers}"
-    )
     total = 0
     failed, empty = [], []
     with ThreadPoolExecutor(max_workers=settings.sync_workers) as executor:
         futures = {
             executor.submit(
-                fetch_stock_rank,
+                fetch_daily_hot,
                 symbol,
                 symbol,
                 start.isoformat(),
@@ -73,8 +70,13 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
             ): symbol
             for symbol in symbols
         }
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="同步历史热度"
+        for future in progress_bar(
+            as_completed(futures),
+            total=len(futures),
+            desc="同步历史热度",
+            unit="只",
+            range_text=f"{start} 至 {end}",
+            workers=settings.sync_workers,
         ):
             symbol = futures[future]
             try:
@@ -92,7 +94,7 @@ def sync_hot_stock_history(lookback_days: int = 365) -> int:
                 total += repository.fill_stock_hot_daily(rows)
             except Exception as exc:
                 failed.append(symbol)
-                tqdm.write(f"{symbol} 同步失败：{exc}")
+                progress_write(f"{symbol} 同步失败：{exc}")
 
     print(f"写入 {total} 条（含覆盖）；失败 {len(failed)} 只；无数据 {len(empty)} 只")
     if empty:
@@ -117,10 +119,10 @@ def main() -> None:
 
     match choice:
         case "1":
-            sync_hot_stock_history(60)
+            sync_daily_hot(60)
 
         case "2":
-            sync_hot_stock_history(365)
+            sync_daily_hot(365)
 
         case "e":
             print("退出")

@@ -12,17 +12,20 @@ def main() -> None:
             e. 退出
           """)
 
-    choice = input("请输入选项: ").strip().lower()
-    lookback_days_by_choice = {"1": 60, "2": 365}
+    choice = input("请输入选项: ").strip()
 
-    if choice == "e":
-        print("退出")
-        return
-    if choice not in lookback_days_by_choice:
-        print(f"无效选项: {choice}")
-        return
+    match choice:
+        case "1":
+            sync_hk_us_daily_bars(60)
 
-    sync_hk_us_daily_bars(lookback_days_by_choice[choice])
+        case "2":
+            sync_hk_us_daily_bars(365)
+
+        case "e":
+            print("退出")
+
+        case _:
+            print(f"无效选项: {choice}")
 
 
 if __name__ == "__main__":

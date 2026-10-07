@@ -70,13 +70,13 @@ class HotStockSnapshotTests(unittest.TestCase):
         ])]:
             provider.fetch_hot_rank.return_value = frame
             with self.assertRaises(ValueError):
-                service.update_hot_stock('2026-09-30')
+                service.update_daily_hot('2026-09-30')
         # 热度缺失由格式化和 Service 的记录数检查统一拦截。
         provider.fetch_hot_rank.return_value = IwencaiProvider.format_hot_rank([
             {'股票代码': 'A', '股票简称': 'A', '个股热度': '--'}
         ])
         with self.assertRaises(ValueError):
-            service.update_hot_stock('2026-09-30')
+            service.update_daily_hot('2026-09-30')
         repository.upsert_stock_hot_daily.assert_not_called()
 
     def test_provider_rejects_incomplete_page(self):

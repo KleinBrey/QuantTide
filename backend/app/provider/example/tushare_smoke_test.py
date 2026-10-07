@@ -12,13 +12,15 @@ def main() -> None:
     #     fields="ts_code,symbol,name,area,industry,market",
     # )
 
-    data = provider.pro.daily_basic(
-        ts_code="",
-        trade_date="",
-        start_date="20260801",
-        end_date="20260818",
-        fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pb",
-    )
+    # data = provider.pro.daily_basic(
+    #     ts_code="",
+    #     trade_date="",
+    #     start_date="20260801",
+    #     end_date="20260818",
+    #     fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pb",
+    # )
+
+    data = provider.pro.daily(trade_date="20260810")
 
     # 提取单个股票，跨时间段的历史日线
     # data = provider.pro.daily(

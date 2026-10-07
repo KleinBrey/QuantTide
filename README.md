@@ -70,32 +70,31 @@ uv run python -m backend.scripts.init_hk_us_stock_pools
 依次同步 A 股股票列表、日 K 和当日股票热度：
 
 ```bash
-uv run python -m backend.scripts.latest.sync_stock_list
-uv run python -m backend.scripts.latest.sync_stock_daily_basic
+uv run python -m backend.scripts.latest.sync_daily_stocks
+uv run python -m backend.scripts.latest.sync_daily_basic
 uv run quant-sync
 uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
-uv run python -m backend.scripts.latest.sync_hot_stock
+uv run python -m backend.scripts.latest.sync_daily_hot
 ```
 
 同步入口按用途拆分到 `backend/scripts/latest/` 和 `backend/scripts/history/`。
-`quant-sync` 指向 `latest.sync_stock_daily_bars`，直接更新最近 3 个自然日的
-A 股日 K，每批 100 只。`latest` 下的每日指标和港美股日 K 同样直接更新最近 3 日，
-热度脚本同步当天数据，股票列表脚本保存最新交易日的完整股票池快照。
+`quant-sync` 指向 `latest.sync_daily_bars`，直接更新最近 3 个自然日的
+A 股日 K，按范围内的交易日逐日获取全市场数据。`latest` 下的每日指标和港美股日 K 同样直接更新最近 3 日，
+热度脚本同步当天数据，股票池脚本同步最近 3 个自然日内的完整交易日快照。
 
 需要补历史数据时使用：
 
 ```bash
-uv run python -m backend.scripts.history.sync_stock_list
-uv run python -m backend.scripts.history.sync_stock_daily_basic
-uv run python -m backend.scripts.history.sync_stock_daily_bars
+uv run python -m backend.scripts.history.sync_daily_stocks
+uv run python -m backend.scripts.history.sync_daily_basic
+uv run python -m backend.scripts.history.sync_daily_bars
 uv run python -m backend.scripts.history.sync_hk_us_daily_bars
-uv run python -m backend.scripts.history.sync_hot_stock
+uv run python -m backend.scripts.history.sync_daily_hot
 ```
 
 历史股票池入口可选最近 60、180（半年）、365（一年）、1095（三年）个自然日（含今天），每次重新拉取并覆盖已有快照，
-支持 `--lookback-days 180 --workers 5` 直接运行；默认线程数使用 `SYNC_WORKERS` 配置。
-历史每日指标和日 K 入口提供最近 60、365 个自然日选项，A 股日 K 分别每批
-50、10 只；历史热度入口同样可选最近 60、365 个自然日（含今天），补齐 A 股排名。
+历史股票池通过菜单选择范围，最多 10 个线程并发同步。
+A 股历史每日指标和日 K 入口提供最近 60、180、365、1095 个自然日选项，A 股日 K 按交易日拉取全市场数据，不依赖本地股票池；历史热度入口可选最近 60、365 个自然日（含今天），补齐 A 股排名。
 港美股日 K 从两个市场各自的 `stocks` 表读取股票，通过 `YFinanceProvider`
 从 Yahoo Finance 获取，写入对应的 `daily_bars` 表，无需启动 Futu OpenD。
 价格使用 Yahoo 自动复权，成交量保留上游口径，成交额 `amount` 写入 NULL，

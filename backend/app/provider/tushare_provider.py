@@ -149,23 +149,16 @@ class TushareProvider:
             raise ValueError("历史股票池包含未知交易所")
         return result
 
-    def fetch_historical(
-        self,
-        thscode: str,
-        start: int,
-        end: int,
-    ) -> dict:
-        """获取历史行情，并返回 CNMarketService 能处理的字段和单位。"""
-
-        result = self.pro.daily(
-            ts_code=thscode,
-            start_date=timestamp_to_date(start),
-            end_date=timestamp_to_date(end),
-        )
-
+    def fetch_daily_bar(self, trade_date: date) -> pd.DataFrame:
+        """获取指定交易日全市场未复权日 K，保留 Tushare 原始字段和单位。"""
+        result = self.pro.daily(trade_date=trade_date.strftime("%Y%m%d"))
         if result is None or result.empty:
             return pd.DataFrame()
-
+        if len(result) >= 6000:
+            raise RuntimeError(f"{trade_date} 日 K 达到接口 6000 条上限，拒绝保存可能截断的数据")
+        dates = pd.to_datetime(result["trade_date"], format="%Y%m%d", errors="raise").dt.date
+        if dates.isna().any() or not dates.eq(trade_date).all():
+            raise ValueError("日 K 返回的日期与请求日期不一致")
         return result
 
     def fetch_daily_basic(self, trade_date: date | None = None) -> pd.DataFrame:

@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import random
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-from tqdm.auto import tqdm
 
 from ..provider import HithinkProvider, IwencaiProvider, TushareProvider
 from ..repository import (
@@ -18,7 +15,8 @@ from ..repository import (
     DailyBasicRepository,
     DailyStockRepository,
 )
-from ..utils.symbol import chunked
+from ..utils.progress import progress_bar, progress_write
+from ..utils.concurrency import concurrent_requests
 from .hot_stock_service import HotStockService
 
 
@@ -142,27 +140,74 @@ class CNMarketService(HotStockService):
         # 只保留目标列，并按 columns 中的顺序排列
         return frame[columns].reset_index(drop=True)
 
-    def update_stocks_list(self, trade_date: date | None = None):
-        """获取股票列表数据"""
-        try:
-            # API 请求数据
-            result = self.tushare_provider.fetch_stock_list(trade_date)
-            # 格式化清洗数据
-            stock_list = self.format_stock_list(result, "Tushare")
-            # 存到数据库
-            affected = self.daily_stock_repository.upsert_stocks(stock_list)
-        except Exception as e:
-            print(f"股票列表更新失败: {e}")
-            raise
-        else:
-            print("股票列表更新成功!")
-            return affected
-
-    def update_stock_daily_basic(
+    def update_daily_stocks(
         self,
         lookback_days: int | None = None,
     ) -> int:
-        """按日期并发获取股票每日指标，并在主线程中依次写入数据库。"""
+        """同步最新股票池，或按交易日覆盖最近 N 个自然日（含今天）的快照。"""
+
+        # 默认开10个线程
+        max_workers: int = 10
+
+        if lookback_days is None:
+            days: list[date | None] = [None]
+            range_text = "最新交易日"
+        else:
+            if lookback_days <= 0:
+                raise ValueError("lookback_days 必须大于 0")
+            end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            start = end - timedelta(days=lookback_days - 1)
+            if start < date(2016, 1, 1):
+                raise ValueError("历史股票池范围必须从 2016-01-01 起")
+            days = self.tushare_provider.fetch_trade_dates(start, end)
+            if not days:
+                print(f"{start} 至 {end} 无交易日，跳过股票池同步")
+                return 0
+            range_text = f"{start} 至 {end}"
+
+        worker_count = min(max_workers, len(days))
+
+        def fetch(day: date | None) -> pd.DataFrame:
+            # API 请求数据
+            result = self.tushare_provider.fetch_stock_list(day)
+            # 格式化清洗数据
+            stock_list = self.format_stock_list(result, "Tushare")
+            return stock_list
+
+        total, failures = 0, []
+        with concurrent_requests(
+            days,
+            fetch,
+            max_workers=max_workers,
+            request_interval=0.6,
+            thread_name_prefix="daily-stocks",
+        ) as results:
+            for day, future in progress_bar(
+                results,
+                total=len(days),
+                desc="覆盖同步股票池",
+                unit="交易日",
+                range_text=range_text,
+                workers=worker_count,
+            ):
+                try:
+                    total += self.daily_stock_repository.upsert_stocks(future.result())
+                except Exception as error:
+                    day_text = day.isoformat() if day else "最新交易日"
+                    failures.append(day_text)
+                    progress_write(f"{day_text} 同步失败：{error}")
+        print(f"股票池写入 {total} 条（含覆盖），失败 {len(failures)} 日")
+        if failures:
+            raise RuntimeError(
+                "股票池未完整同步，可重跑覆盖同步：" + ", ".join(sorted(failures))
+            )
+        return total
+
+    def update_daily_basic(
+        self,
+        lookback_days: int | None = None,
+    ) -> int:
+        """按交易日并发获取股票每日指标，并在主线程中依次写入数据库。"""
 
         # 默认开10个线程
         max_workers: int = 10
@@ -173,197 +218,112 @@ class CNMarketService(HotStockService):
             if lookback_days <= 0:
                 raise ValueError("lookback_days 必须大于 0")
 
-            end_date = date.today()
+            end_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
             start_date = end_date - timedelta(days=lookback_days - 1)
-            dates = [
-                start_date + timedelta(days=offset) for offset in range(lookback_days)
-            ]
+            dates = self.tushare_provider.fetch_trade_dates(start_date, end_date)
+            if not dates:
+                print(f"{start_date} 至 {end_date} 无交易日，跳过每日指标同步")
+                return 0
         affected_rows = 0
         failed_dates: list[date | None] = []
 
-        # daily_basic 单次最多返回 6000 条，因此每个日期作为一个并发请求任务。
-        request_lock = threading.Lock()
-        last_request_time = 0.0
-
-        def fetch_date(trade_date: date | None) -> pd.DataFrame:
-            nonlocal last_request_time
-
-            with request_lock:
-                now = time.monotonic()
-                interval = random.uniform(0.5, 1.0)
-                wait_time = interval - (now - last_request_time)
-                if wait_time > 0:
-                    time.sleep(wait_time)
-                last_request_time = time.monotonic()
-
-            return self.tushare_provider.fetch_daily_basic(trade_date)
-
+        # 每个交易日为一个请求任务，结果由主线程写入。
         worker_count = min(max_workers, len(dates))
-        with ThreadPoolExecutor(
-            max_workers=worker_count,
+        with concurrent_requests(
+            dates,
+            self.tushare_provider.fetch_daily_basic,
+            max_workers=max_workers,
             thread_name_prefix="daily-basic",
-        ) as executor:
-            futures = {
-                executor.submit(fetch_date, trade_date): trade_date
-                for trade_date in dates
-            }
-
-            progress = tqdm(
-                as_completed(futures),
-                total=len(futures),
+        ) as results:
+            progress = progress_bar(
+                results,
+                total=len(dates),
                 desc="同步股票每日指标",
-                unit="日",
+                unit="交易日",
+                range_text=(
+                    "最新交易日"
+                    if lookback_days is None
+                    else f"{start_date} 至 {end_date}"
+                ),
+                workers=worker_count,
             )
-            for future in progress:
-                trade_date = futures[future]
+            for trade_date, future in progress:
                 try:
                     daily_basic = future.result()
                 except Exception as error:
                     failed_dates.append(trade_date)
                     date_text = trade_date.isoformat() if trade_date else "最新交易日"
-                    tqdm.write(f"{date_text} 每日指标获取失败: {error}")
+                    progress_write(f"{date_text} 每日指标获取失败: {error}")
                     continue
 
                 # DuckDB 写入集中在主线程，避免多个连接并发写同一张表。
-                affected_rows += (
-                    self.daily_basic_repository.upsert_stock_daily_basic(
-                        daily_basic
-                    )
+                affected_rows += self.daily_basic_repository.upsert_stock_daily_basic(
+                    daily_basic
                 )
                 progress.set_postfix(写入=affected_rows, 失败=len(failed_dates))
 
         range_text = (
-            "最新交易日" if lookback_days is None else f"最近 {lookback_days} 日"
+            "最新交易日" if lookback_days is None else f"最近 {lookback_days} 个自然日"
         )
         print(f"股票每日指标更新成功（{range_text}），共写入 {affected_rows} 条")
         if failed_dates:
             print(f"获取失败日期数量: {len(failed_dates)}")
         return affected_rows
 
-    def update_daily_bar(
-        self,
-        lookback_days: int = 60,
-        batch_size: int = 50,
-        *,
-        historical: bool = False,
-    ):
-        """获取股票历史日K线数据"""
-        # batch_size 请求一次包含50支股票
-        # 60 个自然日用于覆盖策略所需的至少 25 个交易日，并为节假日留余量。
+    def update_daily_bars(self, lookback_days: int = 60) -> int:
+        """按交易日获取最近 N 个自然日（含今天）的全市场日 K。"""
+        if lookback_days <= 0:
+            raise ValueError("lookback_days 必须大于 0")
 
-        end = int(time.time() * 1000)
+        end_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        start_date = end_date - timedelta(days=lookback_days - 1)
+        dates = self.tushare_provider.fetch_trade_dates(start_date, end_date)
+        if not dates:
+            print(f"{start_date} 至 {end_date} 无交易日，跳过日 K 同步")
+            return 0
 
-        start = end - lookback_days * 24 * 60 * 60 * 1000
-
-        stocks_list_from_db = self.daily_stock_repository.get_latest_data()
-
-        symbols = [
-            f"{stock.symbol}" for stock in stocks_list_from_db.itertuples(index=False)
-        ]
-        if historical:
-            symbols = self.daily_stock_repository.get_symbols_in_range(
-                pd.Timestamp(start, unit="ms", tz="Asia/Shanghai"),
-                pd.Timestamp(end, unit="ms", tz="Asia/Shanghai"),
-            )
-            if not symbols:
-                raise ValueError("区间内无历史股票池，请先补齐 daily_stocks")
-
-        batches = list(
-            chunked(
-                symbols,
-                batch_size,
-            )
-        )
-
-        failed_symbols = []
-
-        """ 控制多个线程之间的请求间隔 """
-        request_lock = threading.Lock()
-
-        last_request_time = 0.0
-
-        def fetch_batch(batch):
-            # 使用外层作用域的变量
-            nonlocal last_request_time
-
-            thscode = ",".join(batch)
-
-            with request_lock:
-                now = time.monotonic()
-
-                # 每次请求至少间隔 0.5 ~ 1 秒
-                interval = random.uniform(0.5, 1.0)
-
-                wait_time = interval - (now - last_request_time)
-
-                if wait_time > 0:
-                    time.sleep(wait_time)
-
-                last_request_time = time.monotonic()
-
-            return self.tushare_provider.fetch_historical(
-                thscode,
-                start,
-                end,
-            )
-
-        with ThreadPoolExecutor(
+        affected_rows = 0
+        failed_dates: list[date] = []
+        worker_count = min(10, len(dates))
+        with concurrent_requests(
+            dates,
+            self.tushare_provider.fetch_daily_bar,
             max_workers=10,
             thread_name_prefix="daily-bar",
-        ) as executor:
-
-            futures = {}
-
-            # 1. 提交所有任务
-            for batch in batches:
-                future = executor.submit(
-                    fetch_batch,
-                    batch,
-                )
-
-                futures[future] = batch
-
-            # 2. 哪个任务先完成，就先处理哪个
-            for future in tqdm(
-                as_completed(futures),
-                total=len(futures),
+        ) as results:
+            progress = progress_bar(
+                results,
+                total=len(dates),
                 desc="同步股票日线",
-                unit="批",
-            ):
-                batch = futures[future]
-
+                unit="交易日",
+                range_text=f"{start_date} 至 {end_date}",
+                workers=worker_count,
+            )
+            for trade_date, future in progress:
                 try:
-                    # API 请求数据
                     result = future.result()
-
-                    # 格式化清洗数据
+                    if result is None or result.empty:
+                        raise RuntimeError(
+                            "交易日日 K 数据为空，可能尚未发布，请稍后重试"
+                        )
                     daily_list = self.format_daily_list(result)
-
-                    # 过滤掉volumn = 0 的数据
                     daily_list = daily_list[
                         daily_list["volume"].notna() & (daily_list["volume"] != 0)
                     ]
+                    # DuckDB 写入集中在主线程，避免并发写同一张表。
+                    affected_rows += self.daily_repository.upsert_daily_bars(daily_list)
+                except Exception as error:
+                    failed_dates.append(trade_date)
+                    progress_write(f"{trade_date} 日 K 同步失败: {error}")
+                progress.set_postfix(写入=affected_rows, 失败=len(failed_dates))
 
-                    # 存到数据库
-                    self.daily_repository.upsert_daily_bars(daily_list)
-
-                except Exception as e:
-                    # 当前整批股票都记录为失败
-                    failed_symbols.extend(batch)
-
-                    tqdm.write(f"当前股票批次获取失败，共 {len(batch)} 只: {e}")
-
-        print("日线股票列表数据更新完成")
-
-        # 最后统一统计失败股票
-        if failed_symbols:
-            print(f"获取失败股票数量: {len(failed_symbols)}")
-
-            # print("获取失败股票:")
-            # for symbol in failed_symbols:
-            #     print(symbol)
-        else:
-            print("全部股票获取成功")
+        if failed_dates:
+            raise RuntimeError(
+                f"日 K 未完整同步，已写入 {affected_rows} 条，失败日期："
+                + ", ".join(map(str, sorted(failed_dates)))
+            )
+        print(f"日 K 更新完成，共 {len(dates)} 个交易日，写入 {affected_rows} 条")
+        return affected_rows
 
     def update_hithink_daily_bar(self):
         """获取同花顺股票历史日K线数据"""
@@ -374,35 +334,26 @@ class CNMarketService(HotStockService):
 
         stocks_list_from_db = self.daily_stock_repository.get_latest_data()
 
-        with ThreadPoolExecutor(
+        symbols = [
+            f"{stock.symbol}.{stock.exchange}"
+            for stock in stocks_list_from_db.itertuples(index=False)
+        ]
+        with concurrent_requests(
+            symbols,
+            lambda symbol: self.hithink_provider.fetch_historical(symbol, start, end),
             max_workers=10,
+            request_interval=0,
             thread_name_prefix="daily-bar",
-        ) as executor:
-
-            futures = {}
-
-            # 1. 提交所有任务
-            for stock in stocks_list_from_db.itertuples(index=False):
-                symbol = f"{stock.symbol}.{stock.exchange}"
-
-                future = executor.submit(
-                    self.hithink_provider.fetch_historical,
-                    symbol,
-                    start,
-                    end,
-                )
-
-                futures[future] = symbol
-
-            # 2. 哪个任务先完成，就先处理哪个
-            for future in tqdm(
-                as_completed(futures),
-                total=len(futures),
+        ) as results:
+            for symbol, future in progress_bar(
+                results,
+                total=len(symbols),
                 desc="同步同花顺股票日线",
-                unit="个",
+                unit="只",
+                range_text=f"{pd.Timestamp(start, unit='ms', tz='Asia/Shanghai').date()} 至 "
+                f"{pd.Timestamp(end, unit='ms', tz='Asia/Shanghai').date()}",
+                workers=min(10, len(symbols)),
             ):
-                symbol = futures[future]
-
                 try:
                     # API 请求数据
                     result = future.result()
@@ -414,6 +365,6 @@ class CNMarketService(HotStockService):
                     self.daily_repository.upsert_daily_bars(daily_list)
 
                 except Exception as e:
-                    tqdm.write(f"{symbol} 获取失败: {e}")
+                    progress_write(f"{symbol} 获取失败: {e}")
 
         print("日线股票列表数据更新完成")

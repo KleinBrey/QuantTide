@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pandas as pd
-from tqdm import tqdm
 
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
 from backend.app.provider import YFinanceProvider
+from backend.app.utils.progress import progress_bar, progress_write
 from backend.app.repository import (
     HKDailyBarRepository,
     HKStockRepository,
@@ -134,11 +134,6 @@ def sync_market_daily_k(
 
     failed_symbols: list[str] = []
     affected_rows = 0
-    print(
-        f"同步{market_name}日 K：{len(symbols)} 只股票，"
-        f"最近 {lookback_days} 个自然日，并发数 {max_workers}",
-        flush=True,
-    )
 
     with ThreadPoolExecutor(
         max_workers=max_workers,
@@ -146,11 +141,14 @@ def sync_market_daily_k(
     ) as executor:
         futures = {executor.submit(fetch_symbol, symbol): symbol for symbol in symbols}
 
-        for future in tqdm(
+        for future in progress_bar(
             as_completed(futures),
             total=len(futures),
             desc=f"同步{market_name}日 K",
-            dynamic_ncols=True,
+            unit="只",
+            range_text=f"{pd.Timestamp(start, unit='ms', tz='Asia/Shanghai').date()} 至 "
+            f"{pd.Timestamp(end, unit='ms', tz='Asia/Shanghai').date()}",
+            workers=max_workers,
         ):
             symbol = futures[future]
             try:
@@ -160,7 +158,7 @@ def sync_market_daily_k(
                 affected_rows += daily_repository.upsert_daily_bars(rows)
             except Exception as error:
                 failed_symbols.append(symbol)
-                tqdm.write(f"{market_name} {symbol} 获取失败: {error}")
+                progress_write(f"{market_name} {symbol} 获取失败: {error}")
 
     print(
         f"{market_name}日 K 同步完成：股票 {len(symbols)} 只，"
