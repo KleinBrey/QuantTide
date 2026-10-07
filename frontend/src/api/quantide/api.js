@@ -10,6 +10,14 @@ export function getMarketStocksApi(params = {}) {
   return request.get('/api/market-stocks', params);
 }
 
+export function addMarketStockApi(stock) {
+  return request.post('/api/market-stocks', stock);
+}
+
+export function deleteMarketStockApi(params) {
+  return request.delete('/api/market-stocks', params);
+}
+
 // 更新股票标的列表
 export function updateStocksListApi(params = {}) {
   return request.post('/api/stocks-list', params);

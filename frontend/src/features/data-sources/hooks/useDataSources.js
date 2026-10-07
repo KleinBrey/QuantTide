@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchLatestUpdateTimes,
   syncDailyK,
+  syncHkUsDailyK,
   syncHotStock,
   syncStockDailyBasic,
   syncStockList
@@ -17,9 +18,19 @@ const SYNC_TASKS = [
   },
   {
     id: 'daily-k',
-    name: '日 K 线数据',
-    description: '同步最近 3 个自然日的行情，每批处理 100 只股票。',
+    name: 'A 股日 K 线数据',
+    description: '同步最近 3 个自然日的 A 股行情。',
     run: syncDailyK
+  },
+  {
+    id: 'hk-us-daily-k',
+    name: '港美股日 K 线数据',
+    description: '通过 Yahoo Finance 同步港股、美股股票池最近 3 个自然日的行情。',
+    latestDataFields: [
+      { id: 'hk-daily-k', label: '港股数据' },
+      { id: 'us-daily-k', label: '美股数据' }
+    ],
+    run: syncHkUsDailyK
   },
   {
     id: 'stock-daily-basic',

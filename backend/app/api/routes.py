@@ -29,7 +29,7 @@ from backend.app.repository import (
     USStockHotDailyRepository,
     USStockRepository,
 )
-from backend.app.schemas import DailyBar, HotStock, GlobalStock, Stock
+from backend.app.schemas import AddMarketStock, DailyBar, HotStock, GlobalStock, Stock
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 from backend.quant.signal.registry import (
     SIGNAL_EXECUTORS,
@@ -49,6 +49,7 @@ from backend.scripts.latest.sync_daily_bars import sync_daily_bars
 from backend.scripts.latest.sync_daily_hot import sync_daily_hot
 from backend.scripts.latest.sync_daily_basic import sync_daily_basic
 from backend.scripts.latest.sync_daily_stocks import sync_daily_stocks
+from backend.scripts.latest.sync_hk_us_daily_bars import sync_hk_us_daily_bars
 
 from .dependencies import (
     get_daily_repository,
@@ -178,6 +179,27 @@ async def sync_daily_bars_database() -> dict[str, str | float]:
     )
 
 
+@router.post("/database-sync/hk-us-daily-k")
+async def sync_hk_us_daily_bars_database() -> dict[str, str | float]:
+    """执行最近 3 个自然日的港美股日 K 数据库同步脚本。"""
+
+    def sync() -> None:
+        results = sync_hk_us_daily_bars(lookback_days=365)
+        failures = [
+            f"{market}：{', '.join(result['failed_symbols'])}"
+            for market, result in results.items()
+            if result["failed_symbols"]
+        ]
+        if failures:
+            raise RuntimeError("部分股票同步失败；" + "；".join(failures))
+
+    return await _run_database_sync(
+        "latest/sync_hk_us_daily_bars.py",
+        "最近 365 个自然日的港股和美股日 K 数据同步完成",
+        sync,
+    )
+
+
 @router.post("/database-sync/stock-daily-basic")
 async def sync_daily_basic_database() -> dict[str, str | float]:
     """执行最新交易日股票指标数据库同步脚本。"""
@@ -208,6 +230,8 @@ def database_latest_update_times(
     daily_hot_repository: DailyHotRepo,
     hk_stock_hot_repository: HKStockHotRepository,
     us_stock_hot_repository: USStockHotRepository,
+    hk_daily_repository: HKDailyRepository,
+    us_daily_repository: USDailyRepository,
 ) -> dict[str, datetime | None]:
     """返回各同步数据表的最新更新时间。"""
 
@@ -216,6 +240,8 @@ def database_latest_update_times(
         "hk-hot-stock": hk_stock_hot_repository.get_latest_update_time(),
         "us-hot-stock": us_stock_hot_repository.get_latest_update_time(),
         "daily-k": daily_repository.get_latest_update_time(),
+        "hk-daily-k": hk_daily_repository.get_latest_update_time(),
+        "us-daily-k": us_daily_repository.get_latest_update_time(),
         "stock-daily-basic": daily_basic_repository.get_latest_update_time(),
         "stock-list": daily_stock_repository.get_latest_update_time(),
     }
@@ -252,6 +278,57 @@ def market_stocks(
     }
     stock_table = repositories[market].get_table_data()
     return stock_table.to_dict(orient="records")
+
+
+@router.post("/market-stocks", response_model=GlobalStock, status_code=201)
+def add_market_stock(
+    stock: AddMarketStock,
+    hk_repository: HKStockListRepository,
+    us_repository: USStockListRepository,
+) -> dict:
+    """添加股票池记录；K 线仍由已有的数据同步任务获取。"""
+    try:
+        symbol = normalize_daily_bar_symbol(stock.symbol, stock.market)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    name = stock.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="股票名称不能为空")
+    repository = hk_repository if stock.market == "hk-share" else us_repository
+    with database_sync_lock:
+        if symbol in repository.get_table_data()["symbol"].values:
+            raise HTTPException(status_code=409, detail="该股票已在列表中")
+        repository.upsert_stocks(
+            pd.DataFrame(
+                [
+                    {
+                        "symbol": symbol,
+                        "name": name,
+                        "source": "Manual",
+                    }
+                ]
+            )
+        )
+        rows = repository.get_table_data()
+        return rows.loc[rows["symbol"] == symbol].to_dict(orient="records")[0]
+
+
+@router.delete("/market-stocks")
+def delete_market_stock(
+    hk_repository: HKStockListRepository,
+    us_repository: USStockListRepository,
+    market: Literal["hk-share", "us-share"],
+    symbol: str,
+) -> dict[str, str]:
+    """仅从股票池删除，不删除历史 K 线。"""
+    try:
+        normalized = normalize_daily_bar_symbol(symbol, market)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    repository = hk_repository if market == "hk-share" else us_repository
+    with database_sync_lock:
+        repository.delete_stocks(normalized)
+    return {"status": "success"}
 
 
 @router.post("/stocks-list")

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Stock(BaseModel):
@@ -20,6 +20,12 @@ class GlobalStock(BaseModel):
     name: str
     source: str
     update_time: datetime
+
+
+class AddMarketStock(BaseModel):
+    market: str = Field(pattern=r"^(hk-share|us-share)$")
+    symbol: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=100)
 
 
 class DailyBar(BaseModel):

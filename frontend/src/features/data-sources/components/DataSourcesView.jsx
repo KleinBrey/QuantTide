@@ -49,10 +49,12 @@ export default function DataSourcesView({
                 <p className={styles.description}>{task.description}</p>
 
                 <dl>
-                  <div>
-                    <dt>最新数据</dt>
-                    <dd>{latestDataText(task.id, latestUpdateTimes, latestDataStatus)}</dd>
-                  </div>
+                  {(task.latestDataFields || [{ id: task.id, label: '最新数据' }]).map(field => (
+                    <div key={field.id}>
+                      <dt>{field.label}</dt>
+                      <dd>{latestDataText(field.id, latestUpdateTimes, latestDataStatus)}</dd>
+                    </div>
+                  ))}
                   <div>
                     <dt>最近执行</dt>
                     <dd>{shortTime(result.finishedAt)}</dd>

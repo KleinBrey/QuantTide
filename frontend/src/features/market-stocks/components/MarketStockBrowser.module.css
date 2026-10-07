@@ -13,6 +13,8 @@
   border-right: 1px solid #27272a;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .listHeader {
@@ -25,6 +27,7 @@
   height: 48px;
   justify-content: space-between;
   padding: 0 14px;
+  flex: 0 0 48px;
 }
 
 .listHeader strong {
@@ -37,43 +40,68 @@
 }
 
 .stockList {
-  max-height: calc(100vh - 233px);
-  overflow-y: auto;
+  height: calc(100vh - 233px);
+  min-height: 240px;
   padding: 6px;
+}
+
+.stockList :global(.ag-body-viewport),
+.stockList :global(.ag-body-vertical-scroll-viewport) {
   scrollbar-color: #3f3f46 transparent;
   scrollbar-width: thin;
+}
+
+.stockList :global(.ag-row) {
+  border: 0;
+  cursor: pointer;
+}
+
+.stockList :global(.ag-row-selected) {
+  color: #fafafa;
+}
+
+.stockList .stockItem {
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.stockList :global(.ag-row-hover) .stockItem {
+  background: #1c1c1f;
+}
+
+.stockList :global(.ag-row-selected) .stockItem {
+  background: #27272a;
+  border-color: #3f3f46;
+}
+
+.stockList :global(.ag-cell) {
+  border: 0;
+  padding: 0;
+}
+
+.stockList :global(.ag-cell.ag-cell-focus:not(.ag-cell-range-selected)) {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+.stockList :global(.ag-row:has(.ag-cell:focus-visible)) .stockItem {
+  border-color: #71717a;
 }
 
 .stockItem {
   align-items: center;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: #d4d4d8;
+  color: inherit;
   cursor: pointer;
   display: flex;
   font: inherit;
   gap: 12px;
   justify-content: space-between;
-  min-height: 45px;
+  height: 100%;
   padding: 7px 10px;
   text-align: left;
   width: 100%;
-}
-
-.stockItem:hover {
-  background: #1c1c1f;
-}
-
-.stockItem:focus-visible {
-  outline: 2px solid #71717a;
-  outline-offset: -2px;
-}
-
-.stockItem.selected {
-  background: #27272a;
-  border-color: #3f3f46;
-  color: #fafafa;
 }
 
 .stockItem span {
@@ -92,8 +120,23 @@
   font-variant-numeric: tabular-nums;
 }
 
-.selected small {
+.stockList :global(.ag-row-selected) small,
+.stockDragPreviewSelected small {
   color: #a1a1aa;
+}
+
+.stockDragPreview {
+  background: #111114;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #d4d4d8;
+  pointer-events: none;
+}
+
+.stockDragPreviewSelected {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #fafafa;
 }
 
 .listState {
@@ -109,8 +152,153 @@
   text-align: center;
 }
 
-.error {
+.listActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.addButton, .closeButton, .submitButton {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  color: #d4d4d8;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 4px;
+  justify-content: center;
+}
+
+.addButton {
+  font-size: 11px;
+  font-weight: 500;
+  height: 27px;
+  padding: 0 6px;
+}
+
+.addButton:hover, .closeButton:hover, .submitButton:hover {
+  background: #27272a;
+}
+
+.addButton:disabled, .closeButton:disabled, .submitButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.addButton:focus-visible, .closeButton:focus-visible, .submitButton:focus-visible,
+.addPopover input:focus-visible {
+  outline: 2px solid #71717a;
+  outline-offset: 2px;
+}
+
+.contextMenu, .addPopover {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+  box-shadow: 0 8px 24px #0006;
+  color: #e4e4e7;
+  font-family: inherit;
+  font-size: 13px;
+  z-index: 100;
+}
+
+.contextMenu {
+  min-width: 160px;
+  padding: 5px;
+}
+
+.menuItem {
+  align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  min-height: 36px;
+  outline: none;
+  padding: 0 10px;
+  user-select: none;
+}
+
+.menuItem[data-highlighted] {
+  background: #27272a;
+}
+
+.menuItem[data-disabled] {
+  color: #71717a;
+  cursor: default;
+}
+
+.menuSeparator {
+  background: #27272a;
+  height: 1px;
+  margin: 5px;
+}
+
+.addPopover {
+  padding: 14px;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+}
+
+.addTitle {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.closeButton {
+  border: 0;
+  height: 24px;
+  width: 24px;
+}
+
+.addPopover form, .addPopover label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addPopover form {
+  gap: 12px;
+}
+
+.addPopover label {
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.addPopover input {
+  background: #111114;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  color: #e4e4e7;
+  font: inherit;
+  height: 33px;
+  padding: 0 9px;
+  width: 100%;
+}
+
+.addPopover input::placeholder {
+  color: #71717a;
+}
+
+.submitButton {
+  height: 32px;
+}
+
+.formError, .actionError {
   color: #fda4af;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.actionError {
+  padding: 8px 14px;
 }
 
 .chartPane {
@@ -130,11 +318,6 @@
   }
 
   .stockList {
-    display: grid;
-    grid-auto-columns: minmax(150px, 42vw);
-    grid-auto-flow: column;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
+    height: 240px;
   }
 }
