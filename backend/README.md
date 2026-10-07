@@ -127,26 +127,32 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 ```python
 from backend.app.utils.progress import progress_bar, progress_write
 
-for future in progress_bar(
+progress = progress_bar(
     as_completed(futures),
     total=len(futures),
     desc="同步历史热度",
     unit="只",
     range_text=f"{start} 至 {end}",
     workers=max_workers,
-):
+)
+written, failed = 0, 0
+for future in progress:
     try:
         result = future.result()
+        written += repository.upsert(result)
     except Exception as error:
+        failed += 1
         progress_write(f"获取失败：{error}")
+progress.finish(written=written, failed=failed)
 ```
 
-任务说明统一展示名称、总量、范围和最大并发数；进度条统一展示百分比、完成数、
-单位、耗时、剩余时间和速度。股票使用“只”，日期使用“日”，批量请求使用“批”，
+任务说明拆为三行：名称、日期范围、总量与最大并发数。进度条统一使用“同步进度”，
+仅展示百分比、完成数、耗时、剩余时间和速度；写入数和失败数由 `finish()` 在结束后单独汇总，
+数量使用千位分隔。有失败时显示“未完整完成”。股票使用“只”，交易日速度简写为“日/s”，批量请求使用“批”，
 总量必须与实际迭代项一致。`range_text` 和 `workers` 可省略。
-返回的进度条仍支持 `with`、`update()` 和 `set_postfix()`。
+返回的进度条仍支持 `with`、`update()` 和 `set_postfix()`，但紧凑格式不显示 postfix。
 样式只需修改 `utils/progress.py`；任务说明、进度条和 `progress_write()` 消息
-默认统一写入 stderr，`disable=True` 可关闭任务说明和进度条。
+默认统一写入 stderr，`disable=True` 可关闭任务说明、进度条和汇总。
 
 `utils/concurrency.py` 提供 `concurrent_requests()`，封装线程池、请求启动限速锁、
 按完成顺序收集结果和线程清理。A 股股票池、每日指标和日 K 服务共用它：

@@ -141,7 +141,7 @@ def sync_market_daily_k(
     ) as executor:
         futures = {executor.submit(fetch_symbol, symbol): symbol for symbol in symbols}
 
-        for future in progress_bar(
+        progress = progress_bar(
             as_completed(futures),
             total=len(futures),
             desc=f"同步{market_name}日 K",
@@ -149,7 +149,8 @@ def sync_market_daily_k(
             range_text=f"{pd.Timestamp(start, unit='ms', tz='Asia/Shanghai').date()} 至 "
             f"{pd.Timestamp(end, unit='ms', tz='Asia/Shanghai').date()}",
             workers=max_workers,
-        ):
+        )
+        for future in progress:
             symbol = futures[future]
             try:
                 rows = format_yfinance_daily_bars(symbol, future.result())
@@ -160,10 +161,7 @@ def sync_market_daily_k(
                 failed_symbols.append(symbol)
                 progress_write(f"{market_name} {symbol} 获取失败: {error}")
 
-    print(
-        f"{market_name}日 K 同步完成：股票 {len(symbols)} 只，"
-        f"写入 {affected_rows} 条，失败 {len(failed_symbols)} 只"
-    )
+    progress.finish(written=affected_rows, failed=len(failed_symbols))
     return {
         "stocks": len(symbols),
         "rows": affected_rows,

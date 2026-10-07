@@ -182,21 +182,22 @@ class CNMarketService(HotStockService):
             request_interval=0.6,
             thread_name_prefix="daily-stocks",
         ) as results:
-            for day, future in progress_bar(
+            progress = progress_bar(
                 results,
                 total=len(days),
                 desc="覆盖同步股票池",
                 unit="交易日",
                 range_text=range_text,
                 workers=worker_count,
-            ):
+            )
+            for day, future in progress:
                 try:
                     total += self.daily_stock_repository.upsert_stocks(future.result())
                 except Exception as error:
                     day_text = day.isoformat() if day else "最新交易日"
                     failures.append(day_text)
                     progress_write(f"{day_text} 同步失败：{error}")
-        print(f"股票池写入 {total} 条（含覆盖），失败 {len(failures)} 日")
+        progress.finish(written=total, failed=len(failures))
         if failures:
             raise RuntimeError(
                 "股票池未完整同步，可重跑覆盖同步：" + ", ".join(sorted(failures))
@@ -260,14 +261,8 @@ class CNMarketService(HotStockService):
                 affected_rows += self.daily_basic_repository.upsert_stock_daily_basic(
                     daily_basic
                 )
-                progress.set_postfix(写入=affected_rows, 失败=len(failed_dates))
 
-        range_text = (
-            "最新交易日" if lookback_days is None else f"最近 {lookback_days} 个自然日"
-        )
-        print(f"股票每日指标更新成功（{range_text}），共写入 {affected_rows} 条")
-        if failed_dates:
-            print(f"获取失败日期数量: {len(failed_dates)}")
+        progress.finish(written=affected_rows, failed=len(failed_dates))
         return affected_rows
 
     def update_daily_bars(self, lookback_days: int = 60) -> int:
@@ -315,14 +310,13 @@ class CNMarketService(HotStockService):
                 except Exception as error:
                     failed_dates.append(trade_date)
                     progress_write(f"{trade_date} 日 K 同步失败: {error}")
-                progress.set_postfix(写入=affected_rows, 失败=len(failed_dates))
 
+        progress.finish(written=affected_rows, failed=len(failed_dates))
         if failed_dates:
             raise RuntimeError(
                 f"日 K 未完整同步，已写入 {affected_rows} 条，失败日期："
                 + ", ".join(map(str, sorted(failed_dates)))
             )
-        print(f"日 K 更新完成，共 {len(dates)} 个交易日，写入 {affected_rows} 条")
         return affected_rows
 
     def update_hithink_daily_bar(self):
@@ -338,6 +332,7 @@ class CNMarketService(HotStockService):
             f"{stock.symbol}.{stock.exchange}"
             for stock in stocks_list_from_db.itertuples(index=False)
         ]
+        affected_rows, failed = 0, 0
         with concurrent_requests(
             symbols,
             lambda symbol: self.hithink_provider.fetch_historical(symbol, start, end),
@@ -345,7 +340,7 @@ class CNMarketService(HotStockService):
             request_interval=0,
             thread_name_prefix="daily-bar",
         ) as results:
-            for symbol, future in progress_bar(
+            progress = progress_bar(
                 results,
                 total=len(symbols),
                 desc="同步同花顺股票日线",
@@ -353,7 +348,8 @@ class CNMarketService(HotStockService):
                 range_text=f"{pd.Timestamp(start, unit='ms', tz='Asia/Shanghai').date()} 至 "
                 f"{pd.Timestamp(end, unit='ms', tz='Asia/Shanghai').date()}",
                 workers=min(10, len(symbols)),
-            ):
+            )
+            for symbol, future in progress:
                 try:
                     # API 请求数据
                     result = future.result()
@@ -362,9 +358,10 @@ class CNMarketService(HotStockService):
                         symbol.split(".")[0], result
                     )
                     # 存到数据库
-                    self.daily_repository.upsert_daily_bars(daily_list)
+                    affected_rows += self.daily_repository.upsert_daily_bars(daily_list)
 
                 except Exception as e:
+                    failed += 1
                     progress_write(f"{symbol} 获取失败: {e}")
 
-        print("日线股票列表数据更新完成")
+        progress.finish(written=affected_rows, failed=failed)

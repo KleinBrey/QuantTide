@@ -70,14 +70,15 @@ def sync_daily_hot(lookback_days: int = 365) -> int:
             ): symbol
             for symbol in symbols
         }
-        for future in progress_bar(
+        progress = progress_bar(
             as_completed(futures),
             total=len(futures),
             desc="同步历史热度",
             unit="只",
             range_text=f"{start} 至 {end}",
             workers=settings.sync_workers,
-        ):
+        )
+        for future in progress:
             symbol = futures[future]
             try:
                 rows = future.result()
@@ -96,7 +97,7 @@ def sync_daily_hot(lookback_days: int = 365) -> int:
                 failed.append(symbol)
                 progress_write(f"{symbol} 同步失败：{exc}")
 
-    print(f"写入 {total} 条（含覆盖）；失败 {len(failed)} 只；无数据 {len(empty)} 只")
+    progress.finish(written=total, failed=len(failed), empty=len(empty))
     if empty:
         print("无数据股票：" + ", ".join(empty))
     if failed:
