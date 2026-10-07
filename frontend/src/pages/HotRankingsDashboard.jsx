@@ -51,7 +51,7 @@ function MarketRankingPanel({ market }) {
           </Button>
         </div>
       </div>
-      <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>
+      <div className={styles.tableWrap}>
         <RankingTable rows={ranking.rows} loading={rankingLoading} marketId={market.id} showKline={isFullscreen} />
       </div>
     </section>

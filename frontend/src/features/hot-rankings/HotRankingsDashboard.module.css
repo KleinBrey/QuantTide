@@ -3,6 +3,16 @@
   overflow-x: auto;
 }
 
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panelHeader {
+  flex-shrink: 0;
+}
+
 .headerActions {
   align-items: center;
   display: flex;
@@ -10,12 +20,6 @@
 }
 
 .tableWrap {
-  display: block;
-  height: 100%;
-  min-height: 480px;
-}
-
-.fullscreenTableWrap {
   flex: 1;
   height: auto;
   min-height: 0;
@@ -23,7 +27,9 @@
 
 @media (max-width: 1180px) {
   .dashboardGrid {
+    grid-auto-rows: minmax(550px, auto);
     grid-template-columns: 1fr;
+    height: auto;
     overflow-x: visible;
   }
 }
