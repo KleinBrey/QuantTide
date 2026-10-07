@@ -8,9 +8,11 @@ import pandas as pd
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api.dependencies import get_hk_stock_repository, get_us_stock_repository
+from backend.app.api.dependencies import get_hk_stock_repository, get_us_stock_repository, get_watchlist_service
 from backend.app.api.routes import router
-from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase
+from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
+from backend.app.repository.watchlist import WatchlistRepository
+from backend.app.services.watchlist_service import WatchlistService
 from backend.app.repository import (
     HKDailyBarRepository, HKStockRepository, USDailyBarRepository, USStockRepository,
 )
@@ -34,6 +36,12 @@ class MarketStockManagementTests(unittest.TestCase):
             self.repositories[market] = repository
             self.bars[market] = bar_class(db)
             app.dependency_overrides[dependency] = lambda repository=repository: repository
+        sqlite = SQLiteDatabase(Path(temporary.name) / 'app.sqlite')
+        sqlite.initialize()
+        self.watchlists = WatchlistRepository(sqlite)
+        self.watchlists.migrate_stock_pools([], [])
+        service = WatchlistService(self.watchlists, None, self.repositories['hk-share'], self.repositories['us-share'])
+        app.dependency_overrides[get_watchlist_service] = lambda: service
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
@@ -73,6 +81,8 @@ class MarketStockManagementTests(unittest.TestCase):
             self.repositories[market].upsert_stocks(pd.DataFrame([{
                 "symbol": symbol, "name": "公司", "source": "Manual",
             }]))
+            market_code = 'HK' if market == 'hk-share' else 'US'
+            self.watchlists.add_item(self.watchlists.get_pool(market_code)['id'], market_code, symbol)
             self.bars[market].upsert_daily_bars(pd.DataFrame([{
                 "symbol": symbol, "trade_date": "2026-10-06", "open": 10,
                 "high": 12, "low": 9, "close": 11, "volume": 100, "source": "Test",
@@ -82,10 +92,12 @@ class MarketStockManagementTests(unittest.TestCase):
                 for _ in range(2):
                     response = self.client.delete("/api/market-stocks", params={"market": market, "symbol": symbol})
                     self.assertEqual(response.status_code, 200)
-                self.assertTrue(self.repositories[market].get_table_data().empty)
+                rows = self.client.get('/api/market-stocks', params={'market': market}).json()
+                self.assertEqual(rows, [])
+                self.assertEqual(len(self.repositories[market].get_table_data()), 1)
                 self.assertEqual(len(self.bars[market].get_table_data()), 1)
                 if market == "hk-share":
-                    self.assertEqual(len(self.repositories["us-share"].get_table_data()), 1)
+                    self.assertEqual(len(self.client.get('/api/market-stocks', params={'market': 'us-share'}).json()), 1)
 
 
 if __name__ == "__main__":

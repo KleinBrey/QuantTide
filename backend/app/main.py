@@ -5,10 +5,13 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.app.api import router
 from backend.app.config.config import get_settings
-from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
+from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
+from backend.app.repository.watchlist import WatchlistRepository, WatchlistError
+from backend.app.services.watchlist_service import WatchlistService
 from backend.app.jobs import create_scheduler
 from backend.app.provider import HithinkProvider, IwencaiProvider, TushareProvider
 from backend.app.repository import (
@@ -47,6 +50,16 @@ async def lifespan(app: FastAPI):
     daily_stock_repository = DailyStockRepository(database)
     hk_stock_repository = HKStockRepository(hk_database)
     us_stock_repository = USStockRepository(us_database)
+    app_database = SQLiteDatabase(settings.app_database_path)
+    app_database.initialize()
+    watchlist_repository = WatchlistRepository(app_database)
+    watchlist_repository.migrate_stock_pools(
+        hk_stock_repository.get_table_data()['symbol'].tolist(),
+        us_stock_repository.get_table_data()['symbol'].tolist(),
+    )
+    app.state.watchlist_service = WatchlistService(
+        watchlist_repository, daily_stock_repository, hk_stock_repository, us_stock_repository,
+    )
     daily_basic_repository = DailyBasicRepository(database)
     daily_repository = DailyBarRepository(database)
     hk_daily_repository = HKDailyBarRepository(hk_database)
@@ -112,6 +125,11 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(WatchlistError)
+async def watchlist_error_handler(request, error: WatchlistError):
+    return JSONResponse(status_code=error.status_code, content={'detail': str(error)})
 
 # 允许配置中声明的前端来源跨域访问 API。
 app.add_middleware(

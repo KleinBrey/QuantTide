@@ -66,8 +66,10 @@ from .dependencies import (
     get_us_stock_hot_repository,
     get_us_daily_repository,
 )
+from .watchlists import router as watchlist_router, Service as WatchlistServiceDep
 
 router = APIRouter()
+router.include_router(watchlist_router)
 logger = logging.getLogger(__name__)
 
 # DuckDB 只允许一个同步任务写入，避免用户连续点击导致写入互相冲突。
@@ -263,21 +265,16 @@ def stocks(
 
 @router.get("/market-stocks", response_model=list[GlobalStock])
 def market_stocks(
-    hk_repository: HKStockListRepository,
-    us_repository: USStockListRepository,
+    watchlist_service: WatchlistServiceDep,
     market: Annotated[
         Literal["hk-share", "us-share"],
         Query(description="股票池所在的市场数据库"),
     ],
 ) -> list[dict]:
-    """返回港股或美股数据库 ``stocks`` 表的全部记录。"""
+    """返回 SQLite 默认股票池成员，并从 DuckDB 补充基础信息。"""
 
-    repositories = {
-        "hk-share": hk_repository,
-        "us-share": us_repository,
-    }
-    stock_table = repositories[market].get_table_data()
-    return stock_table.to_dict(orient="records")
+    pool = watchlist_service.repository.get_pool('HK' if market == 'hk-share' else 'US')
+    return watchlist_service.list_items(pool['id'])
 
 
 @router.post("/market-stocks", response_model=GlobalStock, status_code=201)
@@ -285,6 +282,7 @@ def add_market_stock(
     stock: AddMarketStock,
     hk_repository: HKStockListRepository,
     us_repository: USStockListRepository,
+    watchlist_service: WatchlistServiceDep,
 ) -> dict:
     """添加股票池记录；K 线仍由已有的数据同步任务获取。"""
     try:
@@ -295,28 +293,25 @@ def add_market_stock(
     if not name:
         raise HTTPException(status_code=422, detail="股票名称不能为空")
     repository = hk_repository if stock.market == "hk-share" else us_repository
+    market = 'HK' if stock.market == 'hk-share' else 'US'
+    pool = watchlist_service.repository.get_pool(market)
     with database_sync_lock:
-        if symbol in repository.get_table_data()["symbol"].values:
+        if any(item['symbol'] == symbol for item in watchlist_service.repository.list_items(pool['id'])):
             raise HTTPException(status_code=409, detail="该股票已在列表中")
-        repository.upsert_stocks(
-            pd.DataFrame(
-                [
-                    {
-                        "symbol": symbol,
-                        "name": name,
-                        "source": "Manual",
-                    }
-                ]
+        if symbol not in repository.get_table_data()['symbol'].values:
+            repository.upsert_stocks(
+                pd.DataFrame(
+                    [{"symbol": symbol, "name": name, "source": "Manual"}]
+                )
             )
-        )
+        watchlist_service.repository.add_item(pool['id'], market, symbol)
         rows = repository.get_table_data()
         return rows.loc[rows["symbol"] == symbol].to_dict(orient="records")[0]
 
 
 @router.delete("/market-stocks")
 def delete_market_stock(
-    hk_repository: HKStockListRepository,
-    us_repository: USStockListRepository,
+    watchlist_service: WatchlistServiceDep,
     market: Literal["hk-share", "us-share"],
     symbol: str,
 ) -> dict[str, str]:
@@ -325,9 +320,10 @@ def delete_market_stock(
         normalized = normalize_daily_bar_symbol(symbol, market)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    repository = hk_repository if market == "hk-share" else us_repository
     with database_sync_lock:
-        repository.delete_stocks(normalized)
+        market_code = 'HK' if market == 'hk-share' else 'US'
+        pool = watchlist_service.repository.get_pool(market_code)
+        watchlist_service.repository.remove_stock(pool['id'], market_code, normalized)
     return {"status": "success"}
 
 

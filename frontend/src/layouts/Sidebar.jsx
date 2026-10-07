@@ -1,14 +1,7 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
 import logoUrl from '@/assets/branding/logo.png';
 import React from 'react';
-import {
-  Radar,
-  LayoutDashboard,
-  DatabaseBackup,
-  Flame,
-  History,
-  Server
-} from 'lucide-react';
+import { Radar, LayoutDashboard, DatabaseBackup, Flame, History, Server } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { dashboardGroups } from '../routes/RouteConfig.js';
 import style from './Sidebar.module.css';

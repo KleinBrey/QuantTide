@@ -4,9 +4,10 @@ import {
   ScrollApiModule, colorSchemeDark, themeQuartz
 } from 'ag-grid-community';
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
-import { ChevronsDown, ChevronsUp, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { ChevronRight, ChevronsDown, ChevronsUp, FolderPlus, Loader2, Plus, RefreshCcw, Trash2, X } from 'lucide-react';
 import { ContextMenu, Popover } from 'radix-ui';
 
+import AShareStockSearch from './AShareStockSearch.jsx';
 import styles from './MarketStockBrowser.module.css';
 
 const modules = [ClientSideRowModelModule, ClientSideRowModelApiModule, RenderApiModule, RowApiModule, RowDragModule, RowSelectionModule, ScrollApiModule];
@@ -62,6 +63,19 @@ function StockCell({ data, context }) {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content aria-label={`${data.name}操作`} className={styles.contextMenu} collisionPadding={8}>
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger className={styles.menuItem} disabled={context.disabled || context.groups.length < 2}>
+              <FolderPlus size={17} />加入分组<ChevronRight className={styles.submenuArrow} size={14} />
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent className={styles.contextMenu} collisionPadding={8}>
+                {context.groups.filter(group => group.id !== context.groupId).map(group => (
+                  <ContextMenu.Item key={group.id} className={styles.menuItem} onSelect={() => context.addToGroup(group.id, data)}>{group.name}</ContextMenu.Item>
+                ))}
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
+          <ContextMenu.Separator className={styles.menuSeparator} />
           <ContextMenu.Item
             className={styles.menuItem}
             disabled={context.disabled || index === 0}
@@ -82,7 +96,7 @@ function StockCell({ data, context }) {
             disabled={context.disabled}
             onSelect={() => context.removeStock(data.symbol)}
           >
-            <Trash2 size={17} />删除
+            <Trash2 size={17} />移出当前分组
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -91,7 +105,7 @@ function StockCell({ data, context }) {
 }
 
 export default function MarketStockList({ marketId, stocks, selectedStock, setSelectedStock, loading,
-  error, mutating, actionError, addStock, removeStock, moveStock, reorderStocks }) {
+  error, mutating, actionError, addStock, removeStock, moveStock, reorderStocks, groups, groupId, addToGroup, refresh }) {
   const gridRef = useRef(null);
   const nameInputRef = useRef(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -99,8 +113,8 @@ export default function MarketStockList({ marketId, stocks, selectedStock, setSe
   const [name, setName] = useState('');
   const [addError, setAddError] = useState('');
   const disabled = loading || mutating;
-  const context = useMemo(() => ({ stocks, disabled, moveStock, removeStock }),
-    [stocks, disabled, moveStock, removeStock]);
+  const context = useMemo(() => ({ stocks, disabled, moveStock, removeStock, groups, groupId, addToGroup }),
+    [stocks, disabled, moveStock, removeStock, groups, groupId, addToGroup]);
 
   const syncSelection = api => {
     if (selectedStock) api.getRowNode(selectedStock.symbol)?.setSelected(true);
@@ -148,16 +162,19 @@ export default function MarketStockList({ marketId, stocks, selectedStock, setSe
   return (
     <>
       <div className={styles.listHeader}>
-        <span>股票列表</span>
+        <span>名称 / 代码</span>
         <div className={styles.listActions}>
           <strong>{stocks.length}</strong>
+          <button aria-label="刷新股票列表" className={styles.closeButton} disabled={disabled} onClick={refresh} title="刷新列表" type="button">
+            <RefreshCcw size={14} />
+          </button>
           <Popover.Root open={addOpen} onOpenChange={open => {
             if (mutating) return;
             setAddOpen(open);
             setAddError('');
           }}>
             <Popover.Trigger asChild>
-              <button aria-label="添加股票" className={styles.addButton} disabled={disabled} type="button">
+              <button aria-label="添加股票" className={styles.addButton} disabled={disabled || !groupId} type="button">
                 <Plus size={14} />添加股票
               </button>
             </Popover.Trigger>
@@ -168,12 +185,15 @@ export default function MarketStockList({ marketId, stocks, selectedStock, setSe
                   nameInputRef.current?.focus();
                 }}>
                 <div className={styles.addTitle}>
-                  <span>添加{marketId === 'hk-share' ? '港股' : '美股'}</span>
+                  <span>添加{marketId === 'a-share' ? 'A股' : marketId === 'hk-share' ? '港股' : '美股'}</span>
                   <Popover.Close aria-label="关闭添加股票" className={styles.closeButton} disabled={mutating}>
                     <X size={16} />
                   </Popover.Close>
                 </div>
-                <form onSubmit={handleAdd}>
+                {marketId === 'a-share' ? (
+                  <AShareStockSearch inputRef={nameInputRef} stocks={stocks} disabled={disabled}
+                    onAdd={async stock => { if (await addStock(stock)) setAddOpen(false); }} />
+                ) : <form onSubmit={handleAdd}>
                   <label>
                     股票名称
                     <input ref={nameInputRef} autoComplete="off" disabled={mutating} maxLength={100} onChange={event => setName(event.target.value)}
@@ -189,7 +209,7 @@ export default function MarketStockList({ marketId, stocks, selectedStock, setSe
                     {mutating && <Loader2 className="dashboard-spin" size={14} />}
                     {mutating ? '添加中' : '添加股票'}
                   </button>
-                </form>
+                </form>}
               </Popover.Content>
             </Popover.Portal>
           </Popover.Root>
@@ -238,7 +258,7 @@ export default function MarketStockList({ marketId, stocks, selectedStock, setSe
           </AgGridProvider>
         </div>
       ) : (
-        <div className={styles.listState}>{error || '暂无股票，点击上方添加股票'}</div>
+        <div className={styles.listState}>{error || (groupId ? '暂无股票，点击上方添加股票' : '暂无自选分组，请在上方新建分组')}</div>
       )}
     </>
   );

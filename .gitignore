@@ -22,3 +22,6 @@ data/hk_market.duckdb.wal
 data/us_market.duckdb
 data/us_market.duckdb.wal
 data/migration_backups/
+data/app.sqlite
+data/app.sqlite-wal
+data/app.sqlite-shm

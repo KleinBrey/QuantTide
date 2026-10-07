@@ -9,7 +9,6 @@ const DataSourcesDashboard = lazy(() => import('@/pages/DataSourcesDashboard.jsx
 const HotRankingsDashboard = lazy(() => import('@/pages/HotRankingsDashboard.jsx'));
 const SignalsDashboard = lazy(() => import('@/pages/SignalsDashboard.jsx'));
 const StrategyBacktestsDashboard = lazy(() => import('@/pages/StrategyBacktestsDashboard.jsx'));
-const AShareMarket = lazy(() => import('@/pages/AShareMarket.jsx'));
 const MarketStocks = lazy(() => import('@/pages/MarketStocks.jsx'));
 
 function RouteFallback() {
@@ -31,7 +30,7 @@ export default function AppRoutes() {
         <Route path="/data-sources" element={<DataSourcesDashboard />} />
         <Route path="/signals" element={<SignalsDashboard />} />
         <Route path="/strategy-backtests" element={<StrategyBacktestsDashboard />} />
-        <Route path="/a-share-market" element={<AShareMarket />} />
+        <Route path="/a-share-market" element={<MarketStocks key="a-share" marketId="a-share" />} />
         <Route path="/hk-share-market" element={<MarketStocks key="hk-share" marketId="hk-share" />} />
         <Route path="/us-share-market" element={<MarketStocks key="us-share" marketId="us-share" />} />
 

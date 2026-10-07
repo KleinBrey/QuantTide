@@ -10,7 +10,8 @@ from typing import Any
 import pandas as pd
 
 from backend.app.config.config import get_settings
-from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
+from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
+from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.provider import YFinanceProvider
 from backend.app.utils.progress import progress_bar, progress_write
 from backend.app.repository import (
@@ -91,6 +92,7 @@ def sync_market_daily_k(
     request_interval: float = 0.5,
     *,
     now_ms: int | None = None,
+    symbols: list[str] | None = None,
 ) -> dict[str, Any]:
     """同步单个市场 ``stocks`` 表内全部股票的历史日 K。"""
 
@@ -102,10 +104,11 @@ def sync_market_daily_k(
         raise ValueError("request_interval 不能小于 0")
 
     database.initialize()
-    stocks = stock_repository.get_table_data()
-    symbols = stocks["symbol"].astype("string").dropna().tolist()
+    if symbols is None:
+        stocks = stock_repository.get_table_data()
+        symbols = stocks["symbol"].astype("string").dropna().tolist()
     if not symbols:
-        print(f"{market_name} stocks 表为空，跳过日 K 同步")
+        print(f"{market_name}股票池为空，跳过日 K 同步")
         return {"stocks": 0, "rows": 0, "failed_symbols": []}
 
     end = now_ms if now_ms is not None else int(time.time() * 1000)
@@ -177,8 +180,9 @@ def sync_hk_us_daily_bars(
     provider: YFinanceProvider | None = None,
     hk_database: DuckDBDatabase | None = None,
     us_database: DuckDBDatabase | None = None,
+    app_database: SQLiteDatabase | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """从港股和美股 ``stocks`` 表同步历史日 K。"""
+    """从 SQLite 中港股和美股 stock_pool 默认分组同步历史日 K。"""
 
     settings = get_settings()
     workers = (
@@ -189,6 +193,20 @@ def sync_hk_us_daily_bars(
     quote_provider = provider if provider is not None else YFinanceProvider()
     hk_db = hk_database or HKDuckDBDatabase(settings.hk_database_path)
     us_db = us_database or USDuckDBDatabase(settings.us_database_path)
+    hk_db.initialize()
+    us_db.initialize()
+    business_db = app_database or SQLiteDatabase(
+        hk_db.database_path.parent / 'app.sqlite' if hk_database is not None else settings.app_database_path
+    )
+    business_db.initialize()
+    watchlists = WatchlistRepository(business_db)
+    watchlists.migrate_stock_pools(
+        HKStockRepository(hk_db).get_table_data()['symbol'].tolist(),
+        USStockRepository(us_db).get_table_data()['symbol'].tolist(),
+    )
+
+    def pool_symbols(market):
+        return [row['symbol'] for row in watchlists.list_items(watchlists.get_pool(market)['id'])]
 
     return {
         "hk": sync_market_daily_k(
@@ -200,6 +218,7 @@ def sync_hk_us_daily_bars(
             lookback_days,
             workers,
             request_interval,
+            symbols=pool_symbols('HK'),
         ),
         "us": sync_market_daily_k(
             us_db,
@@ -210,6 +229,7 @@ def sync_hk_us_daily_bars(
             lookback_days,
             workers,
             request_interval,
+            symbols=pool_symbols('US'),
         ),
     }
 

@@ -16,6 +16,8 @@ export class QuantClient extends HttpClient {
     // 写回 message 后，业务层可以继续统一读取 error.message。
     if (typeof serverMessage === 'string' && serverMessage) {
       error.message = serverMessage;
+    } else if (Array.isArray(serverMessage)) {
+      error.message = serverMessage.map(item => item.msg).filter(Boolean).join('；') || error.message;
     }
 
     return super.handleResponseError(error);

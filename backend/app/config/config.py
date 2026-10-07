@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     database_path: Path = Field(default=PROJECT_ROOT / "data" / "cn_market.duckdb")
     hk_database_path: Path = Field(default=PROJECT_ROOT / "data" / "hk_market.duckdb")
     us_database_path: Path = Field(default=PROJECT_ROOT / "data" / "us_market.duckdb")
+    app_database_path: Path = Field(default=PROJECT_ROOT / "data" / "app.sqlite")
 
     # 跨域 # CORS 允许的源
     cors_origins_list: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]

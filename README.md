@@ -1,6 +1,6 @@
 # QuantTide（量潮）
 
-QuantTide 是一个本地 A 股量化投研平台，使用 FastAPI、DuckDB、Pandas 和 APScheduler，提供股票基础信息、日 K、股票热度同步、自然语言选股以及量化策略实验能力。
+QuantTide 是一个本地量化投研平台，使用 FastAPI、SQLite、DuckDB、Pandas 和 APScheduler，提供股票基础信息、日 K、自选股分组、股票热度同步、自然语言选股以及量化策略实验能力。
 
 ## 项目结构
 
@@ -23,6 +23,7 @@ quanttide/
 │   ├── scripts/             # 股票列表、日 K、热度同步脚本
 │   └── run.py               # API 快捷启动入口
 ├── data/
+│   ├── app.sqlite             # 自选分组、成员和排序等业务数据
 │   ├── cn_market.duckdb       # A 股
 │   ├── hk_market.duckdb       # 港股
 │   └── us_market.duckdb       # 美股
@@ -95,7 +96,7 @@ uv run python -m backend.scripts.history.sync_daily_hot
 历史股票池入口可选最近 60、180（半年）、365（一年）、1095（三年）个自然日（含今天），每次重新拉取并覆盖已有快照，
 历史股票池通过菜单选择范围，最多 10 个线程并发同步。
 A 股历史每日指标和日 K 入口提供最近 60、180、365、1095 个自然日选项，A 股日 K 按交易日拉取全市场数据，不依赖本地股票池；历史热度入口可选最近 60、365 个自然日（含今天），补齐 A 股排名。
-港美股日 K 从两个市场各自的 `stocks` 表读取股票，通过 `YFinanceProvider`
+港美股日 K 从 SQLite 中各市场的 `stock_pool` 默认分组读取成员，通过 `YFinanceProvider`
 从 Yahoo Finance 获取，写入对应的 `daily_bars` 表，无需启动 Futu OpenD。
 价格使用 Yahoo 自动复权，成交量保留上游口径，成交额 `amount` 写入 NULL，
 来源为 `YFinance`。同步默认最多 2 个并发请求，请求失败时指数退避重试。
@@ -123,6 +124,37 @@ uv run uvicorn backend.app.main:app \
 - Swagger：<http://127.0.0.1:8001/docs>
 - `GET /api/stocks-list`：读取本地股票列表
 - `POST /api/stocks-list`：从 Tushare 更新股票列表
+
+## 自选股与分组
+
+港股、美股行情页顶部提供横跨股票列表和 K 线的自选分组栏。默认选中本市场的
+`stock_pool`；点击右侧下拉箭头可新建、重命名、删除和排序分组。
+分组标签和股票均可拖拽排序，股票右键菜单可将同一股票加入其他分组。
+同一分组内禁止重复添加同一市场、同一代码的股票。
+
+业务数据只存入 `data/app.sqlite` 的 `watchlist_groups`、`watchlist_items` 两张表。
+分组表增加 `market` 和 `is_default`，用于区分 HK、US 同名的 `stock_pool`；
+`market` 为空的普通分组可跨市场使用，行情页只展示本市场成员。
+界面新建的分组归属当前市场；API 可通过 `market: null` 创建跨市场分组。
+SQLite 不复制股票名称或行情，这些信息按成员的 CN/HK/US 市场从 DuckDB 读取。
+
+后端或港美股同步脚本首次启动时，将两个 DuckDB 的现有 `stocks` 成员原子迁入
+各自的 `stock_pool`，通过 SQLite `user_version` 记录一次性迁移。HK、US 默认分组
+不可删除或重命名，CN 没有 `stock_pool`。移出自选、删除普通分组不会删除 DuckDB
+基础信息或历史行情；移出的股票不会在重启时被再次迁入。
+显式执行股票池初始化脚本会将脚本名单重新加入默认分组。
+
+可通过 `APP_DATABASE_PATH` 配置 SQLite 路径；每次连接开启外键，删除普通分组时
+级联删除对应成员。已有后端进程需要重启以加载这些接口：
+
+- `GET/POST /api/watchlists/groups`：列出或新建分组。
+- `PATCH/DELETE /api/watchlists/groups/{id}`：重命名或删除普通分组。
+- `PUT /api/watchlists/groups/order`：提交全部分组 ID 的顺序。
+- `GET/POST /api/watchlists/groups/{id}/items`：读取或添加成员。
+- `DELETE /api/watchlists/groups/{id}/items/{item_id}`：移出成员。
+- `PUT /api/watchlists/groups/{id}/items/order`：提交该分组全部成员 ID 的顺序。
+- `GET /api/watchlists/stocks/search?q=名称或代码&market=HK`：查询 DuckDB 股票基础信息。
+- `GET/POST/DELETE /api/market-stocks`：兼容港美股默认分组增删入口。
 
 ## 定时任务
 

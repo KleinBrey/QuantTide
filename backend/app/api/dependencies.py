@@ -13,6 +13,11 @@ from backend.app.repository import (
     USStockRepository,
 )
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
+from backend.app.services.watchlist_service import WatchlistService
+
+
+def get_watchlist_service(request: Request) -> WatchlistService:
+    return request.app.state.watchlist_service
 
 
 def get_daily_stock_repository(request: Request) -> DailyStockRepository:

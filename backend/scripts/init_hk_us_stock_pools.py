@@ -5,7 +5,8 @@ from __future__ import annotations
 import pandas as pd
 
 from backend.app.config.config import get_settings
-from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase
+from backend.app.database import HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
+from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.repository import HKStockRepository, USStockRepository
 
 # 初始股票池来源
@@ -75,16 +76,31 @@ def _stock_frame(rows: tuple[tuple[str, str], ...]) -> pd.DataFrame:
 def init_hk_us_stock_pools(
     hk_database: HKDuckDBDatabase,
     us_database: USDuckDBDatabase,
+    app_database: SQLiteDatabase | None = None,
 ) -> dict[str, int]:
     """幂等写入两个初始股票池，不删除已有的其他股票。"""
 
     hk_database.initialize()
     us_database.initialize()
 
-    return {
+    affected = {
         "hk": HKStockRepository(hk_database).upsert_stocks(_stock_frame(HK_STOCKS)),
         "us": USStockRepository(us_database).upsert_stocks(_stock_frame(US_STOCKS)),
     }
+    business_db = app_database or SQLiteDatabase(hk_database.database_path.parent / 'app.sqlite')
+    business_db.initialize()
+    watchlists = WatchlistRepository(business_db)
+    watchlists.migrate_stock_pools(
+        HKStockRepository(hk_database).get_table_data()['symbol'].tolist(),
+        USStockRepository(us_database).get_table_data()['symbol'].tolist(),
+    )
+    for market, stocks in [('HK', HK_STOCKS), ('US', US_STOCKS)]:
+        group_id = watchlists.get_pool(market)['id']
+        existing = {row['symbol'] for row in watchlists.list_items(group_id)}
+        for symbol, _ in stocks:
+            if symbol not in existing:
+                watchlists.add_item(group_id, market, symbol)
+    return affected
 
 
 def main() -> None:
@@ -92,6 +108,7 @@ def main() -> None:
     affected = init_hk_us_stock_pools(
         HKDuckDBDatabase(settings.hk_database_path),
         USDuckDBDatabase(settings.us_database_path),
+        SQLiteDatabase(settings.app_database_path),
     )
     print(f"股票池初始化完成：港股 {affected['hk']} 条，美股 {affected['us']} 条")
 
