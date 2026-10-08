@@ -12,7 +12,7 @@ function reordered(groups, sourceId, targetId) {
   return next;
 }
 
-export default function MarketStockGroups({ groups, groupId, selectGroup, createGroup, renameGroup,
+export default function MarketStockGroups({ marketId, groups, groupId, selectGroup, createGroup, renameGroup,
   deleteGroup, reorderGroups, loading, mutating, actionError }) {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -23,6 +23,15 @@ export default function MarketStockGroups({ groups, groupId, selectGroup, create
   const tabsRef = useRef(null);
   const editorRef = useRef(null);
   const disabled = loading || mutating;
+
+  useEffect(() => {
+    setOpen(false);
+    setNewName('');
+    setEditId(null);
+    setEditName('');
+    setDeleteId(null);
+    dragRef.current = null;
+  }, [marketId]);
 
   useEffect(() => {
     tabsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -45,7 +54,7 @@ export default function MarketStockGroups({ groups, groupId, selectGroup, create
   };
 
   return (
-    <div className={styles.groupBar}>
+    <div aria-busy={loading} className={styles.groupBar}>
       <div ref={tabsRef} aria-label="自选分组" className={styles.groupTabs} role="tablist">
         {groups.map(group => (
           <button key={group.id} className={styles.groupTab} aria-selected={group.id === groupId} role="tab"

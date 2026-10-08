@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addMarketStockApi,
   getWatchlistGroupsApi,
@@ -25,44 +25,52 @@ function isVisibleGroup(group, market) {
 
 export function useMarketStocks(marketId) {
   const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US' }[marketId];
-  const [groups, setGroups] = useState([]);
-  const [groupId, setGroupId] = useState(null);
+  const [allGroups, setAllGroups] = useState([]);
+  const [activeGroups, setActiveGroups] = useState({});
+  const groups = useMemo(() => allGroups.filter(group => isVisibleGroup(group, market)), [allGroups, market]);
+  const groupId = groups.find(group => group.id === activeGroups[market])?.id ?? groups[0]?.id ?? null;
   const [stocks, setStocks] = useState([]);
+  const [stocksMarket, setStocksMarket] = useState(null);
   const [selectedStock, setSelectedStock] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mutating, setMutating] = useState(false);
   const [actionError, setActionError] = useState('');
   const requestRef = useRef(0);
+  const activeMarketRef = useRef(market);
   const mutationRef = useRef(false);
-  const activeGroupRef = useRef(null);
+  const activeGroupsRef = useRef({});
   const allGroupsRef = useRef([]);
   const allItemsRef = useRef([]);
 
   const loadStocks = useCallback(
     async preferred => {
+      // 切换后，旧市场尚未完成的操作不能重新发起请求覆盖当前市场。
+      if (activeMarketRef.current !== market) return;
       const requestId = ++requestRef.current;
       setLoading(true);
       setError('');
       try {
         const allGroups = (await getWatchlistGroupsApi()).data;
         const visibleGroups = allGroups.filter(group => isVisibleGroup(group, market));
-        const active = visibleGroups.find(group => group.id === activeGroupRef.current) || visibleGroups[0];
+        const active = visibleGroups.find(group => group.id === activeGroupsRef.current[market]) || visibleGroups[0];
         const allItems = active ? (await getWatchlistItemsApi(active.id)).data : [];
         if (requestId !== requestRef.current) return;
         allGroupsRef.current = allGroups;
         allItemsRef.current = allItems;
-        activeGroupRef.current = active?.id ?? null;
-        setGroupId(active?.id ?? null);
-        setGroups(visibleGroups);
+        activeGroupsRef.current[market] = active?.id ?? null;
+        setActiveGroups(current => ({ ...current, [market]: active?.id ?? null }));
+        setAllGroups(allGroups);
         const next = allItems.filter(item => item.market === market);
         setStocks(next);
+        setStocksMarket(market);
         setSelectedStock(
           current => next.find(stock => stock.symbol === (preferred || current?.symbol)) || next[0] || null
         );
       } catch (requestError) {
         if (requestId === requestRef.current) {
           setStocks([]);
+          setStocksMarket(market);
           setSelectedStock(null);
           setError(requestError.message || '获取股票列表失败');
         }
@@ -93,19 +101,19 @@ export function useMarketStocks(marketId) {
         return await mutate(action);
       } catch (requestError) {
         await loadStocks();
-        setActionError(requestError.message || '操作失败，请重试');
+        if (activeMarketRef.current === market) setActionError(requestError.message || '操作失败，请重试');
         return false;
       }
     },
-    [mutate, loadStocks]
+    [mutate, loadStocks, market]
   );
 
   const selectGroup = id => {
-    if (mutationRef.current || loading || id === activeGroupRef.current) return;
-    activeGroupRef.current = id;
+    if (mutationRef.current || loading || stocksMarket !== market || id === activeGroupsRef.current[market]) return;
+    activeGroupsRef.current[market] = id;
     setStocks([]);
     setSelectedStock(null);
-    setGroupId(id);
+    setActiveGroups(current => ({ ...current, [market]: id }));
     setActionError('');
     loadStocks();
   };
@@ -113,7 +121,7 @@ export function useMarketStocks(marketId) {
   const addStock = useCallback(
     stock =>
       mutate(async () => {
-        const active = allGroupsRef.current.find(group => group.id === activeGroupRef.current);
+        const active = allGroupsRef.current.find(group => group.id === activeGroupsRef.current[market]);
         let symbol = stock.symbol;
         if (active.is_default) {
           symbol = (await addMarketStockApi({ ...stock, market: marketId })).data.symbol;
@@ -141,7 +149,7 @@ export function useMarketStocks(marketId) {
   const removeStock = symbol =>
     runAction(async () => {
       const item = stocks.find(stock => stock.symbol === symbol);
-      await deleteWatchlistItemApi(activeGroupRef.current, item.id);
+      await deleteWatchlistItemApi(activeGroupsRef.current[market], item.id);
       await loadStocks();
     });
 
@@ -149,9 +157,10 @@ export function useMarketStocks(marketId) {
     runAction(async () => {
       const merged = mergeVisibleOrder(allItemsRef.current, next, item => item.market === market);
       await reorderWatchlistItemsApi(
-        activeGroupRef.current,
+        activeGroupsRef.current[market],
         merged.map(item => item.id)
       );
+      if (activeMarketRef.current !== market) return;
       allItemsRef.current = merged;
       setStocks(next);
     });
@@ -160,14 +169,15 @@ export function useMarketStocks(marketId) {
     runAction(async () => {
       const merged = mergeVisibleOrder(allGroupsRef.current, next, group => isVisibleGroup(group, market));
       await reorderWatchlistGroupsApi(merged.map(group => group.id));
+      if (activeMarketRef.current !== market) return;
       allGroupsRef.current = merged;
-      setGroups(next);
+      setAllGroups(merged);
     });
 
   const createGroup = name =>
     runAction(async () => {
       const created = (await createWatchlistGroupApi({ name, market })).data;
-      activeGroupRef.current = created.id;
+      activeGroupsRef.current[market] = created.id;
       await loadStocks();
     });
 
@@ -190,21 +200,23 @@ export function useMarketStocks(marketId) {
     });
 
   useEffect(() => {
-    activeGroupRef.current = null;
+    activeMarketRef.current = market;
     loadStocks();
     return () => {
+      activeMarketRef.current = null;
       requestRef.current += 1;
     };
-  }, [loadStocks]);
+  }, [loadStocks, market]);
 
   return {
-    stocks,
-    selectedStock,
+    // 新市场完成加载前隐藏旧市场数据，分组栏继续使用已读取的共享分组。
+    stocks: stocksMarket === market ? stocks : [],
+    selectedStock: stocksMarket === market ? selectedStock : null,
     setSelectedStock,
-    loading,
-    error,
+    loading: loading || stocksMarket !== market,
+    error: stocksMarket === market ? error : '',
     mutating,
-    actionError,
+    actionError: stocksMarket === market ? actionError : '',
     groups,
     groupId,
     selectGroup,

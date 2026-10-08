@@ -10,7 +10,7 @@ quanttide/
 │   ├── app/
 │   │   ├── api/             # FastAPI 路由和依赖
 │   │   ├── config/          # 应用与调度配置
-│   │   ├── database/        # DuckDB 连接、表结构和辅助 SQL
+│   │   ├── database/        # 按 DuckDB、SQLite 分目录管理连接和表结构
 │   │   ├── jobs/            # 定时任务
 │   │   ├── provider/        # Tushare、HiThink、AkShare、问财
 │   │   ├── repository/      # DuckDB 数据访问

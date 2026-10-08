@@ -49,9 +49,12 @@ uv run uvicorn backend.app.main:app \
 
 ### `app/database/`
 
-- `connection.py`：管理 A 股、港股和美股三个 DuckDB 文件的连接；
-- `cn_schema.sql`：创建 A 股股票基础信息、日 K、每日指标和热度表；
-- `hk_schema.sql`、`us_schema.sql`：分别创建港股与美股的基础信息、日 K 和热度表；
+- `duckdb/connection.py`：管理 A 股、港股和美股三个 DuckDB 文件的连接；
+- `duckdb/cn_schema.sql`：创建 A 股股票基础信息、日 K、每日指标和热度表；
+- `duckdb/hk_schema.sql`、`duckdb/us_schema.sql`：分别创建港股与美股的基础信息、日 K 和热度表；
+- `sqlite/connection.py`：管理业务数据库 `data/app.sqlite` 的连接；
+- `sqlite/app_schema.sql`：创建自选股分组、成员和排序等业务表；
+- `__init__.py`：统一导出数据库类，现有导入方式保持兼容；
 - `operation.sql`、`study.md`：DuckDB 操作和学习记录。
 
 主要表：
@@ -361,7 +364,7 @@ uv run quant-backtest
 | 需求 | 目录 |
 | --- | --- |
 | 新增外部数据源 | `app/provider/` |
-| 修改表结构 | `app/database/cn_schema.sql` |
+| 修改表结构 | `app/database/duckdb/*_schema.sql`、`app/database/sqlite/app_schema.sql` |
 | 增加数据库读写 | `app/repository/` |
 | 增加数据格式化或同步流程 | `app/services/` |
 | 增加 HTTP 接口 | `app/api/` 与 `app/schemas/` |

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import duckdb
 
-# 项目根目录：从当前文件所在目录往上三级
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# 项目根目录：从当前文件所在目录往上四级
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 CN_DATABASE_PATH = PROJECT_ROOT / "data" / "cn_market.duckdb"
 HK_DATABASE_PATH = PROJECT_ROOT / "data" / "hk_market.duckdb"

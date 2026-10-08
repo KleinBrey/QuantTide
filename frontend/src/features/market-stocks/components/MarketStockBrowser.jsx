@@ -23,32 +23,39 @@ const MARKET_CONFIG = {
 export default function MarketStockBrowser({ marketId }) {
   const market = MARKET_CONFIG[marketId] || MARKET_CONFIG['hk-share'];
   const stockList = useMarketStocks(marketId);
+
+  return (
+    <div className="dashboard-content">
+      <section aria-label={market.title} className={cn('dashboard-panel', styles.panel)}>
+        <MarketStockGroups marketId={marketId} {...stockList} />
+        <MarketStockContent key={marketId} marketId={marketId} market={market} stockList={stockList} />
+      </section>
+    </div>
+  );
+}
+
+function MarketStockContent({ marketId, market, stockList }) {
   const { selectedStock } = stockList;
   const kline = useMarketStockKline(marketId, selectedStock?.symbol);
   const [period, setPeriod] = useState('daily');
 
   return (
-    <div className="dashboard-content">
-      <section aria-label={market.title} className={cn('dashboard-panel', styles.panel)}>
-        <MarketStockGroups {...stockList} />
-        <div className={styles.browser}>
-          <aside aria-label={`${market.title}股票列表`} className={styles.stockPane}>
-            <MarketStockList marketId={marketId} {...stockList} />
-          </aside>
+    <div className={styles.browser}>
+      <aside aria-label={`${market.title}股票列表`} className={styles.stockPane}>
+        <MarketStockList marketId={marketId} {...stockList} />
+      </aside>
 
-          <div className={styles.chartPane}>
-            <StockKlineChart
-              data={kline.data}
-              enableMouseWheelZoom
-              error={kline.error}
-              loading={kline.loading}
-              onPeriodChange={setPeriod}
-              period={period}
-              stock={selectedStock}
-            />
-          </div>
-        </div>
-      </section>
+      <div className={styles.chartPane}>
+        <StockKlineChart
+          data={kline.data}
+          enableMouseWheelZoom
+          error={kline.error}
+          loading={kline.loading}
+          onPeriodChange={setPeriod}
+          period={period}
+          stock={selectedStock}
+        />
+      </div>
     </div>
   );
 }

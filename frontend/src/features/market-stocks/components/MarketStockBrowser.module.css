@@ -331,11 +331,24 @@
   gap: 3px;
 }
 
-.stockSearchResult strong { font-size: 13px; }
-.stockSearchResult small { color: #a1a1aa; font-size: 11px; }
-.stockSearchResult:hover:not(:disabled) { background: #27272a; }
-.stockSearchResult:disabled { cursor: default; opacity: 0.5; }
-.stockSearchResult:focus-visible { outline: 1px solid #71717a; outline-offset: -1px; }
+.stockSearchResult strong {
+  font-size: 13px;
+}
+.stockSearchResult small {
+  color: #a1a1aa;
+  font-size: 11px;
+}
+.stockSearchResult:hover:not(:disabled) {
+  background: #27272a;
+}
+.stockSearchResult:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.stockSearchResult:focus-visible {
+  outline: 1px solid #71717a;
+  outline-offset: -1px;
+}
 
 .searchHint {
   align-items: center;
@@ -439,6 +452,11 @@
   cursor: default;
   opacity: 0.55;
 }
+/* 后台读取股票时保留分组栏亮度，避免切换市场时反复变暗。 */
+.groupBar[aria-busy='true'] .groupTab:disabled,
+.groupBar[aria-busy='true'] .groupManageButton:disabled {
+  opacity: 1;
+}
 .groupLoading {
   color: #71717a;
   font-size: 12px;
@@ -519,7 +537,7 @@
   color: #fafafa;
 }
 .manageGroupActions .closeButton:disabled {
-  opacity: .25;
+  opacity: 0.25;
 }
 .manageGroupName {
   background: transparent;

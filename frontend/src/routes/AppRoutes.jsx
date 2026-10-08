@@ -30,9 +30,9 @@ export default function AppRoutes() {
         <Route path="/data-sources" element={<DataSourcesDashboard />} />
         <Route path="/signals" element={<SignalsDashboard />} />
         <Route path="/strategy-backtests" element={<StrategyBacktestsDashboard />} />
-        <Route path="/a-share-market" element={<MarketStocks key="a-share" marketId="a-share" />} />
-        <Route path="/hk-share-market" element={<MarketStocks key="hk-share" marketId="hk-share" />} />
-        <Route path="/us-share-market" element={<MarketStocks key="us-share" marketId="us-share" />} />
+        <Route path="/a-share-market" element={<MarketStocks marketId="a-share" />} />
+        <Route path="/hk-share-market" element={<MarketStocks marketId="hk-share" />} />
+        <Route path="/us-share-market" element={<MarketStocks marketId="us-share" />} />
 
         <Route path="/chart-center" element={<PlaceholderDashboard dashboardId="chart-center" />} />
         <Route path="*" element={<Navigate to={defaultDashboardPath} replace />} />

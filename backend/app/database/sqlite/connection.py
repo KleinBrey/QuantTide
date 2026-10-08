@@ -2,7 +2,8 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .connection import PROJECT_ROOT, SCHEMA_DIRECTORY
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+SCHEMA_DIRECTORY = Path(__file__).parent
 
 
 class SQLiteDatabase:

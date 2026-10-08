@@ -38,4 +38,5 @@ include = ["backend*"]
 
 [tool.setuptools.package-data]
 "backend.quant.signal" = ["signals.json"]
-"backend.app.database" = ["*.sql"]
+"backend.app.database.duckdb" = ["*.sql"]
+"backend.app.database.sqlite" = ["*.sql"]
