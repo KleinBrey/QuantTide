@@ -77,6 +77,35 @@ class MarketStockManagementTests(unittest.TestCase):
         for repository in self.repositories.values():
             self.assertTrue(repository.get_table_data().empty)
 
+    def test_hot_ranking_symbols_join_only_the_matching_sqlite_pool(self):
+        for market, raw, symbol, market_code in [
+            ('hk-share', '0700.HK', '00700.HK', 'HK'),
+            ('us-share', 'NVDA.O', 'NVDA', 'US'),
+        ]:
+            with self.subTest(market=market):
+                repository = self.repositories[market]
+                repository.upsert_stocks(pd.DataFrame([{
+                    'symbol': symbol, 'name': '原始名称', 'source': 'Test',
+                }]))
+                other_group = self.watchlists.create_group('观察组', market_code)
+                self.watchlists.add_item(other_group['id'], market_code, symbol)
+                # 有基础信息、属于其他分组均不能作为 stock_pool 高亮依据。
+                self.assertEqual(self.client.get('/api/market-stocks', params={'market': market}).json(), [])
+                payload = {'market': market, 'symbol': raw, 'name': '热榜名称'}
+                response = self.client.post('/api/market-stocks', json=payload)
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual(response.json()['symbol'], symbol)
+                self.assertEqual(response.json()['name'], '原始名称')
+                self.assertEqual(response.json()['source'], 'Test')
+                fresh = WatchlistRepository(self.watchlists.db)
+                pool = fresh.get_pool(market_code)
+                self.assertEqual([item['symbol'] for item in fresh.list_items(pool['id'])], [symbol])
+                self.assertEqual([item['symbol'] for item in self.client.get(
+                    '/api/market-stocks', params={'market': market}).json()], [symbol])
+                self.assertEqual(self.client.post('/api/market-stocks', json=payload).status_code, 409)
+                self.assertEqual(len(fresh.list_items(pool['id'])), 1)
+                self.assertEqual(len(fresh.list_items(other_group['id'])), 1)
+
     def test_delete_is_market_scoped_and_preserves_historical_bars(self):
         for market, symbol in [("hk-share", "00700.HK"), ("us-share", "AAPL")]:
             self.repositories[market].upsert_stocks(pd.DataFrame([{
