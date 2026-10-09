@@ -203,6 +203,7 @@ export default function StockKlineChart({
   onPeriodChange,
   markers = EMPTY_MARKERS,
   enableMouseWheelZoom = true,
+  fillContainer = false,
   alignDataLeft = false
 }) {
   const chartRef = useRef(null);
@@ -253,7 +254,6 @@ export default function StockKlineChart({
 
     const chart = createChart(container, {
       autoSize: true,
-      height: 520,
       layout: {
         attributionLogo: true,
         background: { type: ColorType.Solid, color: '#111114' },
@@ -417,7 +417,7 @@ export default function StockKlineChart({
   };
 
   return (
-    <section className={styles.kline}>
+    <section className={`${styles.kline}${fillContainer ? ` ${styles.fillContainer}` : ''}`}>
       <div className={styles.header}>
         <div>
           <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : '个股 K 线'}</h3>

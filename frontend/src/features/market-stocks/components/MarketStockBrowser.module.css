@@ -1,14 +1,24 @@
-.panel {
+.content {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 116px);
+  height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .browser {
   display: grid;
   flex: 1;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-  min-height: calc(100vh - 180px);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
 }
 
 .stockPane {
@@ -45,7 +55,7 @@
 .stockList {
   flex: 1;
   height: 0;
-  min-height: 240px;
+  min-height: 0;
   padding: 6px;
 }
 
@@ -195,6 +205,12 @@
 .submitButton:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+/* 列表刷新时保持工具栏按钮亮度，加载状态由刷新图标表示。 */
+.listActions[aria-busy='true'] .addButton:disabled,
+.listActions[aria-busy='true'] .closeButton:disabled {
+  opacity: 1;
 }
 
 .addButton:focus-visible,
@@ -387,19 +403,19 @@
 
 .chartPane {
   background: #111114;
+  min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
 
 .groupBar {
-  align-items: flex-start;
+  align-items: center;
   background: #111114;
   border-bottom: 1px solid #27272a;
   display: flex;
   flex: 0 0 auto;
   gap: 6px;
   padding: 12px 10px;
-  min-height: 64px;
   min-width: 0;
 }
 
@@ -654,8 +670,15 @@
 }
 
 @media (max-width: 820px) {
+  .content {
+    height: auto;
+    min-height: calc(100dvh - 50px);
+    overflow: visible;
+  }
+
   .browser {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
   }
 
   .stockPane {
@@ -666,5 +689,9 @@
   .stockList {
     flex: 0 0 240px;
     height: 240px;
+  }
+
+  .chartPane {
+    height: max(320px, calc(100dvh - 114px));
   }
 }

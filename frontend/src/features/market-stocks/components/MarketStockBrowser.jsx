@@ -25,7 +25,7 @@ export default function MarketStockBrowser({ marketId }) {
   const stockList = useMarketStocks(marketId);
 
   return (
-    <div className="dashboard-content">
+    <div className={cn('dashboard-content', styles.content)}>
       <section aria-label={market.title} className={cn('dashboard-panel', styles.panel)}>
         <MarketStockGroups marketId={marketId} {...stockList} />
         <MarketStockContent key={marketId} marketId={marketId} market={market} stockList={stockList} />
@@ -48,6 +48,7 @@ function MarketStockContent({ marketId, market, stockList }) {
       <div className={styles.chartPane}>
         <StockKlineChart
           data={kline.data}
+          fillContainer
           enableMouseWheelZoom
           error={kline.error}
           loading={kline.loading}

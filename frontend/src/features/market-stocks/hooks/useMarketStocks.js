@@ -69,7 +69,8 @@ export function useMarketStocks(marketId) {
       try {
         const allGroups = (await getWatchlistGroupsApi()).data;
         const availableGroups = visibleGroups(allGroups, market, showStockPool);
-        const active = availableGroups.find(group => group.id === activeGroupsRef.current[market]) || availableGroups[0];
+        const active =
+          availableGroups.find(group => group.id === activeGroupsRef.current[market]) || availableGroups[0];
         const allItems = active ? (await getWatchlistItemsApi(active.id)).data : [];
         if (requestId !== requestRef.current) return;
         allGroupsRef.current = allGroups;
