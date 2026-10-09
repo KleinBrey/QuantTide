@@ -1,7 +1,7 @@
 from __future__ import annotations
-from contextlib import asynccontextmanager
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,8 +10,6 @@ from fastapi.responses import JSONResponse
 from backend.app.api import router
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
-from backend.app.repository.watchlist import WatchlistRepository, WatchlistError
-from backend.app.services.watchlist_service import WatchlistService
 from backend.app.jobs import create_scheduler
 from backend.app.provider import HithinkProvider, IwencaiProvider, TushareProvider
 from backend.app.repository import (
@@ -26,7 +24,11 @@ from backend.app.repository import (
     USStockHotDailyRepository,
     USStockRepository,
 )
+from backend.app.repository.task import TaskRepository
+from backend.app.repository.watchlist import WatchlistRepository, WatchlistError
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
+from backend.app.services.task_service import TaskService
+from backend.app.services.watchlist_service import WatchlistService
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -53,6 +55,9 @@ async def lifespan(app: FastAPI):
     app_database = SQLiteDatabase(settings.app_database_path)
     app_database.initialize()
     watchlist_repository = WatchlistRepository(app_database)
+    # 启动时只确保默认分组存在；股票由用户在页面上添加，不预填名单。
+    watchlist_repository.ensure_default_pool('HK')
+    watchlist_repository.ensure_default_pool('US')
     app.state.watchlist_service = WatchlistService(
         watchlist_repository, daily_stock_repository, hk_stock_repository, us_stock_repository,
     )
@@ -103,9 +108,24 @@ async def lifespan(app: FastAPI):
     app.state.hk_market_service = hk_market_service
     app.state.us_market_service = us_market_service
 
-    # 工作日按调度配置同步当日热门股数据。
+    # 默认任务只写入一次；以后启动保留用户的增删改。
+    task_repository = TaskRepository(app_database)
+    task_repository.initialize_defaults()
+
+    # 1. 创建 Scheduler，此时不会执行任何任务。
     scheduler = create_scheduler(settings)
+    # 2. 创建 TaskService，交给它数据库和调度器。
+    task_service = TaskService(
+        repository=task_repository,
+        scheduler=scheduler,
+        settings=settings,
+    )
+    app.state.task_service = task_service
     app.state.scheduler = scheduler
+
+    # 3. 从 SQLite 加载任务，登记到 Scheduler。
+    task_service.load_scheduled_tasks()
+    # 4. 启动 Scheduler；关闭自动调度时仍可管理、手动执行任务。
     if settings.scheduler_enabled:
         scheduler.start()
 

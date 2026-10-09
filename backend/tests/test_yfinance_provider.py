@@ -15,7 +15,7 @@ from backend.app.repository import (
 )
 from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.schemas.market import DailyBar
-from backend.scripts.latest.sync_hk_us_daily_bars import (
+from backend.scripts.sync_hk_us_daily_bars import (
     format_yfinance_daily_bars, sync_hk_us_daily_bars,
 )
 
@@ -136,7 +136,7 @@ class YFinanceProviderTests(unittest.TestCase):
                 return ticker
 
             provider = YFinanceProvider(ticker_factory=factory, max_attempts=1)
-            with patch("backend.scripts.latest.sync_hk_us_daily_bars.time.time", return_value=timestamp("2026-03-10T08:00:00Z") / 1000):
+            with patch("backend.scripts.sync_hk_us_daily_bars.time.time", return_value=timestamp("2026-03-10T08:00:00Z") / 1000):
                 for _ in range(2):
                     result = sync_hk_us_daily_bars(
                         10, 1, 0, provider=provider, hk_database=hk_db,

@@ -58,52 +58,45 @@ echo $VIRTUAL_ENV
 
 同步脚本会自动初始化三个市场数据库和所需数据表。`cn_market.duckdb` 只保存 A 股数据，港股和美股分别保存在 `hk_market.duckdb` 与 `us_market.duckdb`。
 
-港美股股票池由独立脚本手动维护，不参与自动同步。首次初始化或添加股票时，
-修改 `backend/scripts/init_hk_us_stock_pools.py` 中的 `HK_STOCKS`、`US_STOCKS` 后运行：
-
-```bash
-uv run python -m backend.scripts.init_hk_us_stock_pools
-```
-
-脚本可重复执行，添加或更新名单内的股票，保留数据库中的其他股票；
-从脚本名单移除股票不会删除数据库记录。
+FastAPI 启动时自动创建港股、美股的空股票池，已有成员保持不变。
+启动后在对应市场行情页添加或移除股票，再执行港美股日 K 同步，无需维护脚本名单。
 
 依次同步 A 股股票列表、日 K 和当日股票热度：
 
 ```bash
-uv run python -m backend.scripts.latest.sync_daily_stocks
-uv run python -m backend.scripts.latest.sync_daily_basic
+uv run python -m backend.scripts.sync_daily_stocks
+uv run python -m backend.scripts.sync_daily_basic
 uv run quant-sync
-uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
-uv run python -m backend.scripts.latest.sync_daily_hot
+uv run python -m backend.scripts.sync_hk_us_daily_bars
+uv run python -m backend.scripts.sync_daily_hot
 ```
 
-同步入口按用途拆分到 `backend/scripts/latest/` 和 `backend/scripts/history/`。
-`quant-sync` 指向 `latest.sync_daily_bars`，直接更新最近 3 个自然日的
-A 股日 K，按范围内的交易日逐日获取全市场数据。`latest` 下的每日指标和港美股日 K 同样直接更新最近 3 日，
-热度脚本同步当天数据，股票池脚本同步最近 3 个自然日内的完整交易日快照。
-
-需要补历史数据时使用：
+同步脚本统一放在 `backend/scripts/`。直接运行会显示日期选择菜单：60、180、365、1095 日，输入 `e` 退出。
+也可以通过 `--lookback-days` 指定天数直接执行；API 和定时任务调用同步函数，默认最近 3 个自然日：
 
 ```bash
-uv run python -m backend.scripts.history.sync_daily_stocks
-uv run python -m backend.scripts.history.sync_daily_basic
-uv run python -m backend.scripts.history.sync_daily_bars
-uv run python -m backend.scripts.history.sync_hk_us_daily_bars
-uv run python -m backend.scripts.history.sync_daily_hot
+uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
+uv run python -m backend.scripts.sync_daily_basic --lookback-days 180
+uv run quant-sync --lookback-days 365
+uv run python -m backend.scripts.sync_hk_us_daily_bars --lookback-days 1095
 ```
 
-历史股票池入口可选最近 60、180（半年）、365（一年）、1095（三年）个自然日（含今天），每次重新拉取并覆盖已有快照，
-历史股票池通过菜单选择范围，最多 10 个线程并发同步。
-A 股历史每日指标和日 K 入口提供最近 60、180、365、1095 个自然日选项，A 股日 K 按交易日拉取全市场数据，不依赖本地股票池；历史热度入口可选最近 60、365 个自然日（含今天），补齐 A 股排名。
+热度保留两个独立入口：`sync_daily_hot` 获取 A 股、港股、美股实时热度；
+`sync_cn_daily_hot` 只获取 A 股历史热度排名，直接运行可选择 60、365 日或退出，也支持指定天数：
+
+```bash
+uv run python -m backend.scripts.sync_cn_daily_hot --lookback-days 60
+```
+
+所有天数均含今天。股票池按交易日覆盖快照，最多 10 个线程并发同步；
+A 股每日指标和日 K 按交易日获取全市场数据。
 港美股日 K 从 SQLite 中各市场的 `stock_pool` 默认分组读取成员，通过 `YFinanceProvider`
 从 Yahoo Finance 获取，写入对应的 `daily_bars` 表，无需启动 Futu OpenD。
 价格使用 Yahoo 自动复权，成交量保留上游口径，成交额 `amount` 写入 NULL，
 来源为 `YFinance`。同步默认最多 2 个并发请求，请求失败时指数退避重试。
 
 已有 Futu 历史数据不会因代码升级自动改写。首次切换应先备份两个市场数据库，
-再通过历史入口补齐整个保留区间，避免拼接不同来源的复权行情；超过 365 天时可
-直接调用 `sync_hk_us_daily_bars(lookback_days=所需自然日数)`。
+再通过 `--lookback-days` 补齐整个保留区间，避免拼接不同来源的复权行情。
 Yahoo 自动复权与 Futu 前复权不保证一致，分红、拆股后需重刷保留的历史区间；
 日常最近 3 日同步不会自动重算更早的价格。日 K 可能包含当天未收盘的数据，
 用于收盘策略时应在对应市场收盘后运行。
@@ -132,14 +125,14 @@ uv run uvicorn backend.app.main:app \
 分组标签和股票均可拖拽排序，股票右键菜单可将同一股票加入其他分组。
 同一分组内禁止重复添加同一市场、同一代码的股票。
 
-业务数据只存入 `data/app.sqlite` 的 `watchlist_groups`、`watchlist_items` 两张表。
+任务配置和自选分组存入 `data/app.sqlite` 的 `tasks`、`watchlist_groups`、`watchlist_items` 表。
 分组表增加 `market` 和 `is_default`，用于区分 HK、US 同名的 `stock_pool`；
 `market` 为空的普通分组可跨市场使用，行情页只展示本市场成员。
 界面新建的分组归属当前市场；API 可通过 `market: null` 创建跨市场分组。
 SQLite 不复制股票名称或行情，这些信息按成员的 CN/HK/US 市场从 DuckDB 读取。
 
-显式执行股票池初始化脚本会创建 HK、US 的 `stock_pool` 默认分组，并将脚本名单加入
-其中。HK、US 默认分组不可删除或重命名，CN 没有 `stock_pool`。移出自选、删除普通
+FastAPI 启动时确保 HK、US 的 `stock_pool` 默认分组存在，不自动添加股票。
+HK、US 默认分组不可删除或重命名，CN 没有 `stock_pool`。移出自选、删除普通
 分组不会删除 DuckDB 基础信息或历史行情。
 
 可通过 `APP_DATABASE_PATH` 配置 SQLite 路径；每次连接开启外键，删除普通分组时
@@ -156,13 +149,19 @@ SQLite 不复制股票名称或行情，这些信息按成员的 CN/HK/US 市场
 
 ## 定时任务
 
-FastAPI 启动时默认注册以下任务：
+前端“任务列表”支持新增、编辑、删除、启停调度和立即执行，配置保存在 SQLite。
+FastAPI 启动时从 `tasks` 表恢复调度；首次初始化写入原页面五个任务及每周、每月校准任务：
 
 - 工作日 18:00：保存最新交易日股票池快照；
-- 周一至周五 18:00：更新股票热度；
-- 周一至周五配置时间：更新最近 3 个自然日的日 K；
-- 每周六 09:00：校准最近 60 个自然日的日 K；
-- 每月 1 日 10:00：校准最近 365 个自然日的日 K。
+- 周一至周五 15:00：更新股票热度；
+- 周一至周五 16:00：更新最近 3 个自然日的 A 股日 K 和每日指标；
+- 港美股日 K 默认仅手动运行，更新最近 3 个自然日；
+- 每周六 16:00：校准最近 60 个自然日的 A 股日 K；
+- 每月 1 日 16:00：校准最近 365 个自然日的 A 股日 K。
+
+任务可选择注册表中的日常同步或历史补数脚本。
+日常更新与历史补数选择同一个脚本，通过任务参数或命令行 `--lookback-days` 指定天数。
+删除任务不会删除行情数据，重启不会重新生成已删除的默认任务。
 
 数据仅用于研究，不构成投资建议。
 

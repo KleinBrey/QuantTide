@@ -1,107 +1,80 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
-from datetime import date
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Callable, Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Query,
-)
+from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.concurrency import run_in_threadpool
 
+from backend.app.jobs.tasks import database_sync_lock
 from backend.app.repository import (
     DailyBarRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
     HKDailyBarRepository,
     HKStockHotDailyRepository,
     HKStockRepository,
-    DailyHotRepository,
-    DailyBasicRepository,
-    DailyStockRepository,
     USDailyBarRepository,
     USStockHotDailyRepository,
     USStockRepository,
 )
-from backend.app.schemas import AddMarketStock, DailyBar, HotStock, GlobalStock, Stock
+from backend.app.schemas import AddMarketStock, DailyBar, GlobalStock, HotStock, Stock
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
+from backend.app.utils.symbol import normalize_daily_bar_symbol
+from backend.quant.backtest.engine import BacktestConfig, BacktestEngine
+from backend.quant.backtest.result import format_backtest_result
 from backend.quant.signal.registry import (
     SIGNAL_EXECUTORS,
     execute_signal,
     find_signal,
     signal_list,
 )
-from backend.quant.backtest.engine import (
-    BacktestConfig,
-    BacktestEngine,
-)
-from backend.quant.backtest.result import format_backtest_result
-from backend.quant.strategy.registry import STRATEGIES, strategy_info, strategy_list
 from backend.quant.signal.result import format_signal_result
-from backend.app.utils.symbol import normalize_daily_bar_symbol
-from backend.scripts.latest.sync_daily_bars import sync_daily_bars
-from backend.scripts.latest.sync_daily_hot import sync_daily_hot
-from backend.scripts.latest.sync_daily_basic import sync_daily_basic
-from backend.scripts.latest.sync_daily_stocks import sync_daily_stocks
-from backend.scripts.latest.sync_hk_us_daily_bars import sync_hk_us_daily_bars
+from backend.quant.strategy.registry import STRATEGIES, strategy_info, strategy_list
+from backend.scripts.sync_daily_bars import sync_daily_bars
+from backend.scripts.sync_daily_basic import sync_daily_basic
+from backend.scripts.sync_daily_hot import sync_daily_hot
+from backend.scripts.sync_daily_stocks import sync_daily_stocks
+from backend.scripts.sync_hk_us_daily_bars import sync_hk_us_daily_bars
 
 from .dependencies import (
-    get_daily_repository,
     get_cn_market_service,
-    get_hk_daily_repository,
-    get_hk_market_service,
-    get_hk_stock_repository,
-    get_hk_stock_hot_repository,
     get_daily_basic_repository,
     get_daily_hot_repository,
+    get_daily_repository,
     get_daily_stock_repository,
-    get_us_market_service,
-    get_us_stock_repository,
-    get_us_stock_hot_repository,
+    get_hk_daily_repository,
+    get_hk_market_service,
+    get_hk_stock_hot_repository,
+    get_hk_stock_repository,
     get_us_daily_repository,
+    get_us_market_service,
+    get_us_stock_hot_repository,
+    get_us_stock_repository,
 )
-from .watchlists import router as watchlist_router, Service as WatchlistServiceDep
+from .tasks import router as task_router
+from .watchlists import Service as WatchlistServiceDep
+from .watchlists import router as watchlist_router
 
 router = APIRouter()
 router.include_router(watchlist_router)
+router.include_router(task_router)
 logger = logging.getLogger(__name__)
-
-# DuckDB 只允许一个同步任务写入，避免用户连续点击导致写入互相冲突。
-database_sync_lock = threading.Lock()
 
 # 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
 DailyStockRepo = Annotated[DailyStockRepository, Depends(get_daily_stock_repository)]
-HKStockListRepository = Annotated[
-    HKStockRepository,
-    Depends(get_hk_stock_repository),
-]
-USStockListRepository = Annotated[
-    USStockRepository,
-    Depends(get_us_stock_repository),
-]
+HKStockListRepository = Annotated[HKStockRepository, Depends(get_hk_stock_repository)]
+USStockListRepository = Annotated[USStockRepository, Depends(get_us_stock_repository)]
 DailyRepository = Annotated[DailyBarRepository, Depends(get_daily_repository)]
-HKDailyRepository = Annotated[
-    HKDailyBarRepository,
-    Depends(get_hk_daily_repository),
-]
-USDailyRepository = Annotated[
-    USDailyBarRepository,
-    Depends(get_us_daily_repository),
-]
-DailyBasicRepo = Annotated[
-    DailyBasicRepository,
-    Depends(get_daily_basic_repository),
-]
-DailyHotRepo = Annotated[
-    DailyHotRepository,
-    Depends(get_daily_hot_repository),
-]
+HKDailyRepository = Annotated[HKDailyBarRepository, Depends(get_hk_daily_repository)]
+USDailyRepository = Annotated[USDailyBarRepository, Depends(get_us_daily_repository)]
+DailyBasicRepo = Annotated[DailyBasicRepository, Depends(get_daily_basic_repository)]
+DailyHotRepo = Annotated[DailyHotRepository, Depends(get_daily_hot_repository)]
 HKStockHotRepository = Annotated[
     HKStockHotDailyRepository,
     Depends(get_hk_stock_hot_repository),
@@ -110,18 +83,9 @@ USStockHotRepository = Annotated[
     USStockHotDailyRepository,
     Depends(get_us_stock_hot_repository),
 ]
-CNMarketServiceDep = Annotated[
-    CNMarketService,
-    Depends(get_cn_market_service),
-]
-HKMarketServiceDep = Annotated[
-    HKMarketService,
-    Depends(get_hk_market_service),
-]
-USMarketServiceDep = Annotated[
-    USMarketService,
-    Depends(get_us_market_service),
-]
+CNMarketServiceDep = Annotated[CNMarketService, Depends(get_cn_market_service)]
+HKMarketServiceDep = Annotated[HKMarketService, Depends(get_hk_market_service)]
+USMarketServiceDep = Annotated[USMarketService, Depends(get_us_market_service)]
 
 
 async def _run_database_sync(
@@ -164,7 +128,7 @@ async def sync_daily_stocks_database() -> dict[str, str | float]:
     """执行股票列表数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_daily_stocks.py",
+        "sync_daily_stocks.py",
         "A 股股票列表同步完成",
         sync_daily_stocks,
     )
@@ -175,7 +139,7 @@ async def sync_daily_bars_database() -> dict[str, str | float]:
     """执行最近 3 个自然日的日 K 数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_daily_bars.py",
+        "sync_daily_bars.py",
         "最近 3 个自然日的日 K 数据同步完成",
         lambda: sync_daily_bars(lookback_days=3),
     )
@@ -183,12 +147,12 @@ async def sync_daily_bars_database() -> dict[str, str | float]:
 
 @router.post("/database-sync/hk-us-daily-k")
 async def sync_hk_us_daily_bars_database() -> dict[str, str | float]:
-    """执行最近 3 个自然日的港美股日 K 数据库同步脚本。"""
+    """旧同步接口固定更新最近 365 日；任务列表使用任务配置中的天数。"""
 
     def sync() -> None:
         results = sync_hk_us_daily_bars(lookback_days=365)
         failures = [
-            f"{market}：{', '.join(result['failed_symbols'])}"
+            f"{market}：{", ".join(result["failed_symbols"])}"
             for market, result in results.items()
             if result["failed_symbols"]
         ]
@@ -196,7 +160,7 @@ async def sync_hk_us_daily_bars_database() -> dict[str, str | float]:
             raise RuntimeError("部分股票同步失败；" + "；".join(failures))
 
     return await _run_database_sync(
-        "latest/sync_hk_us_daily_bars.py",
+        "sync_hk_us_daily_bars.py",
         "最近 365 个自然日的港股和美股日 K 数据同步完成",
         sync,
     )
@@ -207,7 +171,7 @@ async def sync_daily_basic_database() -> dict[str, str | float]:
     """执行最新交易日股票指标数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_daily_basic.py",
+        "sync_daily_basic.py",
         "最新交易日股票指标同步完成",
         lambda: sync_daily_basic(lookback_days=3),
     )
@@ -218,7 +182,7 @@ async def sync_daily_hot_database() -> dict[str, str | float]:
     """执行每日股票热度数据库同步脚本。"""
 
     return await _run_database_sync(
-        "latest/sync_daily_hot.py",
+        "sync_daily_hot.py",
         "A 股、港股和美股每日热度同步完成",
         sync_daily_hot,
     )
@@ -253,7 +217,6 @@ def database_latest_update_times(
 def stocks(
     repository: DailyStockRepo,
 ) -> list[dict]:
-
     stock_table = repository.get_latest_data().head(100)
 
     # FastAPI 不能直接把 DataFrame 当成“股票列表”返回。
@@ -273,8 +236,8 @@ def market_stocks(
 ) -> list[dict]:
     """返回 SQLite 默认股票池成员，并从 DuckDB 补充基础信息。"""
 
-    pool = watchlist_service.repository.get_pool('HK' if market == 'hk-share' else 'US')
-    return watchlist_service.list_items(pool['id'])
+    pool = watchlist_service.repository.get_pool("HK" if market == "hk-share" else "US")
+    return watchlist_service.list_items(pool["id"])
 
 
 @router.post("/market-stocks", response_model=GlobalStock, status_code=201)
@@ -285,6 +248,7 @@ def add_market_stock(
     watchlist_service: WatchlistServiceDep,
 ) -> dict:
     """添加股票池记录；K 线仍由已有的数据同步任务获取。"""
+
     try:
         symbol = normalize_daily_bar_symbol(stock.symbol, stock.market)
     except ValueError as error:
@@ -293,18 +257,19 @@ def add_market_stock(
     if not name:
         raise HTTPException(status_code=422, detail="股票名称不能为空")
     repository = hk_repository if stock.market == "hk-share" else us_repository
-    market = 'HK' if stock.market == 'hk-share' else 'US'
+    market = "HK" if stock.market == "hk-share" else "US"
     pool = watchlist_service.repository.get_pool(market)
     with database_sync_lock:
-        if any(item['symbol'] == symbol for item in watchlist_service.repository.list_items(pool['id'])):
+        if any(
+            item["symbol"] == symbol
+            for item in watchlist_service.repository.list_items(pool["id"])
+        ):
             raise HTTPException(status_code=409, detail="该股票已在列表中")
-        if symbol not in repository.get_table_data()['symbol'].values:
+        if symbol not in repository.get_table_data()["symbol"].values:
             repository.upsert_stocks(
-                pd.DataFrame(
-                    [{"symbol": symbol, "name": name, "source": "Manual"}]
-                )
+                pd.DataFrame([{"symbol": symbol, "name": name, "source": "Manual"}])
             )
-        watchlist_service.repository.add_item(pool['id'], market, symbol)
+        watchlist_service.repository.add_item(pool["id"], market, symbol)
         rows = repository.get_table_data()
         return rows.loc[rows["symbol"] == symbol].to_dict(orient="records")[0]
 
@@ -316,14 +281,15 @@ def delete_market_stock(
     symbol: str,
 ) -> dict[str, str]:
     """仅从股票池删除，不删除历史 K 线。"""
+
     try:
         normalized = normalize_daily_bar_symbol(symbol, market)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     with database_sync_lock:
-        market_code = 'HK' if market == 'hk-share' else 'US'
+        market_code = "HK" if market == "hk-share" else "US"
         pool = watchlist_service.repository.get_pool(market_code)
-        watchlist_service.repository.remove_stock(pool['id'], market_code, normalized)
+        watchlist_service.repository.remove_stock(pool["id"], market_code, normalized)
     return {"status": "success"}
 
 
@@ -467,6 +433,7 @@ def signal_results(
 @router.get("/backtests/strategies")
 async def backtest_strategies() -> list[dict[str, str]]:
     """只列出已实现入场与退出规则的可回测策略。"""
+
     return strategy_list()
 
 

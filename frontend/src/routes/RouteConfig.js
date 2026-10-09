@@ -52,7 +52,7 @@ export const dashboardGroups = [
         id: 'data-sources',
         path: '/data-sources',
         title: '数据同步',
-        description: '手动执行数据库同步脚本'
+        description: '管理同步任务与自动调度'
       }
     ]
   }

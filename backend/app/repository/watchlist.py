@@ -16,7 +16,7 @@ class WatchlistRepository:
         self.db = db
 
     def ensure_default_pool(self, market):
-        """确保指定市场存在默认股票池；仅供显式初始化脚本使用。"""
+        """应用启动时确保默认股票池存在，保留已有分组和成员。"""
         if market not in {'HK', 'US'}:
             raise ValueError('默认股票池仅支持 HK 和 US 市场')
         with self.db.connection() as connection:

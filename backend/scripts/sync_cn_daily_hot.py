@@ -1,5 +1,6 @@
-"""补齐 A 股股票池历史热度排名，可选择最近 60 或 365 个自然日。"""
+"""获取 A 股历史热度排名；通过 lookback_days 指定自然日范围。"""
 
+import argparse
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,7 +34,7 @@ def fetch_daily_hot(symbol: str, name: str, start: str, end: str) -> pd.DataFram
     return rows
 
 
-def sync_daily_hot(lookback_days: int = 365) -> int:
+def sync_cn_daily_hot(lookback_days: int = 365) -> int:
     """补齐最近指定自然日范围（含今天）的热度排名。"""
     if lookback_days <= 0:
         raise ValueError("lookback_days 必须大于 0")
@@ -107,29 +108,29 @@ def sync_daily_hot(lookback_days: int = 365) -> int:
     return total
 
 
-def main() -> None:
-    print("""
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="获取 A 股历史热度排名")
+    parser.add_argument("--lookback-days", type=int, help="同步最近多少个自然日（含今天）")
+    args = parser.parse_args(argv)
+    days = args.lookback_days
+    # 不传命令行参数时显示菜单；API 和定时任务直接调用同步函数。
+    if days is None:
+        print("""
             请选择要执行的任务：
 
-            1. 更新最近 60 日热度排名
-            2. 更新最近 365 日热度排名
+            1. 更新最近 60 日A 股热度排名
+            2. 更新最近 365 日A 股热度排名
             e. 退出
           """)
-
-    choice = input("请输入选项: ").strip().lower()
-
-    match choice:
-        case "1":
-            sync_daily_hot(60)
-
-        case "2":
-            sync_daily_hot(365)
-
-        case "e":
+        choice = input("请输入选项: ").strip().lower()
+        if choice == "e":
             print("退出")
-
-        case _:
+            return
+        days = {"1": 60, "2": 365}.get(choice)
+        if days is None:
             print(f"无效选项: {choice}")
+            return
+    sync_cn_daily_hot(lookback_days=days)
 
 
 if __name__ == "__main__":

@@ -176,12 +176,13 @@ class ConcurrentRequestsTests(unittest.TestCase):
     def test_daily_basic_requests_in_workers_and_writes_in_caller(self):
         caller = threading.get_ident()
         provider, repository = Mock(), Mock()
+        daily_basic = SimpleNamespace(empty=False)
         def fetch(day):
             self.assertNotEqual(threading.get_ident(), caller)
-            return "daily-basic-rows"
+            return daily_basic
         def upsert(rows):
             self.assertEqual(threading.get_ident(), caller)
-            self.assertEqual(rows, "daily-basic-rows")
+            self.assertIs(rows, daily_basic)
             return 1
         provider.fetch_daily_basic.side_effect = fetch
         repository.upsert_stock_daily_basic.side_effect = upsert

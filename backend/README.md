@@ -110,15 +110,61 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `app/jobs/`
 
-默认任务：
+任务相关代码按下面的职责阅读：
+
+| 文件 | 职责 |
+| --- | --- |
+| `app/main.py` | 按顺序组装应用，启动和关闭 Scheduler |
+| `app/api/tasks.py` | 接收并校验表单，将普通字典交给 Service |
+| `app/repository/task.py` | 读写 SQLite 任务配置 |
+| `app/services/task_service.py` | 读写任务后通知调度器，执行任务并记录结果 |
+| `app/jobs/scheduler.py` | 创建调度器，把 Cron / 间隔配置登记为内存任务 |
+| `app/jobs/tasks.py` | 按注册表执行脚本，提供共用写入锁 |
+| `scripts/registry.py` | 登记可选脚本及默认参数 |
+
+准备好数据库和首次启动的默认任务后，启动流程都在 `main.py` 中，按顺序往下读：
+
+```text
+FastAPI 启动
+    ├── 创建 Scheduler（尚未运行）
+    ├── 创建 TaskService（传入 Repository 和 Scheduler）
+    ├── 从 SQLite 加载任务（只登记启用的定时任务）
+    └── 启动 Scheduler（由 SCHEDULER_ENABLED 控制）
+```
+
+构造函数只保存依赖，不偷偷加载或启动任务。SQLite 连接不导入 Repository，Scheduler 不导入 Service。
+APScheduler 使用默认内存 JobStore；唯一的持久化任务配置是 SQLite 的 `tasks` 表。
+`app_migrations` 当前只记录默认任务已经初始化，保证删空任务后重启不会自动恢复。
+
+任务操作沿着一条路径阅读即可：`api/tasks.py` → `task_service.py` → `repository/task.py`。
+Service 内按“启动加载、配置管理、执行任务”排列：配置保存后调用 `sync_scheduled_task()`
+更新调度；手动和定时任务最终都进入 `execute()`，读取最新配置、运行注册脚本、记录结果，
+并释放写入锁。触发器、任务 ID 和登记规则集中在 `scheduler.py`，不再散落到 Service 中。
+
+任务保存在 SQLite 的 `tasks` 表，首次初始化默认写入页面原有五个任务和两个校准任务：
 
 - 工作日 18:00 更新最新交易日股票池（Tushare 交易日历确认日期）；
 - 工作日 15:00 更新 A 股、港股和美股热度；
-- 工作日配置时间更新最近 3 日的日 K；
-- 周六 09:00 校准最近 60 日的日 K；
-- 每月 1 日 10:00 校准最近 365 日的日 K。
+- 工作日 16:00 更新最近 3 日的 A 股日 K 和每日指标；
+- 港美股日 K 默认仅手动运行，更新最近 3 日；
+- 周六 16:00 校准最近 60 日的 A 股日 K；
+- 每月 1 日 16:00 校准最近 365 日的 A 股日 K。
 
 每个任务设置 `max_instances=1` 和 `coalesce=True`，避免同一任务重复运行。
+定时任务和手动任务共用写入锁；定时任务排队执行，手动任务在已有写入时返回 409。
+配置锁只保护配置修改和执行状态，运行脚本时释放，因此页面仍能读取任务列表。
+这些锁和调度器属于当前进程，后端按单进程运行。
+`SCHEDULER_ENABLED=false` 可全局关闭自动调度，但仍可管理配置和手动运行。
+
+前端“任务列表”支持新增、编辑、删除、启停调度和立即执行。`/api/tasks` 提供
+GET、POST，`/api/tasks/{id}` 提供 PUT、DELETE 和仅修改 `enabled` 的 PATCH；
+`/api/tasks/{id}/run` 执行任务，`/api/tasks/scripts` 返回注册脚本及默认参数。
+API 的 `params`、`schedule` 是 JSON 对象，对应表中的 `params_json`、`schedule_json` 文本字段。
+`schedule=null` 表示仅手动运行；定时规则支持
+`{"trigger":"cron","cron":"0 16 * * mon-fri"}` 或
+`{"trigger":"interval","seconds":3600}`，使用 `SCHEDULER_TIMEZONE` 时区。
+配置修改即时更新调度器，重启后从数据库恢复；默认任务只初始化一次，删除后不会重建。
+任务结果暂存于当前服务进程，重启后重置；股票数据更新时间继续从 DuckDB 读取。
 
 ### `app/utils/` 和 `app/view/`
 
@@ -268,58 +314,58 @@ uv run quant-backtest
 
 ## 手动维护港美股股票池
 
-`backend/scripts/init_hk_us_stock_pools.py` 是独立的手动入口，不参与自动同步。
-首次初始化或添加股票时，修改文件中的 `HK_STOCKS`、`US_STOCKS` 后执行：
+FastAPI 在 `app/main.py` 中调用 `ensure_default_pool('HK')` 和
+`ensure_default_pool('US')`，只创建缺失的默认分组，不预填股票名单。
+用户在对应市场行情页添加或移除股票；重启保留已有成员，也不会恢复已移除的股票。
 
-```bash
-uv run python -m backend.scripts.init_hk_us_stock_pools
-```
-
-脚本可重复执行，添加或更新名单内的股票，保留数据库中的其他股票；
-从脚本名单移除股票不会删除数据库记录。
-
-自选分组和股票池成员现在保存在 `data/app.sqlite`，仅使用 `watchlist_groups`
-和 `watchlist_items` 两张业务表。HK、US 各有一个不可删除、不可重命名的
-`stock_pool` 默认分组；CN 不创建此分组。显式运行上述初始化脚本会创建默认分组并
-将脚本名单加入其中。
+自选分组和股票池成员保存在 `data/app.sqlite` 的 `watchlist_groups`
+和 `watchlist_items` 表。HK、US 各有一个不可删除、不可重命名的
+`stock_pool` 默认分组；CN 不创建此分组。
 DuckDB 继续保存股票基础信息和历史行情，港美股日 K 同步读取 SQLite 默认分组成员。
 业务 API 位于 `/api/watchlists/groups`，支持分组增删改、成员管理和排序；
 `APP_DATABASE_PATH` 可覆盖 SQLite 路径。前端入口在港美股行情页顶部独立分组栏的标签及下拉菜单。
 
 ## 外层同步脚本
 
-```bash
-# A 股股票列表
-uv run python -m backend.scripts.latest.sync_daily_stocks
+`backend/scripts/registry.py` 的 `SCRIPTS` 登记 6 个同步入口。每项包含展示名称
+`name`、`模块路径:入口函数` 格式的 `run` 和可选的默认参数 `params`。
+API、任务调度和命令行共用这些函数；导入注册表不会运行脚本。
 
-# 最近 3 个自然日的每日指标和日 K
-uv run python -m backend.scripts.latest.sync_daily_basic
-uv run python -m backend.scripts.latest.sync_daily_bars
-uv run python -m backend.scripts.latest.sync_hk_us_daily_bars
-
-# 股票热度
-uv run python -m backend.scripts.latest.sync_daily_hot
+```text
+scripts/
+├── registry.py                   # 页面可选脚本和默认参数
+├── sync_daily_stocks.py          # A 股股票池快照
+├── sync_daily_basic.py           # A 股每日指标
+├── sync_daily_bars.py            # A 股日 K
+├── sync_hk_us_daily_bars.py       # 港美股日 K
+├── sync_daily_hot.py             # A 股、港股、美股实时热度
+└── sync_cn_daily_hot.py     # A 股历史热度
 ```
 
-日常更新入口位于 `backend/scripts/latest/`，直接执行，不再弹出日期选择菜单。
-日 K 和每日指标默认更新最近 3 个自然日；股票热度同步当天数据；股票列表
-同步最近 3 个自然日内的完整交易日股票池快照。同步脚本会在写入前自动初始化数据库。
-每日指标按交易日历过滤休市日，进度总数为范围内的交易日数量；范围内无交易日时直接跳过。
-
-历史补数入口位于 `backend/scripts/history/`。A 股每日指标和日 K 可交互式选择
-最近 60、180、365 或 1095 个自然日（含今天），与日常入口共用同步函数；A 股日 K 先查询交易日历，
-再按交易日调用 `daily(trade_date="YYYYMMDD")` 拉取全市场数据：
+前四个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
+直接运行脚本显示日期选择菜单（60、180、365、1095 日，`e` 退出）；
+传入 `--lookback-days` 时直接执行。任务页面通过“同步最近多少个自然日”填写，API 和定时任务不会显示菜单：
 
 ```bash
-uv run python -m backend.scripts.history.sync_daily_basic
-uv run python -m backend.scripts.history.sync_daily_bars
-uv run python -m backend.scripts.history.sync_hk_us_daily_bars
+uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
+uv run python -m backend.scripts.sync_daily_basic --lookback-days 180
+uv run python -m backend.scripts.sync_daily_bars --lookback-days 365
+uv run python -m backend.scripts.sync_hk_us_daily_bars --lookback-days 1095
 ```
 
-补齐 A 股股票池历史热度排名，运行后可选择最近 60 或 365 个自然日（含今天）：
+同步脚本会在写入前初始化数据库。A 股每日指标、日 K 和股票池按交易日历过滤休市日，
+范围内无交易日时跳过；A 股日 K 按交易日调用 `daily(trade_date="YYYYMMDD")` 拉取全市场数据。
+旧历史任务在启动时改用统一脚本 ID，原有天数、名称和调度规则保持不变。
+旧股票池初始化任务在启动时清理，股票池成员和行情数据保持不变。
+
+两个热度入口使用不同接口，分别保留：
 
 ```bash
-uv run python -m backend.scripts.history.sync_daily_hot
+# 获取 A 股、港股、美股实时热度，保存为当天快照
+uv run python -m backend.scripts.sync_daily_hot
+
+# 获取 A 股历史热度排名；不传参数时显示 60、365 日和退出菜单
+uv run python -m backend.scripts.sync_cn_daily_hot --lookback-days 60
 ```
 
 读取 A 股库 `daily_stocks` 在历史区间内出现过的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
@@ -344,14 +390,13 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 ## 命令入口
 
 - `backend/run.py`：启动 FastAPI；
-- `backend/scripts/latest/sync_daily_stocks.py`：同步股票列表；
-- `backend/scripts/init_hk_us_stock_pools.py`：独立手动初始化或添加港股、美股股票池，可重复执行；
-- `backend/scripts/latest/sync_daily_basic.py`：同步最近 3 日每日指标；
-- `backend/scripts/latest/sync_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
-- `backend/scripts/latest/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
+- `backend/scripts/sync_daily_stocks.py`：同步股票列表；
+- `backend/scripts/sync_daily_basic.py`：同步最近 3 日每日指标；
+- `backend/scripts/sync_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
+- `backend/scripts/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
   无需 OpenD；默认最多 2 个并发请求，单股失败记录到 `failed_symbols`；
-- `backend/scripts/latest/sync_daily_hot.py`：分别向三个市场数据库同步当天股票热度；
-- `backend/scripts/history/`：每日指标、日 K 和 A 股热度的历史补数入口。
+- `backend/scripts/sync_daily_hot.py`：分别向三个市场数据库同步当天股票热度；
+- `backend/scripts/sync_cn_daily_hot.py`：按指定天数补齐 A 股历史热度排名。
 
 ```bash
 uv run quant-api
@@ -394,25 +439,29 @@ cn_market
 历史股票池使用 [Tushare bak_basic](https://tushare.pro/document/2?doc_id=262)，接口自 2016 年起提供数据，
 官方权限要求 5000 积分，单次最多 7000 条。名称来自对应日期，交易所及板块按当日代码判断，
 不借用当前 `stock_basic` 的名称或 ST 状态。尚未上市或无法确认上市日期的记录排除。
-返回日期不符、空快照、重复代码或达到接口条数上限时拒绝写入并报告失败。
+返回日期不符、重复代码或达到接口条数上限时拒绝写入并报告失败；空快照只提示并跳过，保留已有数据。
 
 ```bash
-# 交互选择近 60 日、近半年（180 日）、近一年（365 日）、近三年（1095 日）
-uv run python -m backend.scripts.history.sync_daily_stocks
+# 同步最近 60 个自然日，也可指定 180、365、1095 等天数
+uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
 ```
 
 股票池最多使用 10 个线程，并发数不超过范围内的交易日数量。
-日常与历史股票池脚本共用 `scripts/latest/sync_daily_stocks.py` 组装依赖，API 和定时任务也调用此入口。
-历史脚本处理菜单和参数，日常脚本提供共用初始化入口；交易日、快照写入及失败汇总由 `CNMarketService` 负责，线程池和限速交给 `utils/concurrency.py`。
+日常与历史股票池脚本共用 `scripts/sync_daily_stocks.py` 组装依赖，API 和定时任务也调用此入口。
+脚本只负责组装依赖和读取天数参数；交易日、快照写入及失败汇总由 `CNMarketService` 负责，线程池和限速交给 `utils/concurrency.py`。
 股票池统一调用 `update_daily_stocks(lookback_days=None)`：不传天数同步最新快照，指定天数同步该自然日范围内的交易日；无交易日时跳过。
 各交易日并发拉取，保留请求启动间隔限速，数据库由主线程统一写入。
 所有范围均截至上海时区今天，不需要输入开始或结束日期。新拉取的完整快照按交易日替换旧数据。
 
 历史日 K 同步不依赖本地股票池，按交易日获取当日全市场行情（含后来退市的股票）。
-日 K 请求并发且保留限速，主线程写入；空数据、日期不符或达到 6000 条上限时报告失败，
+日 K 请求并发且保留限速，主线程写入；日期不符或达到 6000 条上限时报告失败，
 成功日期仍会保存，重跑按 `(symbol, trade_date)` 更新。历史回测仍需单独补齐股票池快照。
 历史快照同步失败会以非零状态退出，失败日期的旧快照保留，已成功日期更新；重跑会重新拉取整个所选范围。
-每日列表同步同样使用 `bak_basic`，遇到尚未发布的当日数据会报错并保留已有快照。
+股票池、每日指标和日 K 同步统一处理空数据与异常：空数据只提示并跳过，保留已有数据；
+获取、整理或写入异常计入失败，继续处理其他日期。结束时汇总写入条数、无数据日期数和失败日期数，
+仅有实际失败时抛错；当日尚未发布或历史日期没有数据都不会单独导致任务失败。
+日 K 数据源保留原始记录，service 在写入前过滤成交量为 0 的记录，并输出过滤条数；
+过滤后整日无记录时计入无数据，数据库的价格关系与成交量约束保留。
 
 数据库初始化直接使用当前表结构建表，已有表与数据保留。
 

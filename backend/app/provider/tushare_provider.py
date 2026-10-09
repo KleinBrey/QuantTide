@@ -105,13 +105,20 @@ class TushareProvider:
 
     def fetch_trade_dates(self, start: date, end: date) -> list[date]:
         """读取交易所日历，避免用工作日猜测交易日。"""
-        result = self.pro.trade_cal(exchange="SSE", start_date=start.strftime("%Y%m%d"),
-                                    end_date=end.strftime("%Y%m%d"), is_open="1",
-                                    fields="cal_date,is_open")
+        result = self.pro.trade_cal(
+            exchange="SSE",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            is_open="1",
+            fields="cal_date,is_open",
+        )
         if result is None or result.empty:
             return []
-        dates = pd.to_datetime(result.loc[result["is_open"].astype(str) == "1", "cal_date"],
-                               format="%Y%m%d", errors="raise").dt.date
+        dates = pd.to_datetime(
+            result.loc[result["is_open"].astype(str) == "1", "cal_date"],
+            format="%Y%m%d",
+            errors="raise",
+        ).dt.date
         return sorted(set(day for day in dates if start <= day <= end))
 
     def latest_trade_date(self) -> date:
@@ -124,20 +131,31 @@ class TushareProvider:
     def fetch_stock_list(self, trade_date: date | None = None) -> pd.DataFrame:
         """bak_basic 每天完整历史股票池；不使用 stock_basic 当前名称回填。"""
         day = trade_date or self.latest_trade_date()
-        result = self.pro.bak_basic(trade_date=day.strftime("%Y%m%d"),
-                                    fields="trade_date,ts_code,name,list_date")
+        result = self.pro.bak_basic(
+            trade_date=day.strftime("%Y%m%d"),
+            fields="trade_date,ts_code,name,list_date",
+        )
         if result is None or result.empty:
-            raise RuntimeError(f"{day} 股票池快照为空，请稍后重试")
+            return pd.DataFrame()
         if len(result) >= 7000:
-            raise RuntimeError(f"{day} 股票池达到接口 7000 条上限，拒绝保存可能截断的快照")
+            raise RuntimeError(
+                f"{day} 股票池达到接口 7000 条上限，拒绝保存可能截断的快照"
+            )
         result = result.copy()
-        result["trade_date"] = pd.to_datetime(result["trade_date"], format="%Y%m%d", errors="raise").dt.date
+        result["trade_date"] = pd.to_datetime(
+            result["trade_date"], format="%Y%m%d", errors="raise"
+        ).dt.date
         if result["trade_date"].isna().any() or not result["trade_date"].eq(day).all():
             raise ValueError("历史股票池返回的日期与请求日期不一致")
-        if result[["ts_code", "name"]].isna().any().any() or result["ts_code"].duplicated().any():
+        if (
+            result[["ts_code", "name"]].isna().any().any()
+            or result["ts_code"].duplicated().any()
+        ):
             raise ValueError("历史股票池存在空字段或重复代码")
         # bak_basic 可能包含尚未上市股票；未知上市日不能视作已上市。
-        listed = pd.to_datetime(result["list_date"], format="%Y%m%d", errors="coerce").dt.date
+        listed = pd.to_datetime(
+            result["list_date"], format="%Y%m%d", errors="coerce"
+        ).dt.date
         result = result.loc[listed.notna() & (listed <= day)].copy()
         result["exchange"] = result["ts_code"].str.rsplit(".", n=1).str[-1]
         code = result["ts_code"].str.split(".").str[0]
@@ -155,10 +173,15 @@ class TushareProvider:
         if result is None or result.empty:
             return pd.DataFrame()
         if len(result) >= 6000:
-            raise RuntimeError(f"{trade_date} 日 K 达到接口 6000 条上限，拒绝保存可能截断的数据")
-        dates = pd.to_datetime(result["trade_date"], format="%Y%m%d", errors="raise").dt.date
+            raise RuntimeError(
+                f"{trade_date} 日 K 达到接口 6000 条上限，拒绝保存可能截断的数据"
+            )
+        dates = pd.to_datetime(
+            result["trade_date"], format="%Y%m%d", errors="raise"
+        ).dt.date
         if dates.isna().any() or not dates.eq(trade_date).all():
             raise ValueError("日 K 返回的日期与请求日期不一致")
+
         return result
 
     def fetch_daily_basic(self, trade_date: date | None = None) -> pd.DataFrame:

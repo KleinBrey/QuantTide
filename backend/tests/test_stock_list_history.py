@@ -11,8 +11,7 @@ import pandas as pd
 
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import DailyStockRepository
-from backend.scripts.history import sync_daily_stocks as script
-from backend.scripts.latest import sync_daily_stocks as latest_script
+from backend.scripts import sync_daily_stocks as script
 from backend.app.services import cn_market_service as service_module
 from backend.app.utils import concurrency
 from backend.app.services import CNMarketService
@@ -24,36 +23,25 @@ class StockListHistoryTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.database = DuckDBDatabase(Path(temporary.name) / "stocks.duckdb")
         self.database.initialize()
-        database_patch = patch.object(latest_script, "DuckDBDatabase", return_value=self.database)
+        database_patch = patch.object(script, "DuckDBDatabase", return_value=self.database)
         database_patch.start()
         self.addCleanup(database_patch.stop)
         clock_patch = patch.object(service_module, "datetime")
         clock_patch.start().now.return_value = datetime(2026, 10, 6)
         self.addCleanup(clock_patch.stop)
 
-    def test_history_menu_options(self):
-        for choice, days in [("1", 60), ("2", 180), ("3", 365), ("4", 1095)]:
-            with (
-                self.subTest(choice=choice),
-                patch("builtins.input", return_value=choice),
-                patch.object(script, "sync_daily_stocks") as sync,
-            ):
-                script.main()
-                sync.assert_called_once_with(days)
-        for choice in ["e", "invalid"]:
-            with (
-                patch("builtins.input", return_value=choice),
-                patch.object(script, "sync_daily_stocks") as sync,
-            ):
-                script.main()
-                sync.assert_not_called()
+    def test_cli_accepts_lookback_days(self):
+        for days in [3, 60, 180, 365, 1095]:
+            with self.subTest(days=days), patch.object(script, "sync_daily_stocks") as sync:
+                script.main(['--lookback-days', str(days)])
+                sync.assert_called_once_with(lookback_days=days)
 
     def test_natural_day_ranges_include_end_and_default_workers(self):
         end = date(2026, 10, 6)
         for days in [60, 180, 365, 1095]:
             with (
                 self.subTest(days=days),
-                patch.object(latest_script, "TushareProvider") as provider,
+                patch.object(script, "TushareProvider") as provider,
                 patch.object(concurrency, "ThreadPoolExecutor", wraps=concurrency.ThreadPoolExecutor) as executor,
             ):
                 provider.return_value.fetch_trade_dates.return_value = [end]
@@ -86,7 +74,7 @@ class StockListHistoryTests(unittest.TestCase):
             return original_upsert(repository, rows)
 
         with (
-            patch.object(latest_script, "TushareProvider") as provider,
+            patch.object(script, "TushareProvider") as provider,
             patch.object(DailyStockRepository, "upsert_stocks", autospec=True, side_effect=upsert),
         ):
             provider.return_value.fetch_trade_dates.return_value = days
@@ -123,12 +111,12 @@ class StockListHistoryTests(unittest.TestCase):
         provider.fetch_trade_dates.assert_not_called()
         provider.fetch_stock_list.assert_not_called()
 
-    def test_latest_entry_defaults_to_three_natural_days(self):
+    def test_entry_defaults_to_three_natural_days(self):
         day = date(2026, 10, 5)
-        with patch.object(latest_script, "TushareProvider") as provider:
+        with patch.object(script, "TushareProvider") as provider:
             provider.return_value.fetch_trade_dates.return_value = [day]
             provider.return_value.fetch_stock_list.return_value = self.stock_rows(day)
-            latest_script.main()
+            script.sync_daily_stocks()
             provider.return_value.fetch_trade_dates.assert_called_once_with(
                 date(2026, 10, 4), date(2026, 10, 6)
             )
@@ -169,11 +157,24 @@ class StockListHistoryTests(unittest.TestCase):
         repository.upsert_stocks(
             CNMarketService.format_stock_list(self.stock_rows(day), "Tushare")
         )
-        with patch.object(latest_script, "TushareProvider") as provider:
+        with patch.object(script, "TushareProvider") as provider:
             provider.return_value.fetch_stock_list.side_effect = RuntimeError("尚未发布")
             with self.assertRaisesRegex(RuntimeError, "股票池未完整同步.*最新交易日"):
-                latest_script.sync_daily_stocks(None)
+                script.sync_daily_stocks(None)
         self.assertEqual(repository.get_table_data().name.tolist(), ["平安银行"])
+
+    def test_empty_response_preserves_existing_snapshot(self):
+        day = date(2026, 9, 30)
+        repository = DailyStockRepository(self.database)
+        repository.upsert_stocks(
+            CNMarketService.format_stock_list(self.stock_rows(day), "Tushare")
+        )
+        existing = repository.get_table_data()
+        for result in [None, pd.DataFrame()]:
+            with self.subTest(result=result), patch.object(script, "TushareProvider") as provider:
+                provider.return_value.fetch_stock_list.return_value = result
+                self.assertEqual(script.sync_daily_stocks(None), 0)
+            pd.testing.assert_frame_equal(repository.get_table_data(), existing)
 
     @staticmethod
     def stock_rows(day):

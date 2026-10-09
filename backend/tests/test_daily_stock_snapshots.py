@@ -84,6 +84,14 @@ class DailyStockSnapshotsTests(unittest.TestCase):
         ])
         self.assertEqual(provider.fetch_trade_dates(date(2026, 9, 30), date(2026, 10, 5)), [date(2026, 9, 30)])
 
+    def test_empty_stock_response_returns_empty_frame(self):
+        provider = object.__new__(TushareProvider)
+        provider.pro = Mock()
+        for result in [None, pd.DataFrame()]:
+            with self.subTest(result=result):
+                provider.pro.bak_basic.return_value = result
+                self.assertTrue(provider.fetch_stock_list(date(2026, 10, 9)).empty)
+
     def test_future_stock_names_membership_basic_heat_and_bars_do_not_change_past_signal(self):
         days = pd.bdate_range("2026-08-03", periods=26)
         prices = [*np.linspace(10.6, 10.0, 24), 10.3, 10.4]

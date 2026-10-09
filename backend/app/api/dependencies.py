@@ -2,18 +2,23 @@ from fastapi import Request
 
 from backend.app.repository import (
     DailyBarRepository,
+    DailyBasicRepository,
+    DailyHotRepository,
+    DailyStockRepository,
     HKDailyBarRepository,
     HKStockHotDailyRepository,
     HKStockRepository,
-    DailyHotRepository,
-    DailyBasicRepository,
-    DailyStockRepository,
     USDailyBarRepository,
     USStockHotDailyRepository,
     USStockRepository,
 )
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
+from backend.app.services.task_service import TaskService
 from backend.app.services.watchlist_service import WatchlistService
+
+
+def get_task_service(request: Request) -> TaskService:
+    return request.app.state.task_service
 
 
 def get_watchlist_service(request: Request) -> WatchlistService:

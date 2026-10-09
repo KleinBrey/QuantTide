@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pandas as pd
 from fastapi import FastAPI
@@ -13,11 +13,12 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.dependencies import get_watchlist_service
 from backend.app.api.watchlists import router
+from backend.app.config.config import Settings
 from backend.app.database import SQLiteDatabase, DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
 from backend.app.repository import DailyStockRepository, HKStockRepository, USStockRepository
 from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.services.watchlist_service import WatchlistService
-from backend.scripts.latest.sync_hk_us_daily_bars import sync_hk_us_daily_bars
+from backend.scripts.sync_hk_us_daily_bars import sync_hk_us_daily_bars
 
 
 class WatchlistTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(response.status_code, status, response.text)
         return response.json()
 
-    def test_default_pools_are_explicit_and_have_two_business_tables(self):
+    def test_default_pools_share_sqlite_with_tasks(self):
         groups = self.repository.list_groups()
         pools = [group for group in groups if group['is_default']]
         self.assertEqual([(group['market'], group['name'], group['item_count']) for group in pools], [('HK', 'stock_pool', 1), ('US', 'stock_pool', 2)])
@@ -75,10 +76,46 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(fresh.ensure_default_pool('US')['id'], us_id)
         with self.business.connection() as connection:
             tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
-            self.assertEqual(tables, ['watchlist_groups', 'watchlist_items'])
+            self.assertEqual(tables, ['app_migrations', 'sqlite_sequence', 'tasks', 'watchlist_groups', 'watchlist_items'])
             self.assertEqual(connection.execute('PRAGMA foreign_keys').fetchone()[0], 1)
         with self.assertRaises(WatchlistError):
             self.repository.get_pool('CN')
+
+    def test_startup_creates_empty_pools_and_restart_preserves_user_changes(self):
+        from backend.app.main import app
+
+        root = self.business.database_path.parent / 'fresh'
+        settings = Settings(
+            app_database_path=root / 'app.sqlite',
+            database_path=root / 'cn.duckdb',
+            hk_database_path=root / 'hk.duckdb',
+            us_database_path=root / 'us.duckdb',
+            scheduler_enabled=False,
+        )
+        with patch('backend.app.main.get_settings', return_value=settings):
+            with TestClient(app) as client:
+                groups = client.get('/api/watchlists/groups').json()
+                self.assertEqual([(group['market'], group['name'], group['item_count']) for group in groups],
+                                 [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0)])
+                for market, symbol in [('hk-share', '700'), ('us-share', 'AAPL')]:
+                    self.assertEqual(client.get('/api/market-stocks', params={'market': market}).json(), [])
+                    response = client.post('/api/market-stocks', json={
+                        'market': market, 'symbol': symbol, 'name': '测试公司',
+                    })
+                    self.assertEqual(response.status_code, 201, response.text)
+                response = client.delete('/api/market-stocks', params={'market': 'hk-share', 'symbol': '700'})
+                self.assertEqual(response.status_code, 200)
+
+            # 重启不重复创建分组、不恢复已移除的港股，也不删除美股和基础信息。
+            with TestClient(app) as client:
+                fresh_groups = client.get('/api/watchlists/groups').json()
+                self.assertEqual([group['id'] for group in fresh_groups], [group['id'] for group in groups])
+                self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1])
+                self.assertEqual(client.get('/api/market-stocks', params={'market': 'hk-share'}).json(), [])
+                stocks = client.get('/api/market-stocks', params={'market': 'us-share'}).json()
+                self.assertEqual([stock['symbol'] for stock in stocks], ['AAPL'])
+                self.assertEqual(len(app.state.hk_stock_repository.get_table_data()), 1)
+                self.assertEqual(len(app.state.us_stock_repository.get_table_data()), 1)
 
     def test_default_group_protected_at_api_and_database(self):
         for market in ['HK', 'US']:

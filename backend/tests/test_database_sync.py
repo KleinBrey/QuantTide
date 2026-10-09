@@ -45,10 +45,10 @@ class DatabaseSyncTests(unittest.TestCase):
         ):
             response = self.client.post("/api/database-sync/hk-us-daily-k")
         self.assertEqual(response.status_code, 200, response.text)
-        task.assert_called_once_with(lookback_days=3)
+        task.assert_called_once_with(lookback_days=365)
         result = response.json()
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["script"], "latest/sync_hk_us_daily_bars.py")
+        self.assertEqual(result["script"], "sync_hk_us_daily_bars.py")
         self.assertGreaterEqual(result["duration_seconds"], 0)
         self.assertEqual(datetime.fromisoformat(result["finished_at"]).utcoffset().total_seconds(), 28800)
         self.assertFalse(self.lock.locked())
@@ -71,7 +71,7 @@ class DatabaseSyncTests(unittest.TestCase):
             ):
                 response = self.client.post("/api/database-sync/hk-us-daily-k")
                 self.assertEqual(response.status_code, 500, response.text)
-                self.assertIn("latest/sync_hk_us_daily_bars.py", response.json()["detail"])
+                self.assertIn("sync_hk_us_daily_bars.py", response.json()["detail"])
                 if isinstance(failure, dict):
                     self.assertIn("AAPL", response.json()["detail"])
                 self.assertFalse(self.lock.locked())

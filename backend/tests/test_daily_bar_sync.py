@@ -9,14 +9,15 @@ from unittest.mock import Mock, call, patch
 
 import pandas as pd
 
-from backend.app.database import DuckDBDatabase
+from backend.app.database import DuckDBDatabase, SQLiteDatabase
 from backend.app.provider import TushareProvider
 from backend.app.repository import DailyBarRepository
 from backend.app.services.cn_market_service import CNMarketService
 from backend.app.services import cn_market_service as service_module
-from backend.scripts.history import sync_daily_bars as history_script
-from backend.app.jobs.scheduler import create_scheduler
-from backend.app.jobs import tasks
+from backend.scripts import sync_daily_bars as script
+from backend.app.jobs.scheduler import create_scheduler, job_id
+from backend.app.repository.task import TaskRepository
+from backend.app.services.task_service import TaskService
 from backend.app.config.config import Settings
 
 
@@ -25,7 +26,7 @@ def daily_rows(day, close=10):
         dict(ts_code=symbol, trade_date=day.strftime("%Y%m%d"), open=9,
              high=11, low=8, close=close, vol=volume, amount=1234)
         for symbol, volume in [("000001.SZ", 100), ("600001.SH", 200),
-                               ("000002.SZ", 0), ("000003.SZ", None)]
+                               ("000002.SZ", 0)]
     ])
 
 
@@ -102,7 +103,7 @@ class DailyBarSyncTests(unittest.TestCase):
                 self.service.update_daily_bars(days)
         self.provider.pro.trade_cal.assert_not_called()
 
-    def test_failed_and_empty_dates_reported_successful_date_saved(self):
+    def test_empty_date_skipped_and_only_failed_date_reported(self):
         days = [date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30)]
         self.calendar(days)
 
@@ -114,7 +115,7 @@ class DailyBarSyncTests(unittest.TestCase):
             return daily_rows(days[0])
 
         self.provider.pro.daily.side_effect = fetch
-        with self.assertRaisesRegex(RuntimeError, "2026-09-29, 2026-09-30"):
+        with self.assertRaisesRegex(RuntimeError, "失败日期：2026-09-29$"):
             self.service.update_daily_bars(60)
         rows = self.repository.get_table_data()
         self.assertEqual(len(rows), 2)
@@ -123,7 +124,7 @@ class DailyBarSyncTests(unittest.TestCase):
     def test_provider_rejects_truncation_and_wrong_date(self):
         day = date(2026, 9, 30)
         for result, error in [
-            (pd.concat([daily_rows(day)] * 1500), RuntimeError),
+            (pd.concat([daily_rows(day)] * 2000), RuntimeError),
             (daily_rows(date(2026, 9, 29)), ValueError),
         ]:
             with self.subTest(error=error):
@@ -134,26 +135,71 @@ class DailyBarSyncTests(unittest.TestCase):
             self.provider.pro.daily.return_value = result
             self.assertTrue(self.provider.fetch_daily_bar(day).empty)
 
-    def test_history_menu_passes_only_lookback_days(self):
-        for choice, days in [("1", 60), ("2", 180), ("3", 365), ("4", 1095)]:
-            with (
-                self.subTest(choice=choice),
-                patch("builtins.input", return_value=choice),
-                patch.object(history_script, "sync_daily_bars") as sync,
-            ):
-                history_script.main()
-                sync.assert_called_once_with(days)
+    def test_missing_volume_is_a_write_failure_not_silently_filtered(self):
+        self.calendar([self.today])
+        result = daily_rows(self.today)
+        result.loc[0, "vol"] = None
+        self.provider.pro.daily.return_value = result
+        with self.assertRaisesRegex(RuntimeError, "已写入 0 条，失败日期：2026-10-06$"):
+            self.service.update_daily_bars(1)
+        self.assertTrue(self.repository.get_table_data().empty)
+
+    def test_provider_keeps_zero_volume_and_service_skips_it(self):
+        self.calendar([self.today])
+        valid = daily_rows(self.today)
+        placeholder = valid.iloc[:1].assign(
+            ts_code="002667.SZ", open=0, high=0, low=0, close=22.19, vol=0
+        )
+        raw = pd.concat([valid, placeholder])
+        self.provider.pro.daily.return_value = raw
+        pd.testing.assert_frame_equal(self.provider.fetch_daily_bar(self.today), raw)
+        with patch.object(service_module, "progress_write") as message:
+            self.assertEqual(self.service.update_daily_bars(1), 2)
+        message.assert_any_call(f"{self.today} 日 K 跳过 2 条零成交量记录")
+        saved = self.repository.get_table_data()
+        self.assertNotIn("002667.SZ", saved.symbol.tolist())
+        self.assertNotIn("000002.SZ", saved.symbol.tolist())
+
+    def test_only_placeholders_is_empty_without_writing(self):
+        self.calendar([self.today])
+        self.provider.pro.daily.return_value = daily_rows(self.today).assign(
+            open=0, high=0, low=0, vol=0
+        )
+        with patch.object(self.repository, "upsert_daily_bars") as write:
+            self.assertEqual(self.service.update_daily_bars(1), 0)
+        write.assert_not_called()
+
+    def test_invalid_prices_with_volume_still_fail_database_constraint(self):
+        self.calendar([self.today])
+        self.provider.pro.daily.return_value = daily_rows(self.today).assign(high=0)
+        with self.assertRaisesRegex(RuntimeError, "已写入 0 条，失败日期：2026-10-06$"):
+            self.service.update_daily_bars(1)
+        self.assertTrue(self.repository.get_table_data().empty)
+
+    def test_cli_passes_lookback_days(self):
+        for days in [3, 60, 180, 365, 1095]:
+            with self.subTest(days=days), patch.object(script, "sync_daily_bars") as sync:
+                script.main(['--lookback-days', str(days)])
+                sync.assert_called_once_with(lookback_days=days)
 
     def test_scheduler_and_job_use_date_based_signature(self):
-        scheduler = create_scheduler(Settings())
-        for job_id, days in [("weekday-daily-k-sync", 3),
-                             ("weekly-daily-k-sync", 60),
-                             ("monthly-daily-k-sync", 365)]:
-            with self.subTest(job_id=job_id), patch.object(tasks, "sync_daily_bars") as sync:
-                job = scheduler.get_job(job_id)
-                self.assertEqual(job.args, (days,))
-                job.func(*job.args)
-                sync.assert_called_once_with(days)
+        with tempfile.TemporaryDirectory() as temporary:
+            database = SQLiteDatabase(Path(temporary) / 'app.sqlite')
+            database.initialize()
+            repository = TaskRepository(database)
+            repository.initialize_defaults()
+            settings = Settings(scheduler_enabled=False)
+            scheduler = create_scheduler(settings)
+            service = TaskService(repository=repository, scheduler=scheduler, settings=settings)
+            service.load_scheduled_tasks()
+            jobs = [task for task in service.repository.list_tasks() if task['script_id'] == 'daily_bars']
+            self.assertEqual([task['params']['lookback_days'] for task in jobs], [3, 60, 365])
+            for task in jobs:
+                with self.subTest(task=task), patch('backend.scripts.sync_daily_bars.sync_daily_bars') as sync:
+                    job = scheduler.get_job(job_id(task['id']))
+                    self.assertEqual(job.args, (task['id'],))
+                    job.func(*job.args)
+                    sync.assert_called_once_with(lookback_days=task['params']['lookback_days'])
 
 
 if __name__ == "__main__":

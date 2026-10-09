@@ -1,4 +1,4 @@
-"""同步每日股票热度。"""
+"""获取 A 股、港股、美股当前实时热度，保存为当天的热度快照。"""
 
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
