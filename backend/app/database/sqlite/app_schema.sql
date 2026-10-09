@@ -1,10 +1,4 @@
 -- 业务数据保存任务配置、分组和成员；股票基础信息、行情仍保留在 DuckDB。
--- 记录默认任务是否已经初始化，避免任务删空后重启又被重新生成。
-CREATE TABLE IF NOT EXISTS app_migrations (
-    id TEXT PRIMARY KEY,
-    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 100),

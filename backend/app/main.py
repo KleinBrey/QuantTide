@@ -108,9 +108,8 @@ async def lifespan(app: FastAPI):
     app.state.hk_market_service = hk_market_service
     app.state.us_market_service = us_market_service
 
-    # 默认任务只写入一次；以后启动保留用户的增删改。
+    # 任务由用户在前端添加，启动时只读取已有配置。
     task_repository = TaskRepository(app_database)
-    task_repository.initialize_defaults()
 
     # 1. 创建 Scheduler，此时不会执行任何任务。
     scheduler = create_scheduler(settings)

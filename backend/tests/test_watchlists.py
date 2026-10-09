@@ -76,7 +76,7 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(fresh.ensure_default_pool('US')['id'], us_id)
         with self.business.connection() as connection:
             tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
-            self.assertEqual(tables, ['app_migrations', 'sqlite_sequence', 'tasks', 'watchlist_groups', 'watchlist_items'])
+            self.assertEqual(tables, ['sqlite_sequence', 'tasks', 'watchlist_groups', 'watchlist_items'])
             self.assertEqual(connection.execute('PRAGMA foreign_keys').fetchone()[0], 1)
         with self.assertRaises(WatchlistError):
             self.repository.get_pool('CN')

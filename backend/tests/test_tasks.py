@@ -34,7 +34,6 @@ class TaskTests(unittest.TestCase):
         self.database = SQLiteDatabase(Path(temporary.name) / 'app.sqlite')
         self.database.initialize()
         self.repository = TaskRepository(self.database)
-        self.repository.initialize_defaults()
         self.settings = Settings(app_database_path=self.database.database_path, scheduler_enabled=False)
         self.scheduler = create_scheduler(self.settings)
         self.service = TaskService(repository=self.repository, scheduler=self.scheduler, settings=self.settings)
@@ -94,20 +93,13 @@ class TaskTests(unittest.TestCase):
                     else:
                         sync.assert_called_once_with(lookback_days=days)
 
-    def test_seed_matches_existing_page_and_schedules_and_never_returns_after_delete(self):
-        tasks = self.client.get('/api/tasks').json()
-        self.assertEqual([task['script_id'] for task in tasks[:5]],
-                         ['daily_hot', 'daily_bars', 'hk_us_daily_bars', 'daily_basic', 'daily_stocks'])
-        self.assertEqual(len(tasks), 7)
-        self.assertEqual(len(self.scheduler.get_jobs()), 6)
-        with self.database.connection() as connection:
-            row = connection.execute('SELECT params_json, schedule_json FROM tasks WHERE id = ?', (tasks[1]['id'],)).fetchone()
-            self.assertIn('lookback_days', row[0])
-            self.assertIn('mon-fri', row[1])
-        for task in tasks:
-            self.assertEqual(self.client.delete(f'/api/tasks/{task["id"]}').status_code, 200)
+    def test_tasks_start_empty_and_stay_empty_after_delete_and_restart(self):
+        self.assertEqual(self.client.get('/api/tasks').json(), [])
+        self.assertEqual(self.scheduler.get_jobs(), [])
+        task = self.create(schedule={'trigger': 'cron', 'cron': '0 16 * * mon-fri'})
+        self.assertEqual(self.client.delete(f'/api/tasks/{task["id"]}').status_code, 200)
         self.database.initialize()
-        self.repository.initialize_defaults()
+        self.service.load_scheduled_tasks()
         self.assertEqual(TaskRepository(self.database).list_tasks(), [])
         self.assertEqual(self.scheduler.get_jobs(), [])
 
@@ -150,63 +142,39 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0].name, '修改两次')
 
-    def test_initialization_removes_retired_pool_tasks_and_preserves_sync_tasks(self):
-        existing = self.repository.list_tasks()
-        self.repository.create_task(dict(
-            name='旧股票池初始化', script_id='init_hk_us_stock_pools', params={},
-            schedule={'trigger': 'cron', 'cron': '0 16 * * *'}, enabled=True,
-        ))
-        self.repository.initialize_defaults()
-        self.assertEqual(self.repository.list_tasks(), existing)
+    def test_retired_pool_script_cannot_be_added(self):
         response = self.client.post('/api/tasks', json={
             'name': '旧股票池初始化', 'script_id': 'init_hk_us_stock_pools',
         })
         self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.repository.list_tasks(), [])
 
-    def test_old_history_tasks_keep_parameters_and_schedules_after_merge(self):
-        for script_id in ('daily_bars', 'daily_basic', 'daily_stocks', 'hk_us_daily_bars', 'cn_daily_hot'):
-            with self.subTest(script=script_id):
-                old_id = 'history_daily_hot' if script_id == 'cn_daily_hot' else f'history_{script_id}'
-                task = self.repository.create_task(dict(
-                    name='一年历史补数', script_id=old_id, params={'lookback_days': 365},
-                    schedule={'trigger': 'interval', 'seconds': 3600}, enabled=True,
-                ))
-                self.repository.initialize_defaults()
-                migrated = self.repository.get_task(task['id'])
-                self.assertEqual(migrated, {**task, 'script_id': script_id})
-                module_name, entry = SCRIPTS[script_id]['run'].split(':')
-                with patch(f'{module_name}.{entry}') as sync:
-                    if script_id == 'hk_us_daily_bars':
-                        sync.return_value = {'hk': {'failed_symbols': []}, 'us': {'failed_symbols': []}}
-                    response = self.client.post(f'/api/tasks/{task["id"]}/run')
-                    self.assertEqual(response.status_code, 200, response.text)
-                    sync.assert_called_once_with(lookback_days=365)
-
-    def test_task_migration_does_not_depend_on_existing_sqlite_user_version(self):
+    def test_table_creation_does_not_depend_on_existing_sqlite_user_version(self):
         legacy = SQLiteDatabase(self.database.database_path.parent / 'legacy.sqlite')
         with sqlite3.connect(legacy.database_path) as connection:
             connection.execute('PRAGMA user_version = 1')
         legacy.initialize()
-        TaskRepository(legacy).initialize_defaults()
-        self.assertEqual(len(TaskRepository(legacy).list_tasks()), 7)
+        self.assertEqual(TaskRepository(legacy).list_tasks(), [])
         with legacy.connection() as connection:
             self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 1)
-            self.assertIsNotNone(connection.execute("SELECT 1 FROM app_migrations WHERE id = 'tasks-v1'").fetchone())
 
     def test_database_initialization_only_creates_tables(self):
         database = SQLiteDatabase(self.database.database_path.parent / 'empty.sqlite')
         database.initialize()
         self.assertEqual(TaskRepository(database).list_tasks(), [])
         with database.connection() as connection:
-            self.assertEqual(connection.execute('SELECT COUNT(*) FROM app_migrations').fetchone()[0], 0)
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_migrations'"
+            ).fetchone())
 
     def test_scheduler_creation_does_not_load_or_start_tasks(self):
+        self.create(schedule={'trigger': 'cron', 'cron': '0 16 * * mon-fri'})
         scheduler = create_scheduler(self.settings)
         service = TaskService(repository=self.repository, scheduler=scheduler, settings=self.settings)
         self.assertEqual(scheduler.get_jobs(), [])
         service.load_scheduled_tasks()
         service.load_scheduled_tasks()
-        self.assertEqual(len(scheduler.get_jobs()), 6)
+        self.assertEqual(len(scheduler.get_jobs()), 1)
         self.assertFalse(scheduler.running)
 
     def test_scheduler_triggers_saved_task_and_exposes_next_run(self):
@@ -239,8 +207,8 @@ class TaskTests(unittest.TestCase):
                 with patch('backend.app.main.get_settings', return_value=settings), TestClient(app) as client:
                     self.assertIs(app.state.task_service.scheduler, app.state.scheduler)
                     self.assertEqual(app.state.scheduler.running, enabled)
-                    self.assertEqual(len(app.state.scheduler.get_jobs()), 6)
-                    self.assertEqual(len(client.get('/api/tasks').json()), 7)
+                    self.assertEqual(app.state.scheduler.get_jobs(), [])
+                    self.assertEqual(client.get('/api/tasks').json(), [])
                 self.assertFalse(app.state.scheduler.running)
 
     def test_validation_prevents_unknown_scripts_params_and_invalid_schedules(self):

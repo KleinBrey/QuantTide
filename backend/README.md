@@ -122,7 +122,7 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 | `app/jobs/tasks.py` | 按注册表执行脚本，提供共用写入锁 |
 | `scripts/registry.py` | 登记可选脚本及默认参数 |
 
-准备好数据库和首次启动的默认任务后，启动流程都在 `main.py` 中，按顺序往下读：
+创建数据库表后，启动流程都在 `main.py` 中，按顺序往下读：
 
 ```text
 FastAPI 启动
@@ -134,21 +134,14 @@ FastAPI 启动
 
 构造函数只保存依赖，不偷偷加载或启动任务。SQLite 连接不导入 Repository，Scheduler 不导入 Service。
 APScheduler 使用默认内存 JobStore；唯一的持久化任务配置是 SQLite 的 `tasks` 表。
-`app_migrations` 当前只记录默认任务已经初始化，保证删空任务后重启不会自动恢复。
 
 任务操作沿着一条路径阅读即可：`api/tasks.py` → `task_service.py` → `repository/task.py`。
 Service 内按“启动加载、配置管理、执行任务”排列：配置保存后调用 `sync_scheduled_task()`
 更新调度；手动和定时任务最终都进入 `execute()`，读取最新配置、运行注册脚本、记录结果，
 并释放写入锁。触发器、任务 ID 和登记规则集中在 `scheduler.py`，不再散落到 Service 中。
 
-任务保存在 SQLite 的 `tasks` 表，首次初始化默认写入页面原有五个任务和两个校准任务：
-
-- 工作日 18:00 更新最新交易日股票池（Tushare 交易日历确认日期）；
-- 工作日 15:00 更新 A 股、港股和美股热度；
-- 工作日 16:00 更新最近 3 日的 A 股日 K 和每日指标；
-- 港美股日 K 默认仅手动运行，更新最近 3 日；
-- 周六 16:00 校准最近 60 日的 A 股日 K；
-- 每月 1 日 16:00 校准最近 365 日的 A 股日 K。
+任务保存在 SQLite 的 `tasks` 表，首次启动只创建空表，不预填任务。
+用户在前端自行新增任务，选择脚本、参数和定时规则；启动时加载已有配置。
 
 每个任务设置 `max_instances=1` 和 `coalesce=True`，避免同一任务重复运行。
 定时任务和手动任务共用写入锁；定时任务排队执行，手动任务在已有写入时返回 409。
@@ -163,7 +156,7 @@ API 的 `params`、`schedule` 是 JSON 对象，对应表中的 `params_json`、
 `schedule=null` 表示仅手动运行；定时规则支持
 `{"trigger":"cron","cron":"0 16 * * mon-fri"}` 或
 `{"trigger":"interval","seconds":3600}`，使用 `SCHEDULER_TIMEZONE` 时区。
-配置修改即时更新调度器，重启后从数据库恢复；默认任务只初始化一次，删除后不会重建。
+配置修改即时更新调度器，重启后从数据库恢复；任务删空后重启仍为空。
 任务结果暂存于当前服务进程，重启后重置；股票数据更新时间继续从 DuckDB 读取。
 
 ### `app/utils/` 和 `app/view/`

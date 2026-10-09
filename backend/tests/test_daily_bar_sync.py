@@ -187,7 +187,11 @@ class DailyBarSyncTests(unittest.TestCase):
             database = SQLiteDatabase(Path(temporary) / 'app.sqlite')
             database.initialize()
             repository = TaskRepository(database)
-            repository.initialize_defaults()
+            for days, cron in [(3, '0 16 * * mon-fri'), (60, '0 16 * * sat'), (365, '0 16 1 * *')]:
+                repository.create_task(dict(
+                    name=f'日 K 同步 {days} 日', script_id='daily_bars', params={'lookback_days': days},
+                    schedule={'trigger': 'cron', 'cron': cron}, enabled=True,
+                ))
             settings = Settings(scheduler_enabled=False)
             scheduler = create_scheduler(settings)
             service = TaskService(repository=repository, scheduler=scheduler, settings=settings)
