@@ -23,11 +23,27 @@ function isVisibleGroup(group, market) {
   return !group.is_default && (!group.market || group.market === market);
 }
 
+const STOCK_POOL_VISIBILITY_KEY = 'quantide:show-stock-pool';
+
+function visibleGroups(allGroups, market, showStockPool) {
+  const customGroups = allGroups.filter(group => isVisibleGroup(group, market));
+  const pool = showStockPool && allGroups.find(group => group.is_default && group.market === market);
+  return pool ? [{ ...pool, name: '股票池' }, ...customGroups] : customGroups;
+}
+
 export function useMarketStocks(marketId) {
   const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US' }[marketId];
   const [allGroups, setAllGroups] = useState([]);
   const [activeGroups, setActiveGroups] = useState({});
-  const groups = useMemo(() => allGroups.filter(group => isVisibleGroup(group, market)), [allGroups, market]);
+  const [showStockPool, setShowStockPool] = useState(() => {
+    try {
+      return window.localStorage.getItem(STOCK_POOL_VISIBILITY_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const groups = useMemo(() => visibleGroups(allGroups, market, showStockPool), [allGroups, market, showStockPool]);
+  const hasStockPool = allGroups.some(group => group.is_default && group.market === market);
   const groupId = groups.find(group => group.id === activeGroups[market])?.id ?? groups[0]?.id ?? null;
   const [stocks, setStocks] = useState([]);
   const [stocksMarket, setStocksMarket] = useState(null);
@@ -52,8 +68,8 @@ export function useMarketStocks(marketId) {
       setError('');
       try {
         const allGroups = (await getWatchlistGroupsApi()).data;
-        const visibleGroups = allGroups.filter(group => isVisibleGroup(group, market));
-        const active = visibleGroups.find(group => group.id === activeGroupsRef.current[market]) || visibleGroups[0];
+        const availableGroups = visibleGroups(allGroups, market, showStockPool);
+        const active = availableGroups.find(group => group.id === activeGroupsRef.current[market]) || availableGroups[0];
         const allItems = active ? (await getWatchlistItemsApi(active.id)).data : [];
         if (requestId !== requestRef.current) return;
         allGroupsRef.current = allGroups;
@@ -78,7 +94,7 @@ export function useMarketStocks(marketId) {
         if (requestId === requestRef.current) setLoading(false);
       }
     },
-    [market]
+    [market, showStockPool]
   );
 
   const mutate = useCallback(async action => {
@@ -116,6 +132,20 @@ export function useMarketStocks(marketId) {
     setActiveGroups(current => ({ ...current, [market]: id }));
     setActionError('');
     loadStocks();
+  };
+
+  const toggleStockPool = visible => {
+    if (mutationRef.current || loading || visible === showStockPool) return;
+    setStocks([]);
+    setSelectedStock(null);
+    setLoading(true);
+    setActionError('');
+    setShowStockPool(visible);
+    try {
+      window.localStorage.setItem(STOCK_POOL_VISIBILITY_KEY, String(visible));
+    } catch {
+      // 存储不可用时，开关仍在当前页面生效。
+    }
   };
 
   const addStock = useCallback(
@@ -167,7 +197,8 @@ export function useMarketStocks(marketId) {
 
   const reorderGroups = next =>
     runAction(async () => {
-      const merged = mergeVisibleOrder(allGroupsRef.current, next, group => isVisibleGroup(group, market));
+      const sortableGroups = next.filter(group => isVisibleGroup(group, market));
+      const merged = mergeVisibleOrder(allGroupsRef.current, sortableGroups, group => isVisibleGroup(group, market));
       await reorderWatchlistGroupsApi(merged.map(group => group.id));
       if (activeMarketRef.current !== market) return;
       allGroupsRef.current = merged;
@@ -218,6 +249,9 @@ export function useMarketStocks(marketId) {
     mutating,
     actionError: stocksMarket === market ? actionError : '',
     groups,
+    hasStockPool,
+    showStockPool,
+    toggleStockPool,
     groupId,
     selectGroup,
     createGroup,

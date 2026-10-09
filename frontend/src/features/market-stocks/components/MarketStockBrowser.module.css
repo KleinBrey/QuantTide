@@ -43,7 +43,8 @@
 }
 
 .stockList {
-  height: calc(100vh - 232px);
+  flex: 1;
+  height: 0;
   min-height: 240px;
   padding: 6px;
 }
@@ -250,7 +251,7 @@
 
 .addPopover {
   padding: 14px;
-  width: 260px;
+  width: 270px;
   max-width: calc(100vw - 16px);
 }
 
@@ -319,6 +320,7 @@
   color: #e4e4e7;
   cursor: pointer;
   display: flex;
+  gap: 8px;
   justify-content: space-between;
   padding: 9px 8px;
   text-align: left;
@@ -326,17 +328,28 @@
 }
 
 .stockSearchResult > span {
+  align-items: center;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
 }
 
 .stockSearchResult strong {
   font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .stockSearchResult small {
   color: #a1a1aa;
+  flex-shrink: 0;
   font-size: 11px;
+  white-space: nowrap;
+}
+.stockSearchResult > svg {
+  flex-shrink: 0;
 }
 .stockSearchResult:hover:not(:disabled) {
   background: #27272a;
@@ -379,13 +392,14 @@
 }
 
 .groupBar {
-  align-items: center;
+  align-items: flex-start;
   background: #111114;
   border-bottom: 1px solid #27272a;
   display: flex;
-  flex: 0 0 64px;
+  flex: 0 0 auto;
   gap: 6px;
   padding: 12px 10px;
+  min-height: 64px;
   min-width: 0;
 }
 
@@ -393,11 +407,9 @@
   align-items: center;
   display: flex;
   flex: 0 1 auto;
+  flex-wrap: wrap;
   gap: 7px;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
 }
 
 .groupTab {
@@ -410,14 +422,19 @@
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  height: 32px;
-  padding: 0 10px;
-  white-space: nowrap;
+  min-height: 32px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 6px 10px;
+  white-space: normal;
 }
 
 .groupTab[aria-selected='true'] {
   border-color: #d4d4d8;
   color: #fafafa;
+}
+.stockPoolTab {
+  background: #111114;
 }
 .groupTab:hover {
   background: #27272a;
@@ -471,6 +488,51 @@
   color: #71717a;
   font-size: 11px;
   margin: 0 0 10px;
+}
+.stockPoolSetting {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin: 0 0 12px;
+  color: #d4d4d8;
+  font-size: 12px;
+}
+.stockPoolSetting label {
+  cursor: pointer;
+}
+.stockPoolSwitch {
+  background: #3f3f46;
+  border: 1px solid #52525b;
+  border-radius: 999px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 2px;
+  width: 36px;
+}
+.stockPoolSwitch[data-state='checked'] {
+  background: #e4e4e7;
+  border-color: #e4e4e7;
+}
+.stockPoolSwitch:focus-visible {
+  outline: 2px solid #a1a1aa;
+  outline-offset: 2px;
+}
+.stockPoolSwitch:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.stockPoolSwitchThumb {
+  background: #fafafa;
+  border-radius: 50%;
+  display: block;
+  height: 14px;
+  transition: transform 150ms ease;
+  width: 14px;
+}
+.stockPoolSwitchThumb[data-state='checked'] {
+  background: #18181b;
+  transform: translateX(16px);
 }
 .manageGroups {
   max-height: 320px;
@@ -602,6 +664,7 @@
   }
 
   .stockList {
+    flex: 0 0 240px;
     height: 240px;
   }
 }
