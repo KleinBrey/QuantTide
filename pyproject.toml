@@ -20,6 +20,8 @@ dependencies = [
   "pydantic-settings>=2.10,<3",
   "akshare>=1.18.91,<2",
   "tushare>=1.2.26,<2",
+  "futu-api>=10,<11",
+  "yfinance>=0.2.66,<2",
 ]
 
 [dependency-groups]
@@ -27,11 +29,14 @@ dev = ["httpx>=0.28,<1"]
 
 [project.scripts]
 quant-api = "backend.run:main"
-quant-sync = "backend.scripts.sync_daily_k_db:main"
+quant-sync = "backend.scripts.sync_daily_bars:main"
+quant-backtest = "backend.quant.backtest.engine:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend*"]
 
 [tool.setuptools.package-data]
-"backend.app.strategy" = ["strategies.json"]
+"backend.quant.signal" = ["signals.json"]
+"backend.app.database.duckdb" = ["*.sql"]
+"backend.app.database.sqlite" = ["*.sql"]

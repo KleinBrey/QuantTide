@@ -3,6 +3,16 @@
   overflow-x: auto;
 }
 
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panelHeader {
+  flex-shrink: 0;
+}
+
 .headerActions {
   align-items: center;
   display: flex;
@@ -10,34 +20,6 @@
 }
 
 .tableWrap {
-  display: block;
-  height: calc(100vh - 190px);
-  min-height: 480px;
-}
-
-.fullscreenButton {
-  color: #d4d4d8;
-}
-
-.panel:fullscreen,
-.fallbackFullscreen {
-  background: var(--background);
-  border: 0;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-}
-
-.fallbackFullscreen {
-  inset: 0;
-  position: fixed;
-  z-index: 100;
-}
-
-.panel:fullscreen .tableWrap,
-.fallbackFullscreen .tableWrap {
   flex: 1;
   height: auto;
   min-height: 0;
@@ -45,7 +27,9 @@
 
 @media (max-width: 1180px) {
   .dashboardGrid {
+    grid-auto-rows: minmax(550px, auto);
     grid-template-columns: 1fr;
+    height: auto;
     overflow-x: visible;
   }
 }

@@ -5,6 +5,11 @@ import { transformStockHistory } from '../utils/transformers.js';
 
 const klineCache = new Map();
 const pendingRequests = new Map();
+const DATA_SOURCE_LABELS = {
+  'a-share': '本地 DuckDB / Tushare',
+  'hk-share': '本地 DuckDB / Yahoo Finance',
+  'us-share': '本地 DuckDB / Yahoo Finance'
+};
 
 export function useStockKline() {
   const [data, setData] = useState(null);
@@ -12,11 +17,12 @@ export function useStockKline() {
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
 
-  const loadKline = useCallback(async symbol => {
+  const loadKline = useCallback(async (symbol, marketId = 'a-share') => {
     if (!symbol) return;
 
     const requestId = ++requestIdRef.current;
-    const cachedData = klineCache.get(symbol);
+    const cacheKey = `${marketId}:${symbol}`;
+    const cachedData = klineCache.get(cacheKey);
 
     if (cachedData) {
       setData(cachedData);
@@ -30,30 +36,38 @@ export function useStockKline() {
     setError('');
 
     try {
-      let request = pendingRequests.get(symbol);
+      let request = pendingRequests.get(cacheKey);
 
       if (!request) {
         request = getDailyBarsApi({
           symbol,
+          market: marketId,
           start: moment().subtract(1, 'year').format('YYYY-MM-DD'),
           end: moment().format('YYYY-MM-DD')
-        }).then(response => ({
-          dataSource: '同花顺 HiThink',
-          adjustLabel: '前复权',
-          rows: transformStockHistory(response?.data)
-        }));
-        pendingRequests.set(symbol, request);
+        }).then(response => {
+          const items = response?.data;
+          const sources = [...new Set((Array.isArray(items) ? items : []).map(item => item.source).filter(Boolean))];
+          const isYahoo = sources.length === 1 && sources[0] === 'YFinance';
+          return {
+            dataSource: sources.length
+              ? `本地 DuckDB / ${sources.map(source => source === 'YFinance' ? 'Yahoo Finance' : source).join('、')}`
+              : DATA_SOURCE_LABELS[marketId] || '本地 DuckDB',
+            adjustLabel: sources.length > 1 ? '多来源行情' : isYahoo ? 'Yahoo 自动复权' : '前复权',
+            rows: transformStockHistory(items)
+          };
+        });
+        pendingRequests.set(cacheKey, request);
       }
 
       const nextData = await request;
-      klineCache.set(symbol, nextData);
-      pendingRequests.delete(symbol);
+      klineCache.set(cacheKey, nextData);
+      pendingRequests.delete(cacheKey);
 
       if (requestId !== requestIdRef.current) return;
 
       setData(nextData);
     } catch (requestError) {
-      pendingRequests.delete(symbol);
+      pendingRequests.delete(cacheKey);
       if (requestId !== requestIdRef.current) return;
       console.error('K 线加载失败', requestError);
       setData(null);

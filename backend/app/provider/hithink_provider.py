@@ -25,6 +25,27 @@ session.headers.update({"X-api-key": HITHINK_FINANCE_API_KEY})
 
 class HithinkProvider:
 
+    def fetch_hot_stock_rank_trend(
+        self, thscode: str, start_date: str, end_date: str
+    ) -> list[dict]:
+        """获取单只股票的历史每日热度排名，日期格式为 YYYY-MM-DD。"""
+        # 每次请求使用独立连接，避免多线程共用全局 Session。
+        response = requests.get(
+            f"{BASE_URL}/api/a-share/special-data/hot-stock-rank-trend",
+            headers={"X-api-key": HITHINK_FINANCE_API_KEY},
+            params={
+                "thscode": thscode,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if result["code"] != 0:
+            raise RuntimeError(f"接口错误 {result['code']}: {result.get('message')}")
+        return result["data"]["item"]
+
     @staticmethod
     def get(url: str, params: dict) -> dict:
         query_url = f"{BASE_URL}/{url}"

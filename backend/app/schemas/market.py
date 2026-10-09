@@ -1,16 +1,31 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Stock(BaseModel):
+    trade_date: date
     symbol: str
     name: str
     exchange: str
     market: str
-    type: str
     source: str
     update_time: datetime
+
+
+class GlobalStock(BaseModel):
+    """港股和美股股票池中的一条记录。"""
+
+    symbol: str
+    name: str
+    source: str
+    update_time: datetime
+
+
+class AddMarketStock(BaseModel):
+    market: str = Field(pattern=r"^(hk-share|us-share)$")
+    symbol: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=100)
 
 
 class DailyBar(BaseModel):
@@ -35,6 +50,6 @@ class HotStock(BaseModel):
     name: str
     price: float | None = None
     change_pct: float | None = None
-    hot_value: float
+    rank: int
     source: str
     update_time: datetime

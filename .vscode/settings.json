@@ -16,14 +16,28 @@
   },
   "duckdb.databases": [
     {
-      "alias": "market",
+      "alias": "hk_market",
       "type": "file",
-      "path": "/Users/kleinbrey/Documents/QuantTide/data/market.duckdb",
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/hk_market.duckdb",
+      "attached": false,
+      "readOnly": false
+    },
+    {
+      "alias": "us_market",
+      "type": "file",
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/us_market.duckdb",
+      "attached": false,
+      "readOnly": false
+    },
+    {
+      "alias": "cn_market",
+      "type": "file",
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/cn_market.duckdb",
       "attached": false,
       "readOnly": false
     }
   ],
-  "duckdb.defaultDatabase": "market",
+  "duckdb.defaultDatabase": "cn_market",
   "[sql]": {
     "editor.formatOnSave": false
   }

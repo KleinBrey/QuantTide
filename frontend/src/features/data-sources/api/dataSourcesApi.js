@@ -1,17 +1,10 @@
 import request from '@/api/quantide/request.js';
 
-export function fetchLatestUpdateTimes() {
-  return request.get('/api/database-sync/latest-update-times');
-}
-
-export function syncStockList() {
-  return request.post('/api/database-sync/stock-list', {}, { timeout: 0 });
-}
-
-export function syncDailyK() {
-  return request.post('/api/database-sync/daily-k', {}, { timeout: 0 });
-}
-
-export function syncHotStock() {
-  return request.post('/api/database-sync/hot-stock', {}, { timeout: 0 });
-}
+export const fetchTasks = () => request.get('/api/tasks');
+export const fetchScripts = () => request.get('/api/tasks/scripts');
+export const createTask = data => request.post('/api/tasks', data);
+export const updateTask = (id, data) => request.put(`/api/tasks/${id}`, data);
+export const deleteTask = id => request.delete(`/api/tasks/${id}`);
+export const setTaskEnabled = (id, enabled) => request.patch(`/api/tasks/${id}`, { enabled });
+export const runTask = id => request.post(`/api/tasks/${id}/run`, {}, { timeout: 0 });
+export const fetchLatestUpdateTimes = () => request.get('/api/database-sync/latest-update-times');

@@ -1,111 +1,118 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  fetchLatestUpdateTimes,
-  syncDailyK,
-  syncHotStock,
-  syncStockList
+  fetchTasks, fetchScripts, fetchLatestUpdateTimes, createTask, updateTask,
+  deleteTask, setTaskEnabled, runTask as executeTask
 } from '../api/dataSourcesApi.js';
 
-const SYNC_TASKS = [
-  {
-    id: 'hot-stock',
-    name: '股票热度',
-    description: '获取当天 A 股、港股和美股热度榜，并更新对应数据表。',
-    run: syncHotStock
-  },
-  {
-    id: 'daily-k',
-    name: '日 K 线数据',
-    description: '同步最近 3 个自然日的行情，每批处理 100 只股票。',
-    run: syncDailyK
-  },
-  {
-    id: 'stock-list',
-    name: 'A 股股票列表',
-    description: '拉取并写入最新 A 股基础信息，建议先执行这个任务。',
-    run: syncStockList
-  }
-];
-
-const INITIAL_RESULTS = Object.fromEntries(
-  SYNC_TASKS.map(task => [task.id, { status: 'idle', message: '', finishedAt: '', duration: null }])
-);
-
 export function useDataSources() {
-  const [results, setResults] = useState(INITIAL_RESULTS);
+  const [tasks, setTasks] = useState([]);
+  const [scripts, setScripts] = useState([]);
+  const [settings, setSettings] = useState({ timezone: 'Asia/Shanghai', scheduler_enabled: true });
   const [latestUpdateTimes, setLatestUpdateTimes] = useState({});
   const [latestDataStatus, setLatestDataStatus] = useState('loading');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pendingTaskId, setPendingTaskId] = useState(null);
   const activeTask = useRef(null);
-  const latestRequestId = useRef(0);
+  const requestId = useRef(0);
+
+  const loadTasks = useCallback(async () => {
+    // 多次查询重叠时，只采用最近一次请求的结果。
+    const currentId = ++requestId.current;
+    const { data } = await fetchTasks();
+    if (currentId === requestId.current) setTasks(data);
+  }, []);
 
   const loadLatestUpdateTimes = useCallback(async () => {
-    const requestId = latestRequestId.current + 1;
-    latestRequestId.current = requestId;
-    setLatestDataStatus('loading');
-
     try {
       const { data } = await fetchLatestUpdateTimes();
-      if (requestId !== latestRequestId.current) return;
       setLatestUpdateTimes(data);
       setLatestDataStatus('ready');
     } catch {
-      if (requestId !== latestRequestId.current) return;
       setLatestDataStatus('failed');
     }
   }, []);
 
-  useEffect(() => {
-    void loadLatestUpdateTimes();
-  }, [loadLatestUpdateTimes]);
-
-  const runSync = useCallback(async taskId => {
-    if (activeTask.current) return;
-
-    const task = SYNC_TASKS.find(item => item.id === taskId);
-    if (!task) return;
-
-    activeTask.current = taskId;
+  const reload = useCallback(async () => {
+    setLoading(true);
     setError('');
-    setResults(current => ({
-      ...current,
-      [taskId]: { status: 'running', message: '正在执行同步脚本…', finishedAt: '', duration: null }
-    }));
-
     try {
-      const { data } = await task.run();
-      setResults(current => ({
-        ...current,
-        [taskId]: {
-          status: 'success',
-          message: data.message,
-          finishedAt: data.finished_at,
-          duration: data.duration_seconds
-        }
-      }));
-      void loadLatestUpdateTimes();
-    } catch (requestError) {
-      const message = requestError.response?.data?.detail || requestError.message || '同步脚本执行失败';
-      setError(`${task.name}：${message}`);
-      setResults(current => ({
-        ...current,
-        [taskId]: { status: 'failed', message: '同步脚本执行失败', finishedAt: '', duration: null }
-      }));
+      await loadTasks();
+      const { data } = await fetchScripts();
+      setScripts(data.scripts);
+      setSettings({ timezone: data.timezone, scheduler_enabled: data.scheduler_enabled });
+      await loadLatestUpdateTimes();
+    } catch (err) {
+      setError(err.message || '任务列表读取失败');
     } finally {
-      activeTask.current = null;
+      setLoading(false);
     }
-  }, [loadLatestUpdateTimes]);
+  }, [loadTasks, loadLatestUpdateTimes]);
 
-  const runningTaskId = Object.keys(results).find(taskId => results[taskId].status === 'running') || null;
+  useEffect(() => {
+    // 进入页面加载一次，后续由用户点击“刷新”查询。
+    void reload();
+  }, [reload]);
+
+  const saveTask = async (id, data) => {
+    setError('');
+    let response;
+    if (id) {
+      response = await updateTask(id, data);
+    } else {
+      response = await createTask(data);
+    }
+    const saved = response.data;
+    // 操作成功后直接使用响应更新页面，不额外查询列表。
+    ++requestId.current;
+    setTasks(current => {
+      if (id) return current.map(task => task.id === id ? { ...task, ...saved, next_run_at: null } : task);
+      return [...current, saved];
+    });
+  };
+
+  const removeTask = async id => {
+    setError('');
+    await deleteTask(id);
+    ++requestId.current;
+    setTasks(current => current.filter(task => task.id !== id));
+  };
+
+  const toggleTask = async task => {
+    setError('');
+    try {
+      const { data: saved } = await setTaskEnabled(task.id, !task.enabled);
+      ++requestId.current;
+      setTasks(current => current.map(item => item.id === task.id
+        ? { ...item, ...saved, next_run_at: null } : item));
+    } catch (err) {
+      setError(err.message || '更新任务失败');
+    }
+  };
+
+  const runTask = async taskId => {
+    // ref 立即生效，阻止 React 更新状态前的连续点击。
+    if (activeTask.current !== null) return;
+    activeTask.current = taskId;
+    setPendingTaskId(taskId);
+    setError('');
+    try {
+      const { data: result } = await executeTask(taskId);
+      ++requestId.current;
+      setTasks(current => current.map(task => task.id === taskId ? { ...task, result } : task));
+    } catch (err) {
+      setError(err.message || '任务执行失败');
+    } finally {
+      // 等待状态只由 pendingTaskId 表示，不把临时状态写进后端结果。
+      activeTask.current = null;
+      setPendingTaskId(null);
+    }
+  };
 
   return {
-    tasks: SYNC_TASKS,
-    results,
-    latestUpdateTimes,
-    latestDataStatus,
-    runningTaskId,
-    error,
-    runSync
+    tasks, scripts, settings, latestUpdateTimes, latestDataStatus, loading, error,
+    runningTaskId: pendingTaskId ?? tasks.find(task => task.result?.status === 'running')?.id ?? null,
+    runTask, reload, saveTask, removeTask, toggleTask
   };
 }

@@ -16,6 +16,8 @@ export class QuantClient extends HttpClient {
     // 写回 message 后，业务层可以继续统一读取 error.message。
     if (typeof serverMessage === 'string' && serverMessage) {
       error.message = serverMessage;
+    } else if (Array.isArray(serverMessage)) {
+      error.message = serverMessage.map(item => item.msg).filter(Boolean).join('；') || error.message;
     }
 
     return super.handleResponseError(error);
@@ -24,7 +26,7 @@ export class QuantClient extends HttpClient {
 
 // 创建Quant连接
 const request = new QuantClient({
-  baseURL: 'http://127.0.0.1:8001'
+  baseURL: import.meta.env.VITE_QUANT_API_URL || 'http://127.0.0.1:8001'
 });
 
 export default request;

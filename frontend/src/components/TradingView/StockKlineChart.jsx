@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/shadcn/components/ui/button.jsx';
+import { TradeMarkerPrimitive } from '@/components/tradingView/TradeMarkerPrimitive.js';
 import styles from './StockKlineChart.module.css';
 
 const periodOptions = [
@@ -26,6 +27,8 @@ const movingAverages = [
 ];
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const EMPTY_MARKERS = [];
+const DEFAULT_VISIBLE_BAR_COUNT = 120;
 
 function timeKey(value) {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -89,6 +92,35 @@ function aggregateRows(rows, period) {
   return Array.from(groups.values());
 }
 
+function markerGroupKey(time, period) {
+  if (period === 'weekly') return weekKey(time);
+  if (period === 'monthly') return String(time).slice(0, 7);
+  return String(time);
+}
+
+function normalizeMarkers(markers, period, rows) {
+  if (!Array.isArray(markers) || !markers.length || !rows.length) return EMPTY_MARKERS;
+
+  const chartTimeByGroup = new Map(rows.map(row => [markerGroupKey(row.time, period), row.time]));
+  return markers
+    .flatMap(marker => {
+      const sourceTime = marker?.time || marker?.date || marker?.trade_date;
+      const price = Number(marker?.price);
+      if (!sourceTime || !Number.isFinite(price)) return [];
+      const time = chartTimeByGroup.get(markerGroupKey(sourceTime, period));
+      if (!time) return [];
+      const isBuy = String(marker.side).toUpperCase() === 'BUY';
+      return [
+        {
+          time,
+          price,
+          side: isBuy ? 'BUY' : 'SELL'
+        }
+      ];
+    })
+    .sort((left, right) => String(left.time).localeCompare(String(right.time)));
+}
+
 function calculateMA(rows, dayCount) {
   let rollingTotal = 0;
   return rows.flatMap((row, index) => {
@@ -116,8 +148,20 @@ function formatVolume(value) {
   return number.toLocaleString('zh-CN');
 }
 
-function rowSummary(row) {
+function formatChangePercent(value) {
+  if (value == null) return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`;
+}
+
+function rowSummary(row, previousRow) {
   if (!row) return null;
+
+  const previousClose = Number(previousRow?.close);
+  const changePct =
+    Number.isFinite(previousClose) && previousClose !== 0 ? ((row.close - previousClose) / previousClose) * 100 : null;
+
   return {
     time: row.time,
     open: row.open,
@@ -125,14 +169,23 @@ function rowSummary(row) {
     low: row.low,
     close: row.close,
     volume: row.volume,
+    changePct,
     rising: row.close >= row.open
   };
 }
 
-function resetTimeScale(chart, rowCount) {
-  if (rowCount > 120) {
+function resetTimeScale(chart, rowCount, alignDataLeft) {
+  if (alignDataLeft) {
     chart.timeScale().setVisibleLogicalRange({
-      from: rowCount - 120,
+      from: 0,
+      to: Math.max(rowCount, DEFAULT_VISIBLE_BAR_COUNT) - 1
+    });
+    return;
+  }
+
+  if (rowCount > DEFAULT_VISIBLE_BAR_COUNT) {
+    chart.timeScale().setVisibleLogicalRange({
+      from: rowCount - DEFAULT_VISIBLE_BAR_COUNT,
       to: rowCount - 1 // 右侧不留空隙
     });
     return;
@@ -148,20 +201,24 @@ export default function StockKlineChart({
   error,
   period,
   onPeriodChange,
-  enableMouseWheelZoom = true
+  markers = EMPTY_MARKERS,
+  enableMouseWheelZoom = true,
+  fillContainer = false,
+  alignDataLeft = false
 }) {
   const chartRef = useRef(null);
   const contextMenuRef = useRef(null);
   const resetViewRef = useRef(() => {});
   const dailyRows = useMemo(() => chartRows(data), [data]);
   const rows = useMemo(() => aggregateRows(dailyRows, period), [dailyRows, period]);
+  const seriesMarkers = useMemo(() => normalizeMarkers(markers, period, rows), [markers, period, rows]);
   const stockName = stock?.name;
   const stockCode = stock?.symbol || stock?.code || stock?.thscode;
-  const [activeBar, setActiveBar] = useState(() => rowSummary(rows.at(-1)));
+  const [activeBar, setActiveBar] = useState(() => rowSummary(rows.at(-1), rows.at(-2)));
   const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
-    setActiveBar(rowSummary(rows.at(-1)));
+    setActiveBar(rowSummary(rows.at(-1), rows.at(-2)));
     setContextMenu(null);
   }, [rows]);
 
@@ -197,7 +254,6 @@ export default function StockKlineChart({
 
     const chart = createChart(container, {
       autoSize: true,
-      height: 520,
       layout: {
         attributionLogo: true,
         background: { type: ColorType.Solid, color: '#111114' },
@@ -280,6 +336,8 @@ export default function StockKlineChart({
         close
       }))
     );
+    const tradeMarkerPrimitive = seriesMarkers.length ? new TradeMarkerPrimitive(seriesMarkers) : null;
+    if (tradeMarkerPrimitive) candleSeries.attachPrimitive(tradeMarkerPrimitive);
 
     movingAverages.forEach(({ days, color }) => {
       const series = chart.addSeries(LineSeries, {
@@ -316,24 +374,26 @@ export default function StockKlineChart({
     resetViewRef.current = () => {
       candleSeries.priceScale().applyOptions({ autoScale: true });
       volumeSeries.priceScale().applyOptions({ autoScale: true });
-      resetTimeScale(chart, rows.length);
+      resetTimeScale(chart, rows.length, alignDataLeft);
     };
 
-    const rowsByTime = new Map(rows.map(row => [String(row.time), row]));
+    const summariesByTime = new Map(rows.map((row, index) => [String(row.time), rowSummary(row, rows[index - 1])]));
+    const latestSummary = rowSummary(rows.at(-1), rows.at(-2));
     const handleCrosshairMove = parameter => {
-      const selected = parameter.time ? rowsByTime.get(timeKey(parameter.time)) : rows.at(-1);
-      setActiveBar(rowSummary(selected || rows.at(-1)));
+      const selected = parameter.time ? summariesByTime.get(timeKey(parameter.time)) : latestSummary;
+      setActiveBar(selected || latestSummary);
     };
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
-    resetTimeScale(chart, rows.length);
+    resetTimeScale(chart, rows.length, alignDataLeft);
 
     return () => {
       resetViewRef.current = () => {};
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      if (tradeMarkerPrimitive) candleSeries.detachPrimitive(tradeMarkerPrimitive);
       chart.remove();
     };
-  }, [enableMouseWheelZoom, rows]);
+  }, [alignDataLeft, enableMouseWheelZoom, rows, seriesMarkers]);
 
   const handleContextMenu = event => {
     event.preventDefault();
@@ -352,12 +412,12 @@ export default function StockKlineChart({
 
   const handleResetView = () => {
     resetViewRef.current();
-    setActiveBar(rowSummary(rows.at(-1)));
+    setActiveBar(rowSummary(rows.at(-1), rows.at(-2)));
     setContextMenu(null);
   };
 
   return (
-    <section className={styles.kline}>
+    <section className={`${styles.kline}${fillContainer ? ` ${styles.fillContainer}` : ''}`}>
       <div className={styles.header}>
         <div>
           <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : '个股 K 线'}</h3>
@@ -392,28 +452,44 @@ export default function StockKlineChart({
         <div className={styles.chartShell} onContextMenu={handleContextMenu}>
           {activeBar ? (
             <div className={styles.legend} aria-live="polite">
-              <span className={styles.legendDate}>{activeBar.time}</span>
-              <span>
-                开 <strong>{formatPrice(activeBar.open)}</strong>
-              </span>
-              <span>
-                高 <strong>{formatPrice(activeBar.high)}</strong>
-              </span>
-              <span>
-                低 <strong>{formatPrice(activeBar.low)}</strong>
-              </span>
-              <span>
-                收{' '}
-                <strong className={activeBar.rising ? styles.rise : styles.fall}>{formatPrice(activeBar.close)}</strong>
-              </span>
-              <span>
-                量 <strong>{formatVolume(activeBar.volume)}</strong>
-              </span>
-              {movingAverages.map(({ days, color }) => (
-                <span className={styles.maKey} key={days} style={{ '--ma-color': color }}>
-                  MA{days}
+              <div className={styles.legendValues}>
+                <span className={styles.legendDate}>{activeBar.time}</span>
+                <span>
+                  开 <strong>{formatPrice(activeBar.open)}</strong>
                 </span>
-              ))}
+                <span>
+                  高 <strong>{formatPrice(activeBar.high)}</strong>
+                </span>
+                <span>
+                  低 <strong>{formatPrice(activeBar.low)}</strong>
+                </span>
+                <span>
+                  收{' '}
+                  <strong className={activeBar.rising ? styles.rise : styles.fall}>
+                    {formatPrice(activeBar.close)}
+                  </strong>
+                </span>
+                <span>
+                  量 <strong>{formatVolume(activeBar.volume)}</strong>
+                </span>
+                <span>
+                  涨幅{' '}
+                  <strong
+                    className={
+                      activeBar.changePct > 0 ? styles.rise : activeBar.changePct < 0 ? styles.fall : undefined
+                    }
+                  >
+                    {formatChangePercent(activeBar.changePct)}
+                  </strong>
+                </span>
+              </div>
+              <div className={styles.legendValues}>
+                {movingAverages.map(({ days, color }) => (
+                  <span className={styles.maKey} key={days} style={{ '--ma-color': color }}>
+                    MA{days}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
           <div

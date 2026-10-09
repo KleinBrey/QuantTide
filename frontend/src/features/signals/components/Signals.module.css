@@ -1,0 +1,207 @@
+.root {
+  align-items: stretch;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: calc(100vh - 72px);
+}
+
+.signalSidebar {
+  align-self: stretch;
+  min-height: calc(100vh - 116px);
+}
+
+.sidebarHeader {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  display: flex;
+  font-size: 15px;
+  font-weight: 800;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 16px;
+}
+
+.sidebarHeader small {
+  align-items: center;
+  background: #27272a;
+  border-radius: 999px;
+  color: #a1a1aa;
+  display: inline-flex;
+  font-size: 11px;
+  height: 22px;
+  justify-content: center;
+  min-width: 22px;
+  padding: 0 7px;
+}
+
+.signalList {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.signalItem {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #71717a;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 12px;
+  text-align: left;
+  transition: 150ms ease;
+  width: 100%;
+}
+
+.signalItem:hover {
+  background: #202024;
+  color: #d4d4d8;
+}
+
+.signalItemActive {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #fafafa;
+}
+
+.signalIcon {
+  align-items: center;
+  background: #3f3f46;
+  border-radius: 8px;
+  color: #93c5fd;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.signalText {
+  min-width: 0;
+}
+
+.signalText strong,
+.signalText small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signalText strong {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.signalText small {
+  color: #71717a;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.noSignal {
+  color: #71717a;
+  font-size: 12px;
+  padding: 20px 8px;
+  text-align: center;
+}
+
+.resultPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 116px);
+}
+
+.resultHeader {
+  min-height: 96px;
+  padding-bottom: 14px;
+  padding-top: 14px;
+}
+
+.headerContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.signalHeading {
+  align-items: baseline;
+  display: flex;
+  gap: 14px;
+}
+
+.signalHeading span {
+  color: #71717a;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerMeta {
+  background: #202024;
+  border: 1px solid #3f3f46;
+  border-left: 3px solid #60a5fa;
+  border-radius: 6px;
+  color: #a1a1aa;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px 20px;
+  margin-top: 12px;
+  max-width: 100%;
+  padding: 8px 12px;
+  width: fit-content;
+}
+
+.headerMeta strong {
+  color: #fafafa;
+  font-size: 13px;
+  margin-left: 4px;
+}
+
+.headerActions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.fullscreenTableWrap {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.errorNotice {
+  background: #260b13;
+  border-bottom: 1px solid #7f1d34;
+  color: #fecdd3;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 18px;
+}
+
+.tableWrap {
+  flex: 1;
+  height: calc(100vh - 264px);
+  /* min-height: 540px; */
+}
+
+@media (max-width: 900px) {
+  .root {
+    grid-template-columns: 1fr;
+  }
+
+  .signalSidebar {
+    min-height: auto;
+  }
+
+  .signalList {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}

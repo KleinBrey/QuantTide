@@ -106,7 +106,7 @@ class AkShareProvider:
         adjust: str = "forward",
         offset: int = 0,
     ) -> dict:
-        """获取股票历史行情，并返回现有 Service 能处理的字段。"""
+        """获取股票历史行情，并返回 CNMarketService 能处理的字段。"""
 
         code = validate_symbol(thscode)
 

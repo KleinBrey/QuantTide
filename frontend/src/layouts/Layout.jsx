@@ -9,11 +9,6 @@ export default function Layout({ children }) {
       <section style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <header className={style.siteHeader}>
           <SidebarTrigger />
-          <div className={style.headerTitle}>
-            <div>
-              <h1>交易投研系统</h1>
-            </div>
-          </div>
         </header>
         <main>{children}</main>
       </section>

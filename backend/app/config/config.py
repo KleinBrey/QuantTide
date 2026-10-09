@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
 
     # DuckDB 数据库路径
-    database_path: Path = Field(default=PROJECT_ROOT / "data" / "market.duckdb")
+    database_path: Path = Field(default=PROJECT_ROOT / "data" / "cn_market.duckdb")
+    hk_database_path: Path = Field(default=PROJECT_ROOT / "data" / "hk_market.duckdb")
+    us_database_path: Path = Field(default=PROJECT_ROOT / "data" / "us_market.duckdb")
+    app_database_path: Path = Field(default=PROJECT_ROOT / "data" / "app.sqlite")
 
     # 跨域 # CORS 允许的源
     cors_origins_list: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
@@ -44,7 +47,7 @@ class Settings(BaseSettings):
     scheduler_timezone: str = "Asia/Shanghai"
 
     # 数据同步的并发工作进程数
-    sync_workers: int = 4
+    sync_workers: int = 10
 
 
 @lru_cache(maxsize=1)

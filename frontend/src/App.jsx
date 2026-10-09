@@ -6,14 +6,14 @@ import AppRoutes from '@/routes/AppRoutes.jsx';
 
 export default function App() {
   return (
-    <TradingCalendarProvider>
-      <ThemeProvider>
+    <ThemeProvider>
+      <TradingCalendarProvider>
         <BrowserRouter>
           <Layout>
             <AppRoutes />
           </Layout>
         </BrowserRouter>
-      </ThemeProvider>
-    </TradingCalendarProvider>
+      </TradingCalendarProvider>
+    </ThemeProvider>
   );
 }

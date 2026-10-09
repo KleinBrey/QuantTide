@@ -11,6 +11,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 5173 --open"
   },
   "dependencies": {
+    "@base-ui/react": "^1.7.0",
     "@radix-ui/react-slot": "^1.2.4",
     "ag-grid-react": "^36.1.0",
     "axios": "^1.19.0",

@@ -1,8 +1,0 @@
-# 基础案例只需要 Python 3.11+ 标准库。
-# 以下依赖对应第三方库章节；使用范围而非无上限最新版，兼顾更新与兼容性。
-requests>=2.31,<3
-pydantic>=2.10,<3
-pydantic-settings>=2.10,<3
-duckdb>=1.3,<2
-pandas>=2.2,<4
-pytest>=8.4,<10

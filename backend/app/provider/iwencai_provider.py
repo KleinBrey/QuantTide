@@ -100,6 +100,10 @@ class IwencaiProvider:
             if expected_total is None or len(rows) < expected_total:
                 raise IwencaiError(f"达到最大分页数 {max_pages}，结果尚未获取完整")
 
+        if expected_total is not None and len(rows) < expected_total:
+            raise IwencaiError(
+                f"查询结果不完整：预期 {expected_total} 条，实际 {len(rows)} 条"
+            )
         return rows
 
     def _request_page(
@@ -187,21 +191,7 @@ class IwencaiProvider:
             "港股关注度排名前50",
             page_size=50,
         )
-        frame = pd.DataFrame(data)
-
-        hot_col = next(col for col in frame.columns if col.startswith("个股热度"))
-
-        frame = frame.rename(
-            columns={
-                "股票代码": "symbol",
-                "股票简称": "name",
-                "收盘价": "price",
-                "最新涨跌幅": "change_pct",
-                hot_col: "hot_rank",
-            }
-        )
-
-        return frame
+        return self.format_hot_rank(data)
 
     def fetch_us_hot_rank(self) -> pd.DataFrame:
         """获取美股关注度排名前 50。"""
@@ -216,18 +206,37 @@ class IwencaiProvider:
     def format_hot_rank(data: list[dict[str, Any]]) -> pd.DataFrame:
         """将问财热度结果转换为统一字段。"""
 
+        columns = ["symbol", "name", "price", "change_pct", "rank"]
         frame = pd.DataFrame(data)
 
+        if frame.empty:
+            return pd.DataFrame(columns=columns)
+
+        # 问财返回类似：个股热度[20260929]
         hot_col = next(col for col in frame.columns if col.startswith("个股热度"))
+
+        # 根据热度值降序生成排名
+        heat = pd.to_numeric(frame[hot_col], errors="coerce")
+        frame["rank"] = heat.rank(
+            method="first",
+            ascending=False,
+        )
+
+        # 统一字段名
+        price_col = "最新价" if "最新价" in frame.columns else "收盘价"
 
         frame = frame.rename(
             columns={
                 "股票代码": "symbol",
                 "股票简称": "name",
-                "最新价": "price",
+                price_col: "price",
                 "最新涨跌幅": "change_pct",
-                hot_col: "hot_rank",
             }
         )
 
-        return frame
+        # 某些接口可能没有价格或涨跌幅
+        for col in ["price", "change_pct"]:
+            if col not in frame.columns:
+                frame[col] = pd.NA
+
+        return frame[columns].sort_values("rank", kind="stable").reset_index(drop=True)
