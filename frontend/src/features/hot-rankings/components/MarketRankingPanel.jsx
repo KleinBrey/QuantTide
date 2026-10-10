@@ -3,7 +3,7 @@ import { Loader2, RefreshCcw } from 'lucide-react';
 import moment from 'moment';
 
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
-import { useWindowFullscreen, FULLSCREEN_MODE } from '@/hooks/useFullscreen.js';
+import { useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import RankingTable from './RankingTable.jsx';
@@ -36,7 +36,7 @@ export default function MarketRankingPanel({ market }) {
           <span>{rankingError || formatTimestamp(ranking.timestamp)}</span>
         </div>
         <div className={styles.headerActions}>
-          <FullscreenButton isFullscreen={isFullscreen} mode={FULLSCREEN_MODE.WINDOW} onToggle={toggleFullscreen} />
+          <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
           <Button
             aria-label={`刷新${market.title}数据`}
             type="button"
@@ -46,7 +46,7 @@ export default function MarketRankingPanel({ market }) {
             disabled={rankingLoading}
           >
             {rankingLoading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
-            <span>{rankingLoading ? '更新中' : '刷新数据'}</span>
+            <span>刷新数据</span>
           </Button>
         </div>
       </div>

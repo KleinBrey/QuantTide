@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getHKHotStocksApi, getHotStocksApi, getUSHotStocksApi } from '@/api/quantide/api.js';
+import { getHKHotStocksApi, getHotStocksApi, getUSHotStocksApi } from '../api/hotRankingsApi.js';
 import { transformHotRankingResponse } from '../utils/transformers.js';
 
 const MARKET_CONFIG = {

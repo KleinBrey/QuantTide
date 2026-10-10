@@ -1,6 +1,6 @@
 import moment from 'moment';
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
-import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
+import { useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { cn } from '@/shadcn/lib/utils.js';
 import { useStrategyBacktest } from '../hooks/useStrategyBacktest.js';
 import { formatNumber, formatPercent } from '../utils/backtestFormatters.jsx';
@@ -84,7 +84,7 @@ export default function BacktestResultsView() {
             <h2>交易记录</h2>
             <span>同一股票的交易按日期排列，末行汇总展示 K 线；B 为买点，S 为卖点</span>
           </div>
-          <FullscreenButton isFullscreen={isFullscreen} mode={FULLSCREEN_MODE.WINDOW} onToggle={toggleFullscreen} />
+          <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
         </div>
         {error ? <div className={styles.errorNotice}>{error}</div> : null}
         <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>

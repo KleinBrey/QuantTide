@@ -1,7 +1,7 @@
 import { BookOpenText, ChevronRight, Loader2, RefreshCcw } from 'lucide-react';
 import moment from 'moment';
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
-import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
+import { useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
 import { useSignals } from '../hooks/useSignals.js';
@@ -72,7 +72,7 @@ export default function SignalsView() {
             </div>
           </div>
           <div className={styles.headerActions}>
-            <FullscreenButton isFullscreen={isFullscreen} mode={FULLSCREEN_MODE.WINDOW} onToggle={toggleFullscreen} />
+            <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
             <Button
               type="button"
               className="dashboard-ghost-button"
