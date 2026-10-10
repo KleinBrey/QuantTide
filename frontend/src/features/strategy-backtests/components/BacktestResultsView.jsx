@@ -2,6 +2,7 @@ import moment from 'moment';
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
 import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { cn } from '@/shadcn/lib/utils.js';
+import { useStrategyBacktest } from '../hooks/useStrategyBacktest.js';
 import { formatNumber, formatPercent } from '../utils/backtestFormatters.jsx';
 import BacktestToolbar from './BacktestToolbar.jsx';
 import BacktestEquityChart from './BacktestEquityChart.jsx';
@@ -22,7 +23,8 @@ function Metric({ label, value, tone }) {
   );
 }
 
-export default function BacktestResultsView({ state }) {
+export default function BacktestResultsView() {
+  const state = useStrategyBacktest();
   const { isFullscreen, targetClassName, toggleFullscreen } = useWindowFullscreen();
   const { result, loading, error } = state;
   const summary = result?.summary;

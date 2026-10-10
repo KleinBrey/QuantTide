@@ -4,6 +4,7 @@ import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
 import { FULLSCREEN_MODE, useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import { cn } from '@/shadcn/lib/utils.js';
+import { useSignals } from '../hooks/useSignals.js';
 import SignalResultsTable from './SignalResultsTable.jsx';
 import styles from './Signals.module.css';
 
@@ -13,9 +14,9 @@ function formatTimestamp(value) {
   return timestamp.isValid() ? timestamp.format('YYYY-MM-DD HH:mm:ss') : '尚未运行';
 }
 
-export default function SignalsView({ state }) {
+export default function SignalsView() {
   const { isFullscreen, targetClassName, toggleFullscreen } = useWindowFullscreen();
-  const { signals, activeSignalId, result, columnDefs, loading, error, selectSignal, refresh } = state;
+  const { signals, activeSignalId, result, columnDefs, loading, error, selectSignal, refresh } = useSignals();
   const activeSignal = result?.signal || signals.find(signal => signal.id === activeSignalId);
   const rows = result?.items || [];
 

@@ -63,25 +63,6 @@
   color: #f04451;
 }
 
-.poolError {
-  align-items: center;
-  color: #f04451;
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  padding: 6px 10px;
-}
-
-.poolError button {
-  background: transparent;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 2px 6px;
-}
-
 .klineRow {
   border-bottom: 1px solid #3f3f46;
   border-top: 1px solid #3f3f46;

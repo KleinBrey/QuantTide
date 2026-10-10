@@ -105,10 +105,7 @@ export default function RankingTable({ rows, loading, marketId = 'a-share', show
     enabled,
     symbols,
     pending,
-    loading: poolLoading,
     ready: poolReady,
-    error: poolError,
-    refresh: refreshPool,
     addStock
   } = useStockPool(marketId, rows);
   const columnDefs = useMemo(
@@ -168,14 +165,6 @@ export default function RankingTable({ rows, loading, marketId = 'a-share', show
 
   return (
     <div className={styles.table}>
-      {poolError && (
-        <div className={styles.poolError} role="alert">
-          <span>{poolError}</span>
-          <button type="button" onClick={refreshPool} disabled={poolLoading}>
-            重试
-          </button>
-        </div>
-      )}
       <div className={styles.grid}>
         <AgGridProvider modules={modules}>
           <div style={{ height: '100%', width: '100%' }}>

@@ -21,6 +21,7 @@ import {
   DialogTitle
 } from '@/shadcn/components/ui/dialog.jsx';
 import { shortTime } from '@/utils/formatters.js';
+import { useDataSources } from '../hooks/useDataSources.js';
 import TaskEditor from './TaskEditor.jsx';
 import TaskStatusCell from './TaskStatusCell.jsx';
 import { formatTaskCron } from '../utils/taskSchedule.js';
@@ -188,23 +189,24 @@ function scheduleText(task) {
   return `${rule}${task.enabled ? '' : ' · 已停用'}`;
 }
 
-export default function DataSourcesView({
-  tasks,
-  scripts,
-  settings,
-  latestUpdateTimes,
-  latestDataStatus,
-  loading,
-  reordering,
-  runningTaskId,
-  error,
-  runTask,
-  reload,
-  saveTask,
-  removeTask,
-  toggleTask,
-  reorderTasks
-}) {
+export default function DataSourcesView() {
+  const {
+    tasks,
+    scripts,
+    settings,
+    latestUpdateTimes,
+    latestDataStatus,
+    loading,
+    reordering,
+    runningTaskId,
+    error,
+    runTask,
+    reload,
+    saveTask,
+    removeTask,
+    toggleTask,
+    reorderTasks
+  } = useDataSources();
   const [editor, setEditor] = useState(null);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);

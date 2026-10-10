@@ -6,9 +6,7 @@ export function useStockPool(marketId, rows) {
   const enabled = marketId === 'hk-share' || marketId === 'us-share';
   const [symbols, setSymbols] = useState(new Set());
   const [pending, setPending] = useState(new Set());
-  const [loading, setLoading] = useState(enabled);
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState('');
   const stateRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -17,8 +15,6 @@ export function useStockPool(marketId, rows) {
     const requestId = ++state.requestId;
     state.ready = false;
     setReady(false);
-    setLoading(true);
-    setError('');
     try {
       const response = await getMarketStocksApi({ market: marketId });
       if (stateRef.current !== state || state.requestId !== requestId) return;
@@ -28,10 +24,8 @@ export function useStockPool(marketId, rows) {
       setSymbols(state.symbols);
     } catch (requestError) {
       if (stateRef.current === state && state.requestId === requestId) {
-        setError(requestError.message || '获取 stock_pool 失败');
+        console.error('获取 stock_pool 失败', requestError);
       }
-    } finally {
-      if (stateRef.current === state && state.requestId === requestId) setLoading(false);
     }
   }, [enabled, marketId]);
 
@@ -42,7 +36,6 @@ export function useStockPool(marketId, rows) {
     if (!enabled || !state?.ready || !symbol || state.symbols.has(symbol) || state.pending.has(symbol)) return;
     state.pending.add(symbol);
     setPending(new Set(state.pending));
-    setError('');
     try {
       try {
         await addMarketStockApi({ market: marketId, symbol, name: stock.name });
@@ -56,7 +49,7 @@ export function useStockPool(marketId, rows) {
       state.symbols = new Set([...state.symbols, symbol]);
       setSymbols(state.symbols);
     } catch (requestError) {
-      if (stateRef.current === state) setError(requestError.message || '加入 stock_pool 失败，请重试');
+      if (stateRef.current === state) console.error('加入 stock_pool 失败', requestError);
     } finally {
       state.pending.delete(symbol);
       if (stateRef.current === state) setPending(new Set(state.pending));
@@ -68,9 +61,7 @@ export function useStockPool(marketId, rows) {
     stateRef.current = state;
     setSymbols(state.symbols);
     setPending(new Set());
-    setLoading(enabled);
     setReady(false);
-    setError('');
     return () => { stateRef.current = null; };
   }, [enabled, marketId]);
 
@@ -78,11 +69,5 @@ export function useStockPool(marketId, rows) {
     refresh();
   }, [refresh, rows]);
 
-  useEffect(() => {
-    if (!enabled) return;
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
-  }, [enabled, refresh]);
-
-  return { enabled, symbols, pending, loading, ready, error, refresh, addStock };
+  return { enabled, symbols, pending, ready, addStock };
 }
