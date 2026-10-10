@@ -153,8 +153,8 @@ function TaskActionsCell({ data, context }) {
 
 const columnDefs = [
   { colId: 'order', headerName: '排序', width: 40, minWidth: 40, rowDrag: true },
-  { field: 'name', headerName: '任务', minWidth: 240, flex: 1.2, cellRenderer: TaskNameCell },
-  { colId: 'status', headerName: '状态', width: 128, minWidth: 128, cellRenderer: TaskStatusCell },
+  { field: 'name', headerName: '任务', width: 240, minWidth: 240, cellRenderer: TaskNameCell },
+  { colId: 'status', headerName: '状态', width: 120, minWidth: 120, cellRenderer: TaskStatusCell },
   { colId: 'schedule', headerName: '调度时间', minWidth: 200, flex: 1, cellRenderer: TaskScheduleCell },
   { colId: 'latest', headerName: '数据更新时间', minWidth: 200, flex: 1, cellRenderer: TaskLatestDataCell },
   { colId: 'actions', headerName: '操作', width: 380, cellRenderer: TaskActionsCell }
