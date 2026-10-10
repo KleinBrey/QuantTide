@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     params_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(params_json)),
     schedule_json TEXT CHECK (schedule_json IS NULL OR json_valid(schedule_json)),
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

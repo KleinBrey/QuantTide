@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from backend.app.schemas import TaskEnabled, TaskInput
+from backend.app.schemas import TaskEnabled, TaskInput, TaskOrder
 from backend.app.services.task_service import TaskService
 from backend.scripts.registry import script_catalog
 
@@ -31,6 +31,12 @@ def list_tasks(service: Service):
 @router.post("", status_code=201)
 def create_task(body: TaskInput, service: Service):
     return service.create_task(body.model_dump())
+
+
+@router.put("/order")
+def reorder_tasks(body: TaskOrder, service: Service):
+    service.reorder_tasks(body.ids)
+    return {"status": "success"}
 
 
 @router.put("/{task_id}")

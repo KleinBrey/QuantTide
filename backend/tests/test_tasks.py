@@ -126,6 +126,63 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(self.client.put('/api/tasks/99999', json=data).status_code, 404)
         self.assertEqual(self.client.post('/api/tasks/99999/run').status_code, 404)
 
+    def test_reorder_persists_after_restart_and_new_tasks_append(self):
+        tasks = [self.create(name=f'任务 {index}') for index in range(3)]
+        ids = [tasks[2]['id'], tasks[0]['id'], tasks[1]['id']]
+        response = self.client.put('/api/tasks/order', json={'ids': ids})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([row['id'] for row in self.client.get('/api/tasks').json()], ids)
+        self.database.initialize()
+        rows = TaskRepository(self.database).list_tasks()
+        self.assertEqual([row['id'] for row in rows], ids)
+        self.assertEqual([row['sort_order'] for row in rows], [0, 1, 2])
+        # 编辑与删除不改变其他任务的位置，新任务始终追加到末尾。
+        self.client.put(f'/api/tasks/{ids[0]}', json={'name': '已编辑', 'script_id': 'daily_bars'})
+        self.client.delete(f'/api/tasks/{ids[1]}')
+        appended = self.create(name='新任务')
+        self.assertEqual(appended['sort_order'], 3)
+        self.assertEqual([row['id'] for row in self.repository.list_tasks()], [ids[0], ids[2], appended['id']])
+
+    def test_reorder_rejects_stale_or_invalid_lists_without_changes(self):
+        ids = [self.create()['id'] for _ in range(3)]
+        invalid = [([], 409), (ids[:-1], 409), ([ids[0], ids[0], ids[2]], 409),
+                   ([ids[0], ids[1], 99999], 409), ([True, *ids[1:]], 422),
+                   ([str(ids[0]), *ids[1:]], 422), ([0, *ids[1:]], 422)]
+        baseline = self.repository.list_tasks()
+        for order, status in invalid:
+            with self.subTest(order=order):
+                self.assertEqual(self.client.put('/api/tasks/order', json={'ids': order}).status_code, status)
+                self.assertEqual(self.repository.list_tasks(), baseline)
+        self.client.delete(f'/api/tasks/{ids[1]}')
+        self.assertEqual(self.client.put('/api/tasks/order', json={'ids': ids}).status_code, 409)
+
+    def test_reorder_empty_list_and_transaction_rollback(self):
+        self.assertEqual(self.client.put('/api/tasks/order', json={'ids': []}).status_code, 200)
+        ids = [self.create()['id'] for _ in range(3)]
+        baseline = self.repository.list_tasks()
+        with self.database.connection() as connection:
+            connection.execute(f'''
+                CREATE TRIGGER reject_task_order BEFORE UPDATE OF sort_order ON tasks
+                WHEN OLD.id = {ids[1]}
+                BEGIN SELECT RAISE(ABORT, '模拟排序写入失败'); END
+            ''')
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.repository.reorder_tasks(list(reversed(ids)))
+        self.assertEqual(self.repository.list_tasks(), baseline)
+
+    def test_reorder_keeps_running_state_and_scheduler_jobs(self):
+        first = self.create(schedule={'trigger': 'interval', 'seconds': 3600})
+        second = self.create(schedule={'trigger': 'cron', 'cron': '0 16 * * mon-fri'})
+        jobs = {job.id: (job, job.next_run_time) for job in self.scheduler.get_jobs()}
+        self.service.results[first['id']] = {'status': 'running'}
+        response = self.client.put('/api/tasks/order', json={'ids': [second['id'], first['id']]})
+        self.assertEqual(response.status_code, 200)
+        rows = self.client.get('/api/tasks').json()
+        self.assertEqual(rows[1]['result']['status'], 'running')
+        for job in self.scheduler.get_jobs():
+            self.assertIs(job, jobs[job.id][0])
+            self.assertEqual(job.next_run_time, jobs[job.id][1])
+
     def test_restart_loads_edited_rules_without_overwriting(self):
         task = self.create(schedule={'trigger': 'cron', 'cron': '30 8 * * sun'}, enabled=False)
         self.database.initialize()

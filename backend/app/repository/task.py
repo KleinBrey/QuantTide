@@ -33,7 +33,7 @@ class TaskRepository:
 
     def list_tasks(self):
         with self.database.connection() as connection:
-            rows = connection.execute('SELECT * FROM tasks ORDER BY id')
+            rows = connection.execute('SELECT * FROM tasks ORDER BY sort_order, id')
             return [self.decode(row) for row in rows]
 
     def get_task(self, task_id: int):
@@ -45,12 +45,22 @@ class TaskRepository:
 
     def create_task(self, data: dict):
         with self.database.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
             cursor = connection.execute(
-                'INSERT INTO tasks (name, script_id, params_json, schedule_json, enabled) VALUES (?, ?, ?, ?, ?)',
+                'INSERT INTO tasks (name, script_id, params_json, schedule_json, enabled, sort_order) '
+                'VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM tasks))',
                 self.values(data),
             )
             task_id = cursor.lastrowid
         return self.get_task(task_id)
+
+    def reorder_tasks(self, ids: list[int]):
+        with self.database.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            current = {row['id'] for row in connection.execute('SELECT id FROM tasks')}
+            if len(ids) != len(set(ids)) or set(ids) != current:
+                raise HTTPException(status_code=409, detail='任务列表已变化，排序必须包含全部任务且不能重复，请刷新后重试')
+            connection.executemany('UPDATE tasks SET sort_order = ? WHERE id = ?', enumerate(ids))
 
     def update_task(self, task_id: int, data: dict):
         with self.database.connection() as connection:

@@ -1,5 +1,5 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 
 import { cn } from '@/shadcn/lib/utils';
 
@@ -42,18 +42,14 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            'relative z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none',
+            'relative z-50 flex max-h-[min(15rem,var(--available-height))] w-(--anchor-width) min-w-32 flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none',
             className
           )}
           {...props}
         >
-          <SelectPrimitive.ScrollUpArrow className="sticky top-0 z-10 flex w-full items-center justify-center bg-popover py-1">
-            <ChevronUp className="size-4" />
-          </SelectPrimitive.ScrollUpArrow>
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
-          <SelectPrimitive.ScrollDownArrow className="sticky bottom-0 z-10 flex w-full items-center justify-center bg-popover py-1">
-            <ChevronDown className="size-4" />
-          </SelectPrimitive.ScrollDownArrow>
+          <SelectPrimitive.List data-slot="select-list" className="app-scrollbar min-h-0 overflow-x-hidden overflow-y-auto">
+            {children}
+          </SelectPrimitive.List>
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
     </SelectPrimitive.Portal>

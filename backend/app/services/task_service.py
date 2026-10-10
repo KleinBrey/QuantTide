@@ -49,6 +49,11 @@ class TaskService:
             sync_scheduled_task(self.scheduler, task, self.run_scheduled)
             return task
 
+    def reorder_tasks(self, ids: list[int]):
+        # 列表顺序不影响执行配置或调度，运行中的任务也可调整位置。
+        with self.lock:
+            self.repository.reorder_tasks(ids)
+
     def update_task(self, task_id: int, data: dict):
         with self.lock:
             self.check_not_running(task_id)

@@ -67,3 +67,8 @@ class TaskInput(BaseModel):
 class TaskEnabled(BaseModel):
     model_config = ConfigDict(extra='forbid')
     enabled: StrictBool
+
+
+class TaskOrder(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(max_length=10000)

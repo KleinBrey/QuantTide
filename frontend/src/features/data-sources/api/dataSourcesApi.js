@@ -1,6 +1,7 @@
 import request from '@/api/quantide/request.js';
 
 export const fetchTasks = () => request.get('/api/tasks');
+export const reorderTasks = ids => request.put('/api/tasks/order', { ids });
 export const fetchScripts = () => request.get('/api/tasks/scripts');
 export const createTask = data => request.post('/api/tasks', data);
 export const updateTask = (id, data) => request.put(`/api/tasks/${id}`, data);

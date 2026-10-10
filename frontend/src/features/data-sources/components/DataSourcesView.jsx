@@ -1,9 +1,15 @@
 import { useMemo, useRef, useState } from 'react';
-import { CellStyleModule, ClientSideRowModelModule, colorSchemeDark, themeQuartz } from 'ag-grid-community';
+import {
+  CellStyleModule,
+  ClientSideRowModelApiModule,
+  ClientSideRowModelModule,
+  RowDragModule,
+  colorSchemeDark,
+  themeQuartz
+} from 'ag-grid-community';
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import { Loader2, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
-import StatusBadge from '@/components/StatusBadge.jsx';
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import {
   Dialog,
@@ -16,9 +22,11 @@ import {
 } from '@/shadcn/components/ui/dialog.jsx';
 import { shortTime } from '@/utils/formatters.js';
 import TaskEditor from './TaskEditor.jsx';
+import TaskStatusCell from './TaskStatusCell.jsx';
+import { formatTaskCron } from '../utils/taskSchedule.js';
 import styles from './DataSourcesView.module.css';
 
-const modules = [ClientSideRowModelModule, CellStyleModule];
+const modules = [ClientSideRowModelModule, ClientSideRowModelApiModule, CellStyleModule, RowDragModule];
 const taskGridTheme = themeQuartz.withPart(colorSchemeDark).withParams({
   backgroundColor: 'var(--card)',
   foregroundColor: 'var(--foreground)',
@@ -26,7 +34,7 @@ const taskGridTheme = themeQuartz.withPart(colorSchemeDark).withParams({
   rowHoverColor: 'var(--accent)',
   fontFamily: 'inherit',
   fontSize: 13,
-  cellHorizontalPadding: 12,
+  cellHorizontalPadding: 6,
   columnBorder: false,
   wrapperBorder: false,
   wrapperBorderRadius: 0
@@ -35,7 +43,10 @@ const defaultColDef = { sortable: false, resizable: false, suppressMovable: true
 
 function TaskLoadingOverlay() {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm text-foreground shadow-sm" role="status">
+    <div
+      className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm text-foreground shadow-sm"
+      role="status"
+    >
       <Loader2 className="dashboard-spin" size={16} />
       正在读取任务…
     </div>
@@ -43,27 +54,14 @@ function TaskLoadingOverlay() {
 }
 
 function TaskNameCell({ data }) {
-  const result = data.result || {};
-  const message = result.message
-    ? `${result.message}${result.duration_seconds != null ? `，耗时 ${result.duration_seconds} 秒` : ''}`
-    : '';
   return (
     <div className={styles.taskName}>
       <h3 title={data.name}>{data.name}</h3>
       <p className={styles.description} title={data.description}>
         {data.description}
       </p>
-      {message && (
-        <p className={`${styles.result} ${styles[result.status] || ''}`} title={message}>
-          {message}
-        </p>
-      )}
     </div>
   );
-}
-
-function TaskStatusCell({ data }) {
-  return <StatusBadge status={data.isRunning ? 'running' : data.result?.status || 'idle'} />;
 }
 
 function TaskScheduleCell({ data }) {
@@ -133,7 +131,7 @@ function TaskActionsCell({ data, context }) {
         size="sm"
         aria-label={`删除${data.name}`}
         onClick={() => context.confirmDelete(data)}
-        disabled={data.isRunning || context.deletingId !== null}
+        disabled={data.isRunning || context.deletingId !== null || context.reordering}
       >
         <Trash2 size={14} />
         删除
@@ -154,9 +152,10 @@ function TaskActionsCell({ data, context }) {
 }
 
 const columnDefs = [
+  { colId: 'order', headerName: '排序', width: 40, minWidth: 40, rowDrag: true },
   { field: 'name', headerName: '任务', minWidth: 240, flex: 1.2, cellRenderer: TaskNameCell },
   { colId: 'status', headerName: '状态', width: 128, minWidth: 128, cellRenderer: TaskStatusCell },
-  { colId: 'schedule', headerName: '调度时间', minWidth: 230, flex: 1, cellRenderer: TaskScheduleCell },
+  { colId: 'schedule', headerName: '调度时间', minWidth: 200, flex: 1, cellRenderer: TaskScheduleCell },
   { colId: 'latest', headerName: '数据更新时间', minWidth: 200, flex: 1, cellRenderer: TaskLatestDataCell },
   { colId: 'actions', headerName: '操作', width: 380, cellRenderer: TaskActionsCell }
 ];
@@ -185,7 +184,7 @@ function latestDataText(taskId, latestUpdateTimes, latestDataStatus) {
 
 function scheduleText(task) {
   if (!task.schedule) return '仅手动运行';
-  const rule = task.schedule.trigger === 'cron' ? task.schedule.cron : `每 ${task.schedule.seconds} 秒`;
+  const rule = task.schedule.trigger === 'cron' ? formatTaskCron(task.schedule.cron) : `每 ${task.schedule.seconds} 秒`;
   return `${rule}${task.enabled ? '' : ' · 已停用'}`;
 }
 
@@ -196,19 +195,22 @@ export default function DataSourcesView({
   latestUpdateTimes,
   latestDataStatus,
   loading,
+  reordering,
   runningTaskId,
   error,
   runTask,
   reload,
   saveTask,
   removeTask,
-  toggleTask
+  toggleTask,
+  reorderTasks
 }) {
   const [editor, setEditor] = useState(null);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [localError, setLocalError] = useState('');
   const cancelDeleteButton = useRef(null);
+  const draggingTask = useRef(false);
   const rowData = useMemo(
     () =>
       tasks.map(task => {
@@ -236,6 +238,20 @@ export default function DataSourcesView({
     setTaskToDelete(task);
   }
 
+  async function finishTaskDrag({ api }) {
+    if (!draggingTask.current) return;
+    draggingTask.current = false;
+    const ids = [];
+    api.forEachNodeAfterFilterAndSort(node => ids.push(node.data.id));
+    setLocalError('');
+    try {
+      await reorderTasks(ids);
+    } catch (err) {
+      api.setGridOption('rowData', [...rowData]);
+      setLocalError(`任务顺序保存失败：${err.message || '请稍后重试'}`);
+    }
+  }
+
   async function deleteTask() {
     if (!taskToDelete || deletingId !== null) return;
     const task = taskToDelete;
@@ -260,16 +276,27 @@ export default function DataSourcesView({
             <span>管理同步任务和运行时间；同一时间只执行一个写入任务</span>
           </div>
           <div className={styles.headerActions}>
-            <Button type="button" variant="outline" onClick={reload} disabled={loading} aria-label="刷新任务列表">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={reload}
+              disabled={loading || reordering}
+              aria-label="刷新任务列表"
+            >
               <RefreshCw size={15} />
               刷新
             </Button>
-            <Button type="button" onClick={() => setEditor({ task: null })} disabled={!scripts.length}>
+            <Button type="button" onClick={() => setEditor({ task: null })} disabled={!scripts.length || reordering}>
               <Plus size={15} />
               新增任务
             </Button>
           </div>
         </div>
+        {reordering && (
+          <p className={styles.orderStatus} role="status">
+            正在保存任务顺序…
+          </p>
+        )}
         {!settings.scheduler_enabled && (
           <p className={styles.helpBanner}>服务当前未启用自动调度，定时配置已保存，仍可手动执行任务。</p>
         )}
@@ -289,16 +316,28 @@ export default function DataSourcesView({
                 confirmDelete,
                 runTask,
                 runningTaskId,
-                deletingId
+                deletingId,
+                reordering
               }}
               getRowId={params => String(params.data.id)}
               headerHeight={0}
               rowHeight={116}
+              rowDragManaged
+              rowDragText={params => params.rowNode.data.name}
+              suppressRowDrag={loading || reordering || deletingId !== null}
+              onRowDragEnter={() => {
+                draggingTask.current = true;
+              }}
+              onDragStopped={finishTaskDrag}
+              onDragCancelled={({ api }) => {
+                draggingTask.current = false;
+                api.setGridOption('rowData', [...rowData]);
+              }}
               domLayout="normal"
               suppressCellFocus
               enableCellTextSelection
               ensureDomOrder
-              animateRows={false}
+              animateRows
               suppressScrollOnNewData
             />
           </AgGridProvider>
