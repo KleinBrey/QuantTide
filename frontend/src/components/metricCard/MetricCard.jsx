@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatValue } from '../utils/formatters.js';
+import { formatValue } from '@/utils/formatters.js';
 import styles from './MetricCard.module.css';
 
 export default function MetricCard({ label, value, note, icon: Icon, tone = 'neutral' }) {

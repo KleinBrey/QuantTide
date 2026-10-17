@@ -1,6 +1,6 @@
 import React from 'react';
 import { CheckCircle2, CircleDashed, XCircle } from 'lucide-react';
-import { statusLabel, statusTone } from '../utils/formatters.js';
+import { statusLabel, statusTone } from '@/utils/formatters.js';
 import styles from './StatusBadge.module.css';
 
 export default function StatusBadge({ status, label }) {

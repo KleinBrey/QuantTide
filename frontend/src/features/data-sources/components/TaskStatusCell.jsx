@@ -1,6 +1,6 @@
 import { HoverCard } from 'radix-ui';
 
-import StatusBadge from '@/components/StatusBadge.jsx';
+import StatusBadge from '@/components/statusBadge/StatusBadge.jsx';
 import { shortTime, statusLabel } from '@/utils/formatters.js';
 import styles from './DataSourcesView.module.css';
 
