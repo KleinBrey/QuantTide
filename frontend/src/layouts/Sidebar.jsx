@@ -1,9 +1,10 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
-import logoUrl from '@/assets/branding/logo.png';
+import logoUrl from '@/assets/image/logo.png';
 import React from 'react';
-import { Radar, LayoutDashboard, DatabaseBackup, Flame, History, Server } from 'lucide-react';
+import { Radar, LayoutDashboard, DatabaseBackup, Flame, History } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { dashboardGroups } from '../routes/RouteConfig.js';
+import { SidebarUser } from './SidebarUser.jsx';
 import style from './Sidebar.module.css';
 
 function MarketIcon({ code, size = 16 }) {
@@ -79,14 +80,7 @@ export function AppSidebar() {
         </aside>
       </SidebarContent>
       <SidebarFooter>
-        <div className={style.sidebarFooter} title="本地数据服务 127.0.0.1:8001">
-          <Server size={16} />
-          <span>
-            本地数据服务
-            <br />
-            127.0.0.1:8001
-          </span>
-        </div>
+        <SidebarUser />
       </SidebarFooter>
     </Sidebar>
   );

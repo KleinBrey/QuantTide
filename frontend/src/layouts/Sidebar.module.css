@@ -137,27 +137,9 @@
   color: #f8fafc;
 }
 
-.sidebarFooter {
-  align-items: center;
-  border: 1px solid #27272a;
-  border-radius: 8px;
-  color: #a1a1aa;
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  line-height: 1.4;
-  margin-top: auto;
-  padding: 12px;
-}
-
-.sidebarFooter svg {
-  flex: 0 0 auto;
-}
-
 .title,
 .sidebarNav p,
-.navItem span,
-.sidebarFooter span {
+.navItem span {
   opacity: 1;
   visibility: visible;
   transition:
@@ -172,15 +154,13 @@
 
 :global([data-collapsible='icon']) .title,
 :global([data-collapsible='icon']) .sidebarNav p,
-:global([data-collapsible='icon']) .navItem span,
-:global([data-collapsible='icon']) .sidebarFooter span {
+:global([data-collapsible='icon']) .navItem span {
   opacity: 0;
   visibility: hidden;
   transition-delay: 0s;
 }
 
-:global([data-collapsible='icon']) .title,
-:global([data-collapsible='icon']) .sidebarFooter span {
+:global([data-collapsible='icon']) .title {
   flex: 0 0 0;
   max-width: 0;
   overflow: hidden;
@@ -219,13 +199,6 @@
   overflow: hidden;
   padding: 0 14px;
   width: 100%;
-}
-
-:global([data-collapsible='icon']) .sidebarFooter {
-  border-color: transparent;
-  height: 40px;
-  justify-content: center;
-  padding: 0;
 }
 
 .mainArea {

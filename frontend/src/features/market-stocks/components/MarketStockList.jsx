@@ -323,12 +323,7 @@ export default function MarketStockList({
           {error}
         </div>
       )}
-      {loading && !stocks.length ? (
-        <div className={styles.listState}>
-          <Loader2 className="dashboard-spin" size={20} />
-          <span>正在读取股票列表</span>
-        </div>
-      ) : stocks.length ? (
+      {stocks.length ? (
         <div aria-label="股票" className={styles.stockList}>
           <AgGridProvider modules={modules}>
             <AgGridReact
@@ -363,11 +358,11 @@ export default function MarketStockList({
             />
           </AgGridProvider>
         </div>
-      ) : (
+      ) : !loading ? (
         <div className={styles.listState}>
           {error || (groupId ? '暂无股票，点击上方添加股票' : '暂无自选分组，请在上方新建分组')}
         </div>
-      )}
+      ) : null}
     </>
   );
 }
