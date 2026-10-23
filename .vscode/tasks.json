@@ -50,7 +50,8 @@
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "backend/server.py"
+        "-m",
+        "backend.run"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
@@ -85,11 +86,22 @@
     },
     {
       "label": "启动：完整看板",
-      "dependsOrder": "parallel",
-      "dependsOn": [
-        "启动：后端 API",
-        "启动：前端页面"
+      "type": "shell",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "backend.dev"
       ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
       "problemMatcher": []
     },
     {

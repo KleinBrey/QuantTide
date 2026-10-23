@@ -101,7 +101,29 @@ Yahoo 自动复权与 Futu 前复权不保证一致，分红、拆股后需重�
 日常最近 3 日同步不会自动重算更早的价格。日 K 可能包含当天未收盘的数据，
 用于收盘策略时应在对应市场收盘后运行。
 
-## 启动 API
+## 一键启动前后端
+
+首次安装依赖：
+
+```bash
+uv sync
+cd frontend && npm install
+```
+
+之后在项目根目录运行：
+
+```bash
+./start.command
+```
+
+macOS 也可以在 Finder 中双击根目录的 `start.command`。
+前后端会在同一个终端启动，浏览器自动打开 <http://127.0.0.1:5173>，
+API 文档位于 <http://127.0.0.1:8001/docs>。按 `Ctrl+C` 同时停止两个服务；
+任一服务退出也会自动停止另一服务。端口被占用时会提示，避免重复启动。
+
+也可以运行 `uv run python -m backend.dev`，或在 VS Code 的“终端 → 运行任务”中选择“启动：完整看板”。
+
+## 单独启动 API
 
 ```bash
 uv run quant-api
