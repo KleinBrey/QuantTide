@@ -38,7 +38,7 @@ from backend.quant.signal.result import format_signal_result
 from backend.quant.strategy.registry import STRATEGIES, strategy_info, strategy_list
 from backend.scripts.sync_daily_bars import sync_daily_bars
 from backend.scripts.sync_daily_basic import sync_daily_basic
-from backend.scripts.sync_daily_hot import sync_daily_hot
+from backend.scripts.sync_realtime_hot import sync_realtime_hot
 from backend.scripts.sync_daily_stocks import sync_daily_stocks
 from backend.scripts.sync_hk_us_daily_bars import sync_hk_us_daily_bars
 
@@ -178,13 +178,13 @@ async def sync_daily_basic_database() -> dict[str, str | float]:
 
 
 @router.post("/database-sync/hot-stock")
-async def sync_daily_hot_database() -> dict[str, str | float]:
-    """执行每日股票热度数据库同步脚本。"""
+async def sync_realtime_hot_database() -> dict[str, str | float]:
+    """执行实时股票热度数据库同步脚本。"""
 
     return await _run_database_sync(
-        "sync_daily_hot.py",
-        "A 股、港股和美股每日热度同步完成",
-        sync_daily_hot,
+        "sync_realtime_hot.py",
+        "A 股、港股和美股实时股票热度同步完成",
+        sync_realtime_hot,
     )
 
 

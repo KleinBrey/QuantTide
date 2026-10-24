@@ -170,7 +170,7 @@ Repository 负责字段检查、日期转换以及 DuckDB 的幂等 upsert。
 
 ### `app/services/`
 
-- `cn_market_service.py`：负责 A 股股票列表、每日指标、日 K 和热度数据；
+- `cn_market_service.py`：负责 A 股股票列表、每日指标、日 K 和热度数据，`update_daily_hot_history()` 封装历史热度排名同步；
 - `hk_market_service.py`：负责港股热度数据；
 - `us_market_service.py`：负责美股热度数据；
 - `hot_stock_service.py`：封装三个市场共用的问财热度格式化和两小时缓存逻辑。
@@ -389,7 +389,8 @@ DuckDB 继续保存股票基础信息和历史行情，港美股日 K 同步读�
 
 `backend/scripts/registry.py` 的 `SCRIPTS` 登记 6 个同步入口。每项包含展示名称
 `name`、`模块路径:入口函数` 格式的 `run` 和可选的默认参数 `params`。
-API、任务调度和命令行共用这些函数；导入注册表不会运行脚本。
+API、任务调度和脚本菜单共用这些函数；导入注册表不会运行脚本。
+热度任务 ID 与脚本对应：`realtime_hot` 执行三市场实时股票热度同步，`daily_hot` 执行 A 股历史热度同步并接受 `lookback_days`。
 
 ```text
 scripts/
@@ -398,19 +399,19 @@ scripts/
 ├── sync_daily_basic.py           # A 股每日指标
 ├── sync_daily_bars.py            # A 股日 K
 ├── sync_hk_us_daily_bars.py       # 港美股日 K
-├── sync_daily_hot.py             # A 股、港股、美股实时热度
-└── sync_cn_daily_hot.py     # A 股历史热度
+├── sync_daily_hot.py             # A 股历史热度
+└── sync_realtime_hot.py          # 实时股票热度（A 股、港股、美股）
 ```
 
 前四个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
-直接运行脚本显示日期选择菜单（60、180、365、1095 日，`e` 退出）；
-传入 `--lookback-days` 时直接执行。任务页面通过“同步最近多少个自然日”填写，API 和定时任务不会显示菜单：
+直接运行脚本显示日期选择菜单（60、180、365、1095 日，`e` 退出）。
+任务页面通过“同步最近多少个自然日”填写，API 和定时任务直接向同步函数传入 `lookback_days`，不会显示菜单：
 
 ```bash
-uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
-uv run python -m backend.scripts.sync_daily_basic --lookback-days 180
-uv run python -m backend.scripts.sync_daily_bars --lookback-days 365
-uv run python -m backend.scripts.sync_hk_us_daily_bars --lookback-days 1095
+uv run python -m backend.scripts.sync_daily_stocks
+uv run python -m backend.scripts.sync_daily_basic
+uv run python -m backend.scripts.sync_daily_bars
+uv run python -m backend.scripts.sync_hk_us_daily_bars
 ```
 
 同步脚本会在写入前初始化数据库。A 股每日指标、日 K 和股票池按交易日历过滤休市日，
@@ -422,14 +423,15 @@ uv run python -m backend.scripts.sync_hk_us_daily_bars --lookback-days 1095
 
 ```bash
 # 获取 A 股、港股、美股实时热度，保存为当天快照
-uv run python -m backend.scripts.sync_daily_hot
+uv run python -m backend.scripts.sync_realtime_hot
 
-# 获取 A 股历史热度排名；不传参数时显示 60、365 日和退出菜单
-uv run python -m backend.scripts.sync_cn_daily_hot --lookback-days 60
+# 获取 A 股历史热度排名；运行后显示 60、365 日和退出菜单
+uv run python -m backend.scripts.sync_daily_hot
 ```
 
 读取 A 股库 `daily_stocks` 在历史区间内出现过的全部股票，每只股票调用一次 HiThink 个股排名走势接口。
-并发数使用配置 `sync_workers`（默认 4，可用环境变量 `SYNC_WORKERS` 调低），每次请求随机等待 1～2 秒，超时为 30 秒。
+脚本负责组装 Provider 和 Repository，调用 `CNMarketService.update_daily_hot_history()` 执行历史热度同步。
+并发数使用配置 `sync_workers`（默认 10，可用环境变量 `SYNC_WORKERS` 调低），每次请求随机等待 1～2 秒，超时为 30 秒。
 主线程逐股写入 `daily_hot`，以本次接口数据为准覆盖同日同股票的记录，可重跑。
 名称取数据日期当日或此前最近完整股票池中的名称，`price`、`change_pct` 留空，`source` 为 `Hithink`，只保存接口实际返回的日期点位，不填造缺失日期。
 保留表的同日排名唯一约束：若该排名已被其他股票占用，删除冲突旧记录并写入本次数据；删除和写入在同一事务中完成，失败回滚，不影响无冲突记录。请求或写入失败不影响其他股票，最后汇总失败和无数据股票。
@@ -455,8 +457,8 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 - `backend/scripts/sync_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
 - `backend/scripts/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
   无需 OpenD；默认最多 2 个并发请求，单股失败记录到 `failed_symbols`；
-- `backend/scripts/sync_daily_hot.py`：分别向三个市场数据库同步当天股票热度；
-- `backend/scripts/sync_cn_daily_hot.py`：按指定天数补齐 A 股历史热度排名。
+- `backend/scripts/sync_realtime_hot.py`：分别向三个市场数据库同步当天股票热度；
+- `backend/scripts/sync_daily_hot.py`：按指定天数补齐 A 股历史热度排名。
 
 ```bash
 uv run quant-api
@@ -502,8 +504,8 @@ cn_market
 返回日期不符、重复代码或达到接口条数上限时拒绝写入并报告失败；空快照只提示并跳过，保留已有数据。
 
 ```bash
-# 同步最近 60 个自然日，也可指定 180、365、1095 等天数
-uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
+# 运行后从菜单选择 60、180、365、1095 日，或输入 e 退出
+uv run python -m backend.scripts.sync_daily_stocks
 ```
 
 股票池最多使用 10 个线程，并发数不超过范围内的交易日数量。

@@ -53,6 +53,14 @@ class DatabaseSyncTests(unittest.TestCase):
         self.assertEqual(datetime.fromisoformat(result["finished_at"]).utcoffset().total_seconds(), 28800)
         self.assertFalse(self.lock.locked())
 
+    def test_hot_stock_endpoint_uses_realtime_sync(self):
+        with patch.object(routes, "sync_realtime_hot") as task:
+            response = self.client.post("/api/database-sync/hot-stock")
+        self.assertEqual(response.status_code, 200, response.text)
+        task.assert_called_once_with()
+        self.assertEqual(response.json()["script"], "sync_realtime_hot.py")
+        self.assertFalse(self.lock.locked())
+
     def test_shared_lock_prevents_concurrent_sync(self):
         self.lock.acquire()
         self.addCleanup(self.lock.release)

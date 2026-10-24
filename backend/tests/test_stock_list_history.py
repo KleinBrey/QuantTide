@@ -30,12 +30,6 @@ class StockListHistoryTests(unittest.TestCase):
         clock_patch.start().now.return_value = datetime(2026, 10, 6)
         self.addCleanup(clock_patch.stop)
 
-    def test_cli_accepts_lookback_days(self):
-        for days in [3, 60, 180, 365, 1095]:
-            with self.subTest(days=days), patch.object(script, "sync_daily_stocks") as sync:
-                script.main(['--lookback-days', str(days)])
-                sync.assert_called_once_with(lookback_days=days)
-
     def test_natural_day_ranges_include_end_and_default_workers(self):
         end = date(2026, 10, 6)
         for days in [60, 180, 365, 1095]:

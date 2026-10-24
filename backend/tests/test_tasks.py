@@ -61,37 +61,40 @@ class TaskTests(unittest.TestCase):
                 self.assertTrue(callable(function))
                 inspect.signature(function).bind(**script.get('params', {}))
 
-    def test_cli_explicit_lookback_skips_menu(self):
-        for script in SCRIPTS.values():
-            if 'lookback_days' not in script.get('params', {}):
-                continue
-            module_name, entry = script['run'].split(':')
-            module = import_module(module_name)
-            for days in [script['params']['lookback_days'], 180]:
-                with (self.subTest(script=entry, days=days), patch.object(module, entry) as sync,
-                      patch('builtins.input', side_effect=AssertionError('指定天数时不应显示菜单'))):
-                    module.main(['--lookback-days', str(days)])
-                    sync.assert_called_once_with(lookback_days=days)
-
-    def test_cli_menu_selects_days_or_exits_without_sync(self):
+    def test_script_menu_selects_days_or_exits_without_sync(self):
         for script_id, script in SCRIPTS.items():
             if 'lookback_days' not in script.get('params', {}):
                 continue
             module_name, entry = script['run'].split(':')
             module = import_module(module_name)
-            choices = [('1', 60), ('2', 365)] if script_id == 'cn_daily_hot' else [
+            choices = [('1', 60), ('2', 365)] if script_id == 'daily_hot' else [
                 ('1', 60), ('2', 180), ('3', 365), ('4', 1095),
             ]
             for choice, days in [*choices, ('e', None), ('invalid', None)]:
                 with (self.subTest(script=entry, choice=choice), patch.object(module, entry) as sync,
                       patch('builtins.input', return_value=choice), patch('sys.stdout', new_callable=io.StringIO) as output):
-                    module.main([])
+                    module.main()
                     self.assertIn('请选择要执行的任务', output.getvalue())
                     self.assertIn('e. 退出', output.getvalue())
                     if days is None:
                         sync.assert_not_called()
                     else:
                         sync.assert_called_once_with(lookback_days=days)
+
+    def test_hot_task_ids_dispatch_realtime_and_history_separately(self):
+        realtime = self.create(name='实时股票热度', script_id='realtime_hot', params={})
+        history = self.create(name='A 股历史热度', script_id='daily_hot', params={'lookback_days': 30})
+        self.assertEqual(self.create(script_id='daily_hot', params={})['params'], {'lookback_days': 365})
+        with (
+            patch('backend.scripts.sync_realtime_hot.sync_realtime_hot') as sync_realtime,
+            patch('backend.scripts.sync_daily_hot.sync_daily_hot') as sync_history,
+        ):
+            self.assertEqual(self.client.post(f'/api/tasks/{realtime["id"]}/run').status_code, 200)
+            sync_realtime.assert_called_once_with()
+            sync_history.assert_not_called()
+            self.assertEqual(self.client.post(f'/api/tasks/{history["id"]}/run').status_code, 200)
+            sync_realtime.assert_called_once_with()
+            sync_history.assert_called_once_with(lookback_days=30)
 
     def test_tasks_start_empty_and_stay_empty_after_delete_and_restart(self):
         self.assertEqual(self.client.get('/api/tasks').json(), [])

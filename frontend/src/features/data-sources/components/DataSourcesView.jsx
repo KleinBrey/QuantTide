@@ -165,12 +165,12 @@ const LATEST_FIELDS = {
   daily_bars: [{ id: 'daily-k', label: '最新数据' }],
   daily_basic: [{ id: 'stock-daily-basic', label: '最新数据' }],
   daily_stocks: [{ id: 'stock-list', label: '最新数据' }],
-  daily_hot: [
+  realtime_hot: [
     { id: 'hot-stock', label: 'A 股热度' },
     { id: 'hk-hot-stock', label: '港股热度' },
     { id: 'us-hot-stock', label: '美股热度' }
   ],
-  cn_daily_hot: [{ id: 'hot-stock', label: 'A 股热度' }],
+  daily_hot: [{ id: 'hot-stock', label: 'A 股热度' }],
   hk_us_daily_bars: [
     { id: 'hk-daily-k', label: '港股数据' },
     { id: 'us-daily-k', label: '美股数据' }

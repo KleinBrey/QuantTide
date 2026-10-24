@@ -14,7 +14,6 @@ from backend.app.provider import TushareProvider
 from backend.app.repository import DailyBarRepository
 from backend.app.services.cn_market_service import CNMarketService
 from backend.app.services import cn_market_service as service_module
-from backend.scripts import sync_daily_bars as script
 from backend.app.jobs.scheduler import create_scheduler, job_id
 from backend.app.repository.task import TaskRepository
 from backend.app.services.task_service import TaskService
@@ -175,12 +174,6 @@ class DailyBarSyncTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "已写入 0 条，失败日期：2026-10-06$"):
             self.service.update_daily_bars(1)
         self.assertTrue(self.repository.get_table_data().empty)
-
-    def test_cli_passes_lookback_days(self):
-        for days in [3, 60, 180, 365, 1095]:
-            with self.subTest(days=days), patch.object(script, "sync_daily_bars") as sync:
-                script.main(['--lookback-days', str(days)])
-                sync.assert_called_once_with(lookback_days=days)
 
     def test_scheduler_and_job_use_date_based_signature(self):
         with tempfile.TemporaryDirectory() as temporary:

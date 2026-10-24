@@ -68,24 +68,17 @@ uv run python -m backend.scripts.sync_daily_stocks
 uv run python -m backend.scripts.sync_daily_basic
 uv run quant-sync
 uv run python -m backend.scripts.sync_hk_us_daily_bars
-uv run python -m backend.scripts.sync_daily_hot
+uv run python -m backend.scripts.sync_realtime_hot
 ```
 
 同步脚本统一放在 `backend/scripts/`。直接运行会显示日期选择菜单：60、180、365、1095 日，输入 `e` 退出。
-也可以通过 `--lookback-days` 指定天数直接执行；API 和定时任务调用同步函数，默认最近 3 个自然日：
+任务页面通过“同步最近多少个自然日”配置天数；API 和定时任务直接调用同步函数，传入 `lookback_days`，不会显示菜单。
+
+热度保留两个独立入口：`sync_realtime_hot` 获取 A 股、港股、美股实时热度；
+`sync_daily_hot` 只获取 A 股历史热度排名，直接运行可选择 60、365 日或退出：
 
 ```bash
-uv run python -m backend.scripts.sync_daily_stocks --lookback-days 60
-uv run python -m backend.scripts.sync_daily_basic --lookback-days 180
-uv run quant-sync --lookback-days 365
-uv run python -m backend.scripts.sync_hk_us_daily_bars --lookback-days 1095
-```
-
-热度保留两个独立入口：`sync_daily_hot` 获取 A 股、港股、美股实时热度；
-`sync_cn_daily_hot` 只获取 A 股历史热度排名，直接运行可选择 60、365 日或退出，也支持指定天数：
-
-```bash
-uv run python -m backend.scripts.sync_cn_daily_hot --lookback-days 60
+uv run python -m backend.scripts.sync_daily_hot
 ```
 
 所有天数均含今天。股票池按交易日覆盖快照，最多 10 个线程并发同步；
@@ -96,7 +89,7 @@ A 股每日指标和日 K 按交易日获取全市场数据。
 来源为 `YFinance`。同步默认最多 2 个并发请求，请求失败时指数退避重试。
 
 已有 Futu 历史数据不会因代码升级自动改写。首次切换应先备份两个市场数据库，
-再通过 `--lookback-days` 补齐整个保留区间，避免拼接不同来源的复权行情。
+再通过任务页面设置同步天数，补齐整个保留区间，避免拼接不同来源的复权行情。
 Yahoo 自动复权与 Futu 前复权不保证一致，分红、拆股后需重刷保留的历史区间；
 日常最近 3 日同步不会自动重算更早的价格。日 K 可能包含当天未收盘的数据，
 用于收盘策略时应在对应市场收盘后运行。
@@ -179,7 +172,7 @@ HK、US 默认分组不可删除或重命名，CN 没有 `stock_pool`。移出�
 FastAPI 启动时从 `tasks` 表恢复用户保存的调度。
 
 任务可选择注册表中的日常同步或历史补数脚本。
-日常更新与历史补数选择同一个脚本，通过任务参数或命令行 `--lookback-days` 指定天数。
+日常更新与历史补数选择同一个脚本，通过任务参数 `lookback_days` 指定天数。
 删除任务不会删除行情数据，任务删空后重启仍为空。
 
 数据仅用于研究，不构成投资建议。
