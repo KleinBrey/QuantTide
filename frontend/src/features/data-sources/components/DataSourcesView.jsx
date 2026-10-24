@@ -65,6 +65,20 @@ function TaskNameCell({ data }) {
   );
 }
 
+function TaskMarketsCell({ data }) {
+  return (
+    <div className={styles.markets} aria-label="适用市场">
+      {data.markets.length
+        ? data.markets.map(market => (
+            <span key={market} className={styles.marketBadge} data-market={market}>
+              {market}
+            </span>
+          ))
+        : '—'}
+    </div>
+  );
+}
+
 function TaskScheduleCell({ data }) {
   return (
     <dl className={styles.metadata}>
@@ -154,12 +168,22 @@ function TaskActionsCell({ data, context }) {
 
 const columnDefs = [
   { colId: 'order', headerName: '排序', width: 40, minWidth: 40, rowDrag: true },
-  { field: 'name', headerName: '任务', width: 240, minWidth: 240, cellRenderer: TaskNameCell },
+  { field: 'name', headerName: '任务', width: 150, minWidth: 150, cellRenderer: TaskNameCell },
+  { field: 'markets', headerName: '市场', width: 72, minWidth: 72, cellRenderer: TaskMarketsCell },
   { colId: 'status', headerName: '状态', width: 120, minWidth: 120, cellRenderer: TaskStatusCell },
   { colId: 'schedule', headerName: '调度时间', minWidth: 200, flex: 1, cellRenderer: TaskScheduleCell },
   { colId: 'latest', headerName: '数据更新时间', minWidth: 200, flex: 1, cellRenderer: TaskLatestDataCell },
   { colId: 'actions', headerName: '操作', width: 380, cellRenderer: TaskActionsCell }
 ];
+
+const TASK_MARKETS = {
+  realtime_hot: ['A 股', '港股', '美股'],
+  daily_stocks: ['A 股'],
+  daily_basic: ['A 股'],
+  daily_bars: ['A 股'],
+  daily_hot: ['A 股'],
+  hk_us_daily_bars: ['港股', '美股']
+};
 
 const LATEST_FIELDS = {
   daily_bars: [{ id: 'daily-k', label: '最新数据' }],
@@ -216,10 +240,10 @@ export default function DataSourcesView() {
   const rowData = useMemo(
     () =>
       tasks.map(task => {
-        const script = scripts.find(item => item.id === task.script_id);
         return {
           ...task,
-          description: `${script?.name || task.script_id}${task.params?.lookback_days ? ` · 最近 ${task.params.lookback_days} 个自然日` : ''}`,
+          description: `${task.params?.lookback_days ? `最近 ${task.params.lookback_days} 个自然日` : ''}`,
+          markets: TASK_MARKETS[task.script_id] || [],
           isRunning: task.id === runningTaskId || task.result?.status === 'running',
           isDeleting: task.id === deletingId,
           scheduleText: scheduleText(task),
@@ -232,7 +256,7 @@ export default function DataSourcesView() {
           }))
         };
       }),
-    [tasks, scripts, runningTaskId, deletingId, settings.scheduler_enabled, latestUpdateTimes, latestDataStatus]
+    [tasks, runningTaskId, deletingId, settings.scheduler_enabled, latestUpdateTimes, latestDataStatus]
   );
 
   function confirmDelete(task) {
