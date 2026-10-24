@@ -12,7 +12,7 @@ quanttide/
 │   │   ├── config/          # 应用与调度配置
 │   │   ├── database/        # 按 DuckDB、SQLite 分目录管理连接和表结构
 │   │   ├── jobs/            # 定时任务
-│   │   ├── provider/        # Tushare、HiThink、AkShare、问财
+│   │   ├── provider/        # Tushare、HiThink、AkShare、Futu、通达信、Yahoo、问财
 │   │   ├── repository/      # DuckDB 数据访问
 │   │   ├── schemas/         # Pydantic API 模型
 │   │   ├── services/        # 数据格式化和同步业务

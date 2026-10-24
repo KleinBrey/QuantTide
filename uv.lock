@@ -1340,6 +1340,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "requests" },
     { name = "rich" },
+    { name = "tdxaidata" },
     { name = "tqdm" },
     { name = "tushare" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1362,6 +1363,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.10,<3" },
     { name = "requests", specifier = ">=2.31,<3" },
     { name = "rich", specifier = ">=15,<16" },
+    { name = "tdxaidata", specifier = ">=1.3.1,<2" },
     { name = "tqdm", specifier = ">=4.67,<5" },
     { name = "tushare", specifier = ">=1.2.26,<2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
@@ -1501,6 +1503,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
+]
+
+[[package]]
+name = "tdxaidata"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/98/f77d18d823566b38c232c3c522da665f785e41ee07f0ca0315d1dfd2af72/tdxaidata-1.3.1.tar.gz", hash = "sha256:ab528e804b74958cedf2b3381a7f16764591c9eae9f0772ad2e1bac065d98f38", size = 4516507, upload-time = "2026-10-23T11:37:49.356Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/30/c8386fe199d7cce05e3478d8969bcfa1ff791803e6a41f57940e00303bef/tdxaidata-1.3.1-py3-none-any.whl", hash = "sha256:17eb51faa9425549ae2b9badc2ec525050c11d801a3634422b939d2a405dfb28", size = 4530835, upload-time = "2026-10-23T11:37:45.518Z" },
 ]
 
 [[package]]

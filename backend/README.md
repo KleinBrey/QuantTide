@@ -77,6 +77,9 @@ uv run uvicorn backend.app.main:app \
 - `hithink_provider.py`：HiThink 股票列表、快照和历史行情；
 - `akshare_provider.py`：AkShare 股票列表和历史行情适配；
 - `futu_provider.py`：通过本机 Futu OpenD 获取股票列表、快照、历史 K 线和热议榜；
+- `tdx_provider.py`：通过 `tdxaidata.tqs` 获取通达信后台历史 K 线、Tick、分时、
+  当日集合竞价、指数成份股和实时订阅，无需启动客户端；查询接口返回统一的
+  `data.item` 结构，`source` 为 `Tdx`，SDK 延迟加载；
 - `yfinance_provider.py`：通过 Yahoo Finance 获取港美股历史 K 线，返回统一的
   `data.item` 结构；支持日/周/月 K、Yahoo 自动复权或关闭自动复权，不支持后复权。
   港股如 `00700.HK` 请求时映射为 `0700.HK`，内部股票代码保持不变；
@@ -90,6 +93,70 @@ Futu OpenD 登录并监听本机 `11111` 端口后，可运行美股热议榜冒
 ```bash
 uv run python -m backend.app.provider.example.futu_smoke_test
 ```
+
+通达信接入使用独立的 `tdxaidata` 包，支持 Windows / macOS / Linux，
+不使用依赖客户端的 `tqcenter`。运行 `uv sync` 安装锁定的 SDK 后，在当前 Python
+环境的 `site-packages/tdxaidata/lib/TdxAiData.ini` 中配置通达信商城取得的
+**数据服务类型 Key**。可通过以下命令定位配置文件（不会发起行情请求）：
+
+```bash
+uv run python -c 'from importlib.util import find_spec; from pathlib import Path; print(Path(find_spec("tdxaidata").origin).parent / "lib" / "TdxAiData.ini")'
+```
+
+Key 仅保存在 SDK 配置文件中，不写入项目源码或示例。SDK 首次数据调用时加载本机
+动态库，需与操作系统和 CPU 架构匹配；如使用单独提供的动态库，可按 SDK 约定设置
+`TDX_AI_DATA_LIB`。注册 Provider 和构造实例均不会连接后台。
+
+```python
+from backend.app.provider import TdxProvider
+
+provider = TdxProvider()
+ticks = provider.fetch_tick_data("688318.SH", "2026-08-27", wantnum=10)
+minutes = provider.fetch_minute_data(
+    "688318.SH", "2026-08-27", field_list=["Time", "Price", "Average", "Volume"],
+)
+codes = [item["ticker"] for item in provider.fetch_index_constituents("000300.SH")["data"]["item"]]
+
+# 回调接收 SDK 原始 JSON 字符串；主程序需保持运行。
+# with provider.subscription(codes[:10], callback=print):
+#     time.sleep(10)
+```
+
+`fetch_historical(thscode, start, end, interval="1d", adjust="forward", offset=0)`
+沿用其他 Provider 的毫秒时间戳参数和 `open_price/high_price/low_price/close_price/`
+`volume/turnover/date_ms/source` 字段。支持日/周/月 K 和 1/5/15/30/60 分钟 K，
+支持不复权、前复权、后复权；`1mo` 映射为 SDK 的 `1mon`，`1m` 是一分钟。
+日/周/月 K 包含首尾日期，`date_ms` 为上海时区午夜编码的交易日；分钟 K 保留盘中时间，
+按起止毫秒时间戳筛选。成交量保留 SDK 的股/张单位，成交额按官方文档由万元转换为元。
+不向前填充空缺行情；SDK 单次最多 24000 条，达到上限时抛错，需缩短查询范围。
+
+`fetch_tick_data` 的 `startxh` 从 0 开始，`wantnum` 为 1–2000（默认 10）。
+Tick、分时和集合竞价统一转换为逐行记录：`Time → time`、`Price → price`、
+`Average → average_price`、`Volume → volume`、`BSFlag → bs_flag`、
+`LeaveQty → unmatched_volume`、`InOutFlag → in_out_flag`，并补充 `ticker/source`。
+`field_list` 使用 SDK 原始字段名，None 或空列表返回全部字段；数值字段转换为数字，
+成交量单位保留 SDK 原值。Tick 保留同秒内多笔成交及原始买卖标记（0买、1卖、2未知），
+不按时间去重；SDK 仍提供 `TotalNum` 时保存在 `data.total_num` 中。
+`fetch_call_auction(thscode)` 查询当日开盘与收盘集合竞价，字段取决于 SDK 的实际返回。
+指数代码应带市场后缀，例如 `000300.SH`，避免与同号股票混淆。
+
+`subscribe/unsubscribe` 成对调用，或用 `subscription` 上下文在退出时自动取消订阅。
+SDK 的原生订阅连接在进程内共享，1.3.1 的取消操作会停止原生连接，
+因此应在同一进程集中管理一批订阅，避免多个 Provider 实例交叉订阅和取消。
+查询不会自动重试；返回 None 或显式错误时抛出 `TdxProviderError`。
+SDK 自身可能将部分后台错误转换为空字典，此时适配层无法与正常空行情区分，
+排查时同时查看 SDK 日志。
+
+配置 Key 后运行最小连通性测试，获取沪深 300 成份股列表并展示前 20 条。
+真实查询会消耗数据服务积分：
+
+```bash
+uv run python -m backend.app.provider.example.tdx_smoke_test
+```
+
+参考：[TdxAiData 后台模式](https://help.tdx.com.cn/quant/docs/markdown/mindoc-1hjbgqpdhv114.html)、
+[K 线接口与单位](https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h10g60jt68sc.html)、
+[Tick / 分时 / 竞价 / 订阅](https://help.tdx.com.cn/quant/docs/markdown/mindoc-1hjbidnohpjn4.html)。
 
 ### `app/repository/`
 

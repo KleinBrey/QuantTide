@@ -8,6 +8,11 @@
     "${workspaceFolder}"
   ],
   "cSpell.enabled": false,
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Always generate Git commit messages in Simplified Chinese (zh-CN). Use Conventional Commits format: type: 中文描述. Keep technical identifiers unchanged. Keep the message concise, ideally under 50 Chinese characters. Output only the commit message."
+    }
+  ],
   "workbench.editorAssociations": {
     "*.parquet": "duckdb.dataFileViewer",
     "*.csv": "duckdb.dataFileViewer",
