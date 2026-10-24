@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv",
   "python.terminal.activateEnvironment": true,
   "terminal.integrated.env.osx": {
     "PYTHONPATH": "${workspaceFolder}"
@@ -13,31 +13,25 @@
       "text": "Always generate Git commit messages in Simplified Chinese (zh-CN). Use Conventional Commits format: type: 中文描述. Keep technical identifiers unchanged. Keep the message concise, ideally under 50 Chinese characters. Output only the commit message."
     }
   ],
-  "workbench.editorAssociations": {
-    "*.parquet": "duckdb.dataFileViewer",
-    "*.csv": "duckdb.dataFileViewer",
-    "*.tsv": "duckdb.dataFileViewer",
-    "*.xlsx": "duckdb.dataFileViewer"
-  },
   "duckdb.databases": [
     {
       "alias": "hk_market",
       "type": "file",
-      "path": "/Users/kleinbrey/Documents/QuantTide/data/hk_market.duckdb",
+      "path": "${workspaceFolder}/data/hk_market.duckdb",
       "attached": false,
       "readOnly": false
     },
     {
       "alias": "us_market",
       "type": "file",
-      "path": "/Users/kleinbrey/Documents/QuantTide/data/us_market.duckdb",
+      "path": "${workspaceFolder}/data/us_market.duckdb",
       "attached": false,
       "readOnly": false
     },
     {
       "alias": "cn_market",
       "type": "file",
-      "path": "/Users/kleinbrey/Documents/QuantTide/data/cn_market.duckdb",
+      "path": "${workspaceFolder}/data/cn_market.duckdb",
       "attached": false,
       "readOnly": false
     }
