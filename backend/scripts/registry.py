@@ -25,9 +25,14 @@ SCRIPTS: dict[str, dict[str, object]] = {
         "run": "backend.scripts.sync_daily_hot:sync_daily_hot",
         "params": {"lookback_days": 365},
     },
-    "hk_us_daily_bars": {
-        "name": "港美股日 K 线",
-        "run": "backend.scripts.sync_hk_us_daily_bars:sync_hk_us_daily_bars",
+    "hk_daily_bars": {
+        "name": "港股日 K 线",
+        "run": "backend.scripts.sync_hk_daily_bars:sync_hk_daily_bars",
+        "params": {"lookback_days": 365},
+    },
+    "us_daily_bars": {
+        "name": "美股日 K 线",
+        "run": "backend.scripts.sync_us_daily_bars:sync_us_daily_bars",
         "params": {"lookback_days": 365},
     },
 }

@@ -11,7 +11,7 @@ from backend.app.api import router
 from backend.app.config.config import get_settings
 from backend.app.database import DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase, SQLiteDatabase
 from backend.app.jobs import create_scheduler
-from backend.app.provider import HithinkProvider, IwencaiProvider, TushareProvider
+from backend.app.provider import HithinkProvider, IwencaiProvider, TushareProvider, YFinanceProvider
 from backend.app.repository import (
     DailyBarRepository,
     DailyHotRepository,
@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
     hithink_provider = HithinkProvider()
     tushare_provider = TushareProvider()
     iwencai_provider = IwencaiProvider()
+    yfinance_provider = YFinanceProvider()
 
     # 业务逻辑处理
     cn_market_service = CNMarketService(
@@ -87,10 +88,16 @@ async def lifespan(app: FastAPI):
     hk_market_service = HKMarketService(
         iwencai_provider=iwencai_provider,
         stock_hot_repository=hk_stock_hot_repository,
+        yfinance_provider=yfinance_provider,
+        daily_repository=hk_daily_repository,
+        watchlist_repository=watchlist_repository,
     )
     us_market_service = USMarketService(
         iwencai_provider=iwencai_provider,
         stock_hot_repository=us_stock_hot_repository,
+        yfinance_provider=yfinance_provider,
+        daily_repository=us_daily_repository,
+        watchlist_repository=watchlist_repository,
     )
 
     # 将共享实例挂载到 app.state，供路由及其他应用组件复用。

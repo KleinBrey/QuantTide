@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   fetchTasks, fetchScripts, fetchLatestUpdateTimes, createTask, updateTask,
@@ -12,7 +13,6 @@ export function useDataSources() {
   const [latestUpdateTimes, setLatestUpdateTimes] = useState({});
   const [latestDataStatus, setLatestDataStatus] = useState('loading');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [pendingTaskId, setPendingTaskId] = useState(null);
   const [reordering, setReordering] = useState(false);
   const activeTask = useRef(null);
@@ -40,7 +40,6 @@ export function useDataSources() {
   const reload = useCallback(async () => {
     if (reorderInFlight.current) return;
     setLoading(true);
-    setError('');
     try {
       await loadTasks();
       const { data } = await fetchScripts();
@@ -48,7 +47,7 @@ export function useDataSources() {
       setSettings({ timezone: data.timezone, scheduler_enabled: data.scheduler_enabled });
       await loadLatestUpdateTimes();
     } catch (err) {
-      setError(err.message || '任务列表读取失败');
+      toast.error(err.message || '任务列表读取失败', { id: 'data-sources-load-error' });
     } finally {
       setLoading(false);
     }
@@ -60,7 +59,6 @@ export function useDataSources() {
   }, [reload]);
 
   const saveTask = async (id, data) => {
-    setError('');
     let response;
     if (id) {
       response = await updateTask(id, data);
@@ -77,21 +75,19 @@ export function useDataSources() {
   };
 
   const removeTask = async id => {
-    setError('');
     await deleteTask(id);
     ++requestId.current;
     setTasks(current => current.filter(task => task.id !== id));
   };
 
   const toggleTask = async task => {
-    setError('');
     try {
       const { data: saved } = await setTaskEnabled(task.id, !task.enabled);
       ++requestId.current;
       setTasks(current => current.map(item => item.id === task.id
         ? { ...item, ...saved, sort_order: item.sort_order, next_run_at: null } : item));
     } catch (err) {
-      setError(err.message || '更新任务失败');
+      toast.error(err.message || '更新任务失败');
     }
   };
 
@@ -106,7 +102,6 @@ export function useDataSources() {
     const positions = new Map(ids.map((id, index) => [id, index]));
     reorderInFlight.current = true;
     setReordering(true);
-    setError('');
     // 先同步 React 中的顺序，避免执行状态更新时网格回到拖动前的位置。
     ++requestId.current;
     setTasks(current => [...current].sort((a, b) => positions.get(a.id) - positions.get(b.id))
@@ -130,13 +125,12 @@ export function useDataSources() {
     if (activeTask.current !== null) return;
     activeTask.current = taskId;
     setPendingTaskId(taskId);
-    setError('');
     try {
       const { data: result } = await executeTask(taskId);
       ++requestId.current;
       setTasks(current => current.map(task => task.id === taskId ? { ...task, result } : task));
     } catch (err) {
-      setError(err.message || '任务执行失败');
+      toast.error(err.message || '任务执行失败');
       // 失败响应只有错误文本，重新读取服务端保存的完整执行结果。
       try {
         await loadTasks();
@@ -151,7 +145,7 @@ export function useDataSources() {
   };
 
   return {
-    tasks, scripts, settings, latestUpdateTimes, latestDataStatus, loading, error, reordering,
+    tasks, scripts, settings, latestUpdateTimes, latestDataStatus, loading, reordering,
     runningTaskId: pendingTaskId ?? tasks.find(task => task.result?.status === 'running')?.id ?? null,
     runTask, reload, saveTask, removeTask, toggleTask, reorderTasks
   };

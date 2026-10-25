@@ -67,7 +67,8 @@ FastAPI 启动时自动创建港股、美股的空股票池，已有成员保持
 uv run python -m backend.scripts.sync_daily_stocks
 uv run python -m backend.scripts.sync_daily_basic
 uv run quant-sync
-uv run python -m backend.scripts.sync_hk_us_daily_bars
+uv run python -m backend.scripts.sync_hk_daily_bars
+uv run python -m backend.scripts.sync_us_daily_bars
 uv run python -m backend.scripts.sync_realtime_hot
 ```
 

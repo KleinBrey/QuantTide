@@ -387,9 +387,11 @@ DuckDB 继续保存股票基础信息和历史行情，港美股日 K 同步读�
 
 ## 外层同步脚本
 
-`backend/scripts/registry.py` 的 `SCRIPTS` 登记 6 个同步入口。每项包含展示名称
+`backend/scripts/registry.py` 的 `SCRIPTS` 登记 7 个同步入口。每项包含展示名称
 `name`、`模块路径:入口函数` 格式的 `run` 和可选的默认参数 `params`。
 API、任务调度和脚本菜单共用这些函数；导入注册表不会运行脚本。
+同步入口统一以异常报告失败（包括部分失败），任务层不解析脚本返回值来判断失败。
+港股、美股日 K 任务分别使用 `hk_daily_bars`、`us_daily_bars`。
 热度任务 ID 与脚本对应：`realtime_hot` 执行三市场实时股票热度同步，`daily_hot` 执行 A 股历史热度同步并接受 `lookback_days`。
 
 ```text
@@ -398,12 +400,13 @@ scripts/
 ├── sync_daily_stocks.py          # A 股股票池快照
 ├── sync_daily_basic.py           # A 股每日指标
 ├── sync_daily_bars.py            # A 股日 K
-├── sync_hk_us_daily_bars.py       # 港美股日 K
+├── sync_hk_daily_bars.py          # 港股日 K
+├── sync_us_daily_bars.py          # 美股日 K
 ├── sync_daily_hot.py             # A 股历史热度
 └── sync_realtime_hot.py          # 实时股票热度（A 股、港股、美股）
 ```
 
-前四个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
+前五个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
 直接运行脚本显示日期选择菜单（60、180、365、1095 日，`e` 退出）。
 任务页面通过“同步最近多少个自然日”填写，API 和定时任务直接向同步函数传入 `lookback_days`，不会显示菜单：
 
@@ -411,7 +414,8 @@ scripts/
 uv run python -m backend.scripts.sync_daily_stocks
 uv run python -m backend.scripts.sync_daily_basic
 uv run python -m backend.scripts.sync_daily_bars
-uv run python -m backend.scripts.sync_hk_us_daily_bars
+uv run python -m backend.scripts.sync_hk_daily_bars
+uv run python -m backend.scripts.sync_us_daily_bars
 ```
 
 同步脚本会在写入前初始化数据库。A 股每日指标、日 K 和股票池按交易日历过滤休市日，
@@ -455,8 +459,13 @@ uv run python -m backend.quant.signal.patterns.today_confirmed_breakout --trade-
 - `backend/scripts/sync_daily_stocks.py`：同步股票列表；
 - `backend/scripts/sync_daily_basic.py`：同步最近 3 日每日指标；
 - `backend/scripts/sync_daily_bars.py`：同步最近 3 日日 K，供 `quant-sync` 使用；
-- `backend/scripts/sync_hk_us_daily_bars.py`：通过 yfinance 同步港美股最近 3 日日 K，
-  无需 OpenD；默认最多 2 个并发请求，单股失败记录到 `failed_symbols`；
+- `backend/scripts/sync_hk_daily_bars.py` / `sync_us_daily_bars.py`：分别初始化数据库、
+  YFinance Provider 和 Repository，调用 `HKMarketService.update_daily_bars()` /
+  `USMarketService.update_daily_bars()`；默认同步最近 3 日日 K，无需 OpenD。
+  Service 读取对应的 SQLite 股票池、格式化行情并写库，成功时返回 `stocks`、`rows` 统计；
+  单股失败后继续处理其他股票，结束后汇总失败股票和已写入条数并抛出 `RuntimeError`，
+  已写入数据保留，可重跑补齐；命令行以非零状态退出，任务标记为失败；
+  默认并发上限为 `min(SYNC_WORKERS, lookback_days)`，请求启动间隔为 0.5 秒；
 - `backend/scripts/sync_realtime_hot.py`：分别向三个市场数据库同步当天股票热度；
 - `backend/scripts/sync_daily_hot.py`：按指定天数补齐 A 股历史热度排名。
 

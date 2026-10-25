@@ -292,7 +292,7 @@ class TaskTests(unittest.TestCase):
                 self.assertEqual(self.client.post('/api/tasks', json=body).status_code, 422)
         self.assertEqual(len(self.repository.list_tasks()), baseline_count)
         self.assertEqual(self.create(params={})['params'], {'lookback_days': 3})
-        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 6)
+        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 7)
 
     def test_manual_execution_uses_saved_parameters_and_can_run_when_disabled(self):
         task = self.create(script_id='daily_bars', enabled=False)
@@ -311,20 +311,40 @@ class TaskTests(unittest.TestCase):
         self.assertFalse(database_sync_lock.locked())
 
     def test_failures_and_partial_failures_release_shared_lock(self):
-        task = self.create(script_id='hk_us_daily_bars')
-        outcomes = [RuntimeError('接口失败'), {'hk': {'failed_symbols': []}, 'us': {'failed_symbols': ['AAPL']}}]
-        for outcome in outcomes:
-            with self.subTest(outcome=outcome), patch('backend.scripts.sync_hk_us_daily_bars.sync_hk_us_daily_bars', side_effect=[outcome]):
-                response = self.client.post(f'/api/tasks/{task["id"]}/run')
-                self.assertEqual(response.status_code, 500)
-                self.assertEqual(self.service.results[task['id']]['status'], 'failed')
-                self.assertFalse(database_sync_lock.locked())
+        for script_id, script in SCRIPTS.items():
+            task = self.create(script_id=script_id, params={})
+            module_name, function_name = script['run'].split(':')
+            outcomes = [RuntimeError('接口失败'), RuntimeError('未完整同步，已写入 1 条，失败股票：FAILED')]
+            for outcome in outcomes:
+                with self.subTest(script=script_id, outcome=outcome), patch(
+                    f'{module_name}.{function_name}', side_effect=outcome,
+                ):
+                    response = self.client.post(f'/api/tasks/{task["id"]}/run')
+                    self.assertEqual(response.status_code, 500)
+                    self.assertEqual(self.service.results[task['id']]['status'], 'failed')
+                    self.assertIn(str(outcome), response.json()['detail'])
+                    self.assertFalse(database_sync_lock.locked())
         self.assertIs(routes.database_sync_lock, database_sync_lock)
         database_sync_lock.acquire()
         try:
             self.assertEqual(self.client.post(f'/api/tasks/{task["id"]}/run').status_code, 409)
         finally:
             database_sync_lock.release()
+
+    def test_market_tasks_dispatch_only_their_own_script(self):
+        hk = self.create(script_id='hk_daily_bars')
+        us = self.create(script_id='us_daily_bars')
+        with (
+            patch('backend.scripts.sync_hk_daily_bars.sync_hk_daily_bars', return_value={'stocks': 1, 'rows': 2}) as sync_hk,
+            patch('backend.scripts.sync_us_daily_bars.sync_us_daily_bars', return_value={'stocks': 1, 'rows': 2}) as sync_us,
+        ):
+            self.assertEqual(self.client.post(f'/api/tasks/{hk["id"]}/run').status_code, 200)
+            sync_hk.assert_called_once_with(lookback_days=60)
+            sync_us.assert_not_called()
+            sync_hk.reset_mock()
+            self.assertEqual(self.client.post(f'/api/tasks/{us["id"]}/run').status_code, 200)
+            sync_us.assert_called_once_with(lookback_days=60)
+            sync_hk.assert_not_called()
 
     def test_running_task_cannot_be_edited_or_deleted_and_scheduled_tasks_wait(self):
         first = self.create(schedule={'trigger': 'interval', 'seconds': 3600})

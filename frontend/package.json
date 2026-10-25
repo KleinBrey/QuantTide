@@ -28,6 +28,7 @@
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.0",
     "sass": "^1.102.0",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

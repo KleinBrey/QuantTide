@@ -9,6 +9,7 @@ import {
 } from 'ag-grid-community';
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import { Loader2, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/shadcn/components/ui/button.jsx';
 import {
@@ -182,7 +183,8 @@ const TASK_MARKETS = {
   daily_basic: ['A 股'],
   daily_bars: ['A 股'],
   daily_hot: ['A 股'],
-  hk_us_daily_bars: ['港股', '美股']
+  hk_daily_bars: ['港股'],
+  us_daily_bars: ['美股']
 };
 
 const LATEST_FIELDS = {
@@ -195,10 +197,8 @@ const LATEST_FIELDS = {
     { id: 'us-hot-stock', label: '美股热度' }
   ],
   daily_hot: [{ id: 'hot-stock', label: 'A 股热度' }],
-  hk_us_daily_bars: [
-    { id: 'hk-daily-k', label: '港股数据' },
-    { id: 'us-daily-k', label: '美股数据' }
-  ]
+  hk_daily_bars: [{ id: 'hk-daily-k', label: '最新数据' }],
+  us_daily_bars: [{ id: 'us-daily-k', label: '最新数据' }]
 };
 
 function latestDataText(taskId, latestUpdateTimes, latestDataStatus) {
@@ -223,7 +223,6 @@ export default function DataSourcesView() {
     loading,
     reordering,
     runningTaskId,
-    error,
     runTask,
     reload,
     saveTask,
@@ -269,12 +268,11 @@ export default function DataSourcesView() {
     draggingTask.current = false;
     const ids = [];
     api.forEachNodeAfterFilterAndSort(node => ids.push(node.data.id));
-    setLocalError('');
     try {
       await reorderTasks(ids);
     } catch (err) {
       api.setGridOption('rowData', [...rowData]);
-      setLocalError(`任务顺序保存失败：${err.message || '请稍后重试'}`);
+      toast.error(`任务顺序保存失败：${err.message || '请稍后重试'}`);
     }
   }
 
@@ -369,11 +367,6 @@ export default function DataSourcesView() {
           </AgGridProvider>
         </div>
       </section>
-      {(error || (localError && !taskToDelete)) && (
-        <div className="dashboard-notice" role="alert">
-          {localError || error}
-        </div>
-      )}
       {editor && (
         <TaskEditor
           task={editor.task}

@@ -18,7 +18,8 @@ from backend.app.database import SQLiteDatabase, DuckDBDatabase, HKDuckDBDatabas
 from backend.app.repository import DailyStockRepository, HKStockRepository, USStockRepository
 from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.services.watchlist_service import WatchlistService
-from backend.scripts.sync_hk_us_daily_bars import sync_hk_us_daily_bars
+from backend.scripts.sync_hk_daily_bars import sync_hk_daily_bars
+from backend.scripts.sync_us_daily_bars import sync_us_daily_bars
 
 
 class WatchlistTests(unittest.TestCase):
@@ -228,7 +229,10 @@ class WatchlistTests(unittest.TestCase):
         self.repository.remove_stock(pool, 'US', 'NVDA')
         provider = Mock()
         provider.fetch_historical.return_value = {'data': {'item': []}}
-        results = sync_hk_us_daily_bars(3, 1, 0, provider=provider, hk_database=self.databases[1], us_database=self.databases[2], app_database=self.business)
+        results = {
+            'hk': sync_hk_daily_bars(3, 1, 0, provider=provider, database=self.databases[1], app_database=self.business),
+            'us': sync_us_daily_bars(3, 1, 0, provider=provider, database=self.databases[2], app_database=self.business),
+        }
         self.assertEqual(results['us']['stocks'], 1)
         self.assertEqual({call.args[0] for call in provider.fetch_historical.call_args_list}, {'00700.HK', 'AAPL'})
         self.assertEqual(len(self.us.get_table_data()), 2)

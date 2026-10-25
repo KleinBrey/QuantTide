@@ -20,12 +20,8 @@ class DatabaseSyncTests(unittest.TestCase):
         lock_patch = patch.object(routes, "database_sync_lock", threading.Lock())
         self.lock = lock_patch.start()
         self.addCleanup(lock_patch.stop)
-        self.results = {
-            "hk": {"stocks": 1, "rows": 3, "failed_symbols": []},
-            "us": {"stocks": 1, "rows": 3, "failed_symbols": []},
-        }
 
-    def test_hk_us_sync_runs_in_threadpool_and_returns_execution_details(self):
+    def test_daily_bar_sync_runs_in_threadpool_and_returns_execution_details(self):
         execution_threads = []
 
         async def run_in_threadpool(task):
@@ -37,18 +33,17 @@ class DatabaseSyncTests(unittest.TestCase):
 
         def sync(**kwargs):
             execution_threads.append(threading.get_ident())
-            return self.results
 
         with (
-            patch.object(routes, "sync_hk_us_daily_bars", side_effect=sync) as task,
+            patch.object(routes, "sync_daily_bars", side_effect=sync) as task,
             patch.object(routes, "run_in_threadpool", side_effect=run_in_threadpool),
         ):
-            response = self.client.post("/api/database-sync/hk-us-daily-k")
+            response = self.client.post("/api/database-sync/daily-k")
         self.assertEqual(response.status_code, 200, response.text)
-        task.assert_called_once_with(lookback_days=365)
+        task.assert_called_once_with(lookback_days=3)
         result = response.json()
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["script"], "sync_hk_us_daily_bars.py")
+        self.assertEqual(result["script"], "sync_daily_bars.py")
         self.assertGreaterEqual(result["duration_seconds"], 0)
         self.assertEqual(datetime.fromisoformat(result["finished_at"]).utcoffset().total_seconds(), 28800)
         self.assertFalse(self.lock.locked())
@@ -64,26 +59,20 @@ class DatabaseSyncTests(unittest.TestCase):
     def test_shared_lock_prevents_concurrent_sync(self):
         self.lock.acquire()
         self.addCleanup(self.lock.release)
-        with patch.object(routes, "sync_hk_us_daily_bars") as task:
-            for endpoint in ["hk-us-daily-k", "daily-k", "hot-stock", "stock-list", "stock-daily-basic"]:
+        with patch.object(routes, "sync_daily_bars") as task:
+            for endpoint in ["daily-k", "hot-stock", "stock-list", "stock-daily-basic"]:
                 with self.subTest(endpoint=endpoint):
                     response = self.client.post(f"/api/database-sync/{endpoint}")
                     self.assertEqual(response.status_code, 409, response.text)
             task.assert_not_called()
 
-    def test_script_errors_and_partial_failures_release_lock_for_retry(self):
-        partial_results = {**self.results, "us": {"failed_symbols": ["AAPL"]}}
-        for failure in [RuntimeError("行情接口不可用"), partial_results]:
-            with self.subTest(failure=failure), patch.object(
-                routes, "sync_hk_us_daily_bars", side_effect=[failure, self.results],
-            ):
-                response = self.client.post("/api/database-sync/hk-us-daily-k")
-                self.assertEqual(response.status_code, 500, response.text)
-                self.assertIn("sync_hk_us_daily_bars.py", response.json()["detail"])
-                if isinstance(failure, dict):
-                    self.assertIn("AAPL", response.json()["detail"])
-                self.assertFalse(self.lock.locked())
-                self.assertEqual(self.client.post("/api/database-sync/hk-us-daily-k").status_code, 200)
+    def test_script_errors_release_lock_for_retry(self):
+        with patch.object(routes, "sync_daily_bars", side_effect=[RuntimeError("行情接口不可用"), None]):
+            response = self.client.post("/api/database-sync/daily-k")
+            self.assertEqual(response.status_code, 500, response.text)
+            self.assertIn("sync_daily_bars.py", response.json()["detail"])
+            self.assertFalse(self.lock.locked())
+            self.assertEqual(self.client.post("/api/database-sync/daily-k").status_code, 200)
 
     def test_latest_updates_include_both_markets_and_empty_tables(self):
         for attribute in [

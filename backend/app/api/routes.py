@@ -40,7 +40,6 @@ from backend.scripts.sync_daily_bars import sync_daily_bars
 from backend.scripts.sync_daily_basic import sync_daily_basic
 from backend.scripts.sync_realtime_hot import sync_realtime_hot
 from backend.scripts.sync_daily_stocks import sync_daily_stocks
-from backend.scripts.sync_hk_us_daily_bars import sync_hk_us_daily_bars
 
 from .dependencies import (
     get_cn_market_service,
@@ -142,27 +141,6 @@ async def sync_daily_bars_database() -> dict[str, str | float]:
         "sync_daily_bars.py",
         "最近 3 个自然日的日 K 数据同步完成",
         lambda: sync_daily_bars(lookback_days=3),
-    )
-
-
-@router.post("/database-sync/hk-us-daily-k")
-async def sync_hk_us_daily_bars_database() -> dict[str, str | float]:
-    """旧同步接口固定更新最近 365 日；任务列表使用任务配置中的天数。"""
-
-    def sync() -> None:
-        results = sync_hk_us_daily_bars(lookback_days=365)
-        failures = [
-            f"{market}：{", ".join(result["failed_symbols"])}"
-            for market, result in results.items()
-            if result["failed_symbols"]
-        ]
-        if failures:
-            raise RuntimeError("部分股票同步失败；" + "；".join(failures))
-
-    return await _run_database_sync(
-        "sync_hk_us_daily_bars.py",
-        "最近 365 个自然日的港股和美股日 K 数据同步完成",
-        sync,
     )
 
 

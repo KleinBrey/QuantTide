@@ -15,9 +15,9 @@ from backend.app.repository import (
 )
 from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.schemas.market import DailyBar
-from backend.scripts.sync_hk_us_daily_bars import (
-    format_yfinance_daily_bars, sync_hk_us_daily_bars,
-)
+from backend.app.services import HKMarketService, USMarketService
+from backend.scripts.sync_hk_daily_bars import sync_hk_daily_bars
+from backend.scripts.sync_us_daily_bars import sync_us_daily_bars
 
 
 def timestamp(value):
@@ -64,7 +64,8 @@ class YFinanceProviderTests(unittest.TestCase):
                 self.assertTrue(args["raise_errors"])
                 self.assertFalse(args["back_adjust"])
                 self.assertFalse(args["prepost"])
-                bars = format_yfinance_daily_bars(symbol, result)
+                service = USMarketService if symbol == "AAPL" else HKMarketService
+                bars = service.format_daily_list(symbol, result)
                 self.assertEqual(bars["trade_date"].tolist(), [date(2026, 3, 6), date(2026, 3, 9)])
                 self.assertEqual(bars["symbol"].tolist(), [symbol, symbol])
                 self.assertEqual(bars["volume"].tolist(), [100, 200])
@@ -101,7 +102,7 @@ class YFinanceProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(YFinanceProviderError, "Volume"):
             provider.fetch_historical("AAPL", start, end)
 
-    def test_sync_both_markets_upserts_null_amount_and_preserves_failed_symbol(self):
+    def test_sync_both_markets_upserts_null_amount_and_raises_on_partial_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             hk_db = HKDuckDBDatabase(Path(tmp) / "hk.duckdb")
             us_db = USDuckDBDatabase(Path(tmp) / "us.duckdb")
@@ -136,14 +137,16 @@ class YFinanceProviderTests(unittest.TestCase):
                 return ticker
 
             provider = YFinanceProvider(ticker_factory=factory, max_attempts=1)
-            with patch("backend.scripts.sync_hk_us_daily_bars.time.time", return_value=timestamp("2026-03-10T08:00:00Z") / 1000):
+            clock = Mock(time=Mock(return_value=timestamp("2026-03-10T08:00:00Z") / 1000))
+            with (
+                patch("backend.app.services.hk_market_service.time", clock),
+                patch("backend.app.services.us_market_service.time", clock),
+            ):
                 for _ in range(2):
-                    result = sync_hk_us_daily_bars(
-                        10, 1, 0, provider=provider, hk_database=hk_db,
-                        us_database=us_db, app_database=app_db,
-                    )
-                    self.assertEqual(result["hk"]["rows"], 2)
-                    self.assertEqual(result["us"]["failed_symbols"], ["FAIL"])
+                    result = sync_hk_daily_bars(10, 1, 0, provider=provider, database=hk_db, app_database=app_db)
+                    self.assertEqual(result, {"stocks": 1, "rows": 2})
+                    with self.assertRaisesRegex(RuntimeError, "美股日 K 未完整同步，已写入 2 条，失败股票：FAIL$"):
+                        sync_us_daily_bars(10, 1, 0, provider=provider, database=us_db, app_database=app_db)
             for db, cls in [(hk_db, HKDailyBarRepository), (us_db, USDailyBarRepository)]:
                 bars = cls(db).get_table_data()
                 self.assertEqual(len(bars), 2)
