@@ -20,7 +20,7 @@ export function formatPercent(value) {
 }
 
 const reasonLabels = {
-  confirm_buy: '确认买入',
+  confirm_buy: '-',
   stop_loss: '止损',
   take_profit: '止盈',
   close_drop: '大跌超5%',
@@ -45,6 +45,16 @@ export function ReturnCell({ value }) {
   const number = finiteNumber(value);
   const tone = number > 0 ? styles.positive : number < 0 ? styles.negative : '';
   return <span className={tone}>{formatPercent(value)}</span>;
+}
+
+export function TradeReasonCell({ value, valueFormatted, data }) {
+  const label = valueFormatted || value || '-';
+  if (data?.side !== 'SELL' || !value) return <span>{label}</span>;
+
+  const tone =
+    value === 'stop_loss' ? styles.reasonLoss : value === 'take_profit' ? styles.reasonProfit : styles.reasonOther;
+
+  return <span className={`${styles.sellReason} ${tone}`}>{label}</span>;
 }
 
 export const tradeColumnDefs = [
@@ -101,7 +111,7 @@ export const tradeColumnDefs = [
     field: 'reason',
     minWidth: 200,
     flex: 0.9,
-    cellStyle: { color: '#d8dfe7', fontWeight: 700 },
+    cellRenderer: TradeReasonCell,
     valueFormatter: params => reasonLabels[params.value] || params.value || '-'
   }
 ];
