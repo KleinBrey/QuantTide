@@ -34,6 +34,7 @@ const taskGridTheme = themeQuartz.withPart(colorSchemeDark).withParams({
   foregroundColor: 'var(--foreground)',
   borderColor: 'var(--border)',
   rowHoverColor: 'var(--accent)',
+  rowDragIndicatorColor: '#71717a',
   fontFamily: 'inherit',
   fontSize: 13,
   cellHorizontalPadding: 6,
@@ -347,6 +348,7 @@ export default function DataSourcesView() {
               headerHeight={0}
               rowHeight={116}
               rowDragManaged
+              suppressMoveWhenRowDragging
               rowDragText={params => params.rowNode.data.name}
               suppressRowDrag={loading || reordering || deletingId !== null}
               onRowDragEnter={() => {
@@ -360,7 +362,6 @@ export default function DataSourcesView() {
               domLayout="normal"
               suppressCellFocus
               enableCellTextSelection
-              ensureDomOrder
               animateRows
               suppressScrollOnNewData
             />
