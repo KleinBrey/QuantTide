@@ -421,7 +421,7 @@ export default function StockKlineChart({
       <div className={styles.header}>
         <div>
           <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : '个股 K 线'}</h3>
-          <span>TradingView Charts</span>
+          {/* <span>TradingView Charts</span> */}
         </div>
         <div className={styles.periods}>
           {periodOptions.map(([value, label]) => (
