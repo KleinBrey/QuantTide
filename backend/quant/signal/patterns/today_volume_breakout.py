@@ -89,9 +89,9 @@ class TodayVolumeBreakoutPattern:
     def scan(
         self,
         latest_stocks: pd.DataFrame,
-        daily_bars: pd.DataFrame,
-        latest_hot: pd.DataFrame,
         latest_basic: pd.DataFrame,
+        latest_hot: pd.DataFrame,
+        daily_bars: pd.DataFrame,
     ) -> pd.DataFrame:
         """计算指标并返回符合全部条件的股票。"""
 
@@ -122,7 +122,7 @@ class TodayVolumeBreakoutPattern:
     ) -> pd.DataFrame:
         """整理行情字段，并只保留候选股票的有效行情。"""
 
-        bars = daily_bars.copy()
+        bars = daily_bars
         # 只处理符合条件的symbol的数据
         bars = bars[bars["symbol"].isin(symbols)]
         # 格式化
@@ -219,9 +219,9 @@ def run_signal(
 
     return TodayVolumeBreakoutPattern().scan(
         latest_stocks,
-        daily_bars,
-        latest_hot,
         latest_basic,
+        latest_hot,
+        daily_bars,
     )
 
 
@@ -260,9 +260,9 @@ if __name__ == "__main__":
         console.rule(f"今日:{date.today():%Y-%m-%d} 最新交易日:{latest_trade_date}")
         selected_stocks = TodayVolumeBreakoutPattern().scan(
             latest_stocks,
-            daily_bars,
-            latest_hot,
             latest_basic,
+            latest_hot,
+            daily_bars,
         )
     console.print("[green]✓ 请求完成[/green]")
     if selected_stocks.empty:
