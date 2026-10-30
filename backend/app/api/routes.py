@@ -57,10 +57,12 @@ from .dependencies import (
     get_us_stock_repository,
 )
 from .tasks import router as task_router
+from .crypto import router as crypto_router
 from .watchlists import Service as WatchlistServiceDep
 from .watchlists import router as watchlist_router
 
 router = APIRouter()
+router.include_router(crypto_router)
 router.include_router(watchlist_router)
 router.include_router(task_router)
 logger = logging.getLogger(__name__)

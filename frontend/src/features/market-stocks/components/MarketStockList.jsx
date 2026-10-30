@@ -15,7 +15,7 @@ import { ChevronRight, ChevronsDown, ChevronsUp, FolderPlus, Loader2, Plus, Refr
 import { ContextMenu, Popover } from 'radix-ui';
 
 import AShareStockSearch from './AShareStockSearch.jsx';
-import styles from './MarketStockBrowser.module.css';
+import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const modules = [
   ClientSideRowModelModule,

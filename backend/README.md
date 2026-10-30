@@ -76,6 +76,11 @@ uv run uvicorn backend.app.main:app \
 - `tushare_provider.py`：股票列表、日 K、复权行情和每日市值指标；
 - `hithink_provider.py`：HiThink 股票列表、快照和历史行情；
 - `akshare_provider.py`：AkShare 股票列表和历史行情适配；
+- `binance_provider.py`：币安现货公开行情，无需 API Key，使用已有的 `requests`；
+  提供 `fetch_historical`（K 线）、`fetch_snapshot`（滚动 24 小时行情）、
+  `fetch_depth`（盘口）、`fetch_trades`（近期成交）；K 线和成交直接返回列表，
+  快照和盘口直接返回字典，
+  每条记录带有 `source="Binance"`。交易对使用 `BTCUSDT` 等币安代码；
 - `futu_provider.py`：通过本机 Futu OpenD 获取股票列表、快照、历史 K 线和热议榜；
 - `tdx_provider.py`：通过 `tdxaidata.tqs` 获取通达信后台历史 K 线、Tick、分时、
   当日集合竞价、指数成份股和实时订阅，无需启动客户端；查询接口返回统一的
@@ -87,6 +92,29 @@ uv run uvicorn backend.app.main:app \
   `turnover` 为 None，同步后的 `amount` 为 NULL，`source` 为 `YFinance`；
 - `iwencai_provider.py`：问财股票热度查询；
 - `example/`：各 Provider 的手动冒烟测试。
+
+币安调用示例（`start` / `end` 为毫秒时间戳，按开盘时间包含首尾）：
+
+```python
+from backend.app.provider import BinanceProvider
+
+provider = BinanceProvider()
+bars = provider.fetch_historical("BTCUSDT", 1767225600000, 1769904000000)  # list[dict]
+snapshot = provider.fetch_snapshot("BTCUSDT")  # dict
+```
+
+K 线自动按每页 1000 条获取，最后应用 `offset`。支持币安原生周期以及
+`daily` / `weekly` / `monthly` / `1mo` 别名；`1m` 是分钟，`1M` 是月。
+`adjust` 默认为 `none`，仅支持 `none` / `raw` / 空字符串。
+K 线沿用通用 OHLC 字段，但 `date_ms` 保留实际 UTC 开盘时间，
+`volume` 为基础币数量，`turnover` 为计价币成交额，可能包含未收盘 K 线。
+快照、盘口和成交保留币安原始字段及数值字符串。
+加密货币通过独立的 `CryptoMarketService` 接入，不混用股票市场同步流程。
+接口依据：[币安现货行情文档](https://developers.binance.info/zh-CN/docs/catalog/core-trading-spot-trading/api/rest-api/market)。
+
+```bash
+uv run python -m backend.app.provider.example.binance_smoke_test
+```
 
 Futu OpenD 登录并监听本机 `11111` 端口后，可运行美股热议榜冒烟测试：
 
@@ -542,3 +570,19 @@ uv run python -m backend.scripts.sync_daily_stocks
 单日扫描同样禁止使用未来市值或无日期热度；行情指标只依赖当日及此前 K 线。
 回测引擎还会将所有输入截断到结束日期；新增策略须遵守 `Strategy` 的逐日因果计算约定。
 收盘信号按当日收盘价成交仍是原有回测假设，不等同于盘中可执行价格。
+
+### 加密货币市场
+
+`crypto_market.duckdb` 使用独立的 `crypto_schema.sql`，由应用启动时初始化，路径可通过 `CRYPTO_DATABASE_PATH` 配置。
+`CryptoMarketRepository` 负责日 K 查询和覆盖写入；`CryptoMarketService` 负责币安数据转换，日期使用 UTC。
+分组和成员复用 `app.sqlite` 的 `watchlist_groups` / `watchlist_items`，市场标识为 `CRYPTO`；
+行情仍保留在独立 DuckDB。启动时仅初始化当前表结构并确保默认分组存在，
+交易对由用户添加到分组。当前日 K 未收盘，重新同步时会更新。
+
+- `GET /api/crypto/symbols`：已同步交易对。
+- `GET /api/crypto/daily-bars/{symbol}`：本地日 K。
+- `POST /api/crypto/sync`：请求体如 `{"symbol":"BTCUSDT","days":365}`，同步 1–1000 个自然日；使用现有同步锁防止并发写入。
+
+前端 `/crypto-market` 提供添加交易对、手动同步、行情列表及日/周/月 K 图。
+分组管理与港美股共用 `components/watchlist/WatchlistGroups.jsx`，支持新建、重命名、删除、排序和默认池开关；
+交易对右键可加入其他分组、移出当前分组、调整顺序，也可拖动排序。删除分组或成员不会删除历史行情。

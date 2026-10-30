@@ -42,6 +42,12 @@ export const dashboardGroups = [
         path: '/us-share-market',
         title: '美股',
         description: '美股市场'
+      },
+      {
+        id: 'crypto-market',
+        path: '/crypto-market',
+        title: '加密货币',
+        description: '加密货币现货行情'
       }
     ]
   },

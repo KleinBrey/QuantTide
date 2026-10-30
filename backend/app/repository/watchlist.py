@@ -17,8 +17,8 @@ class WatchlistRepository:
 
     def ensure_default_pool(self, market):
         """应用启动时确保默认股票池存在，保留已有分组和成员。"""
-        if market not in {'HK', 'US'}:
-            raise ValueError('默认股票池仅支持 HK 和 US 市场')
+        if market not in {'HK', 'US', 'CRYPTO'}:
+            raise ValueError('默认池仅支持 HK、US 和 CRYPTO 市场')
         with self.db.connection() as connection:
             connection.execute('BEGIN IMMEDIATE')
             row = connection.execute(

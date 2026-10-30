@@ -25,4 +25,5 @@ class SQLiteDatabase:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as connection:
             connection.execute('PRAGMA journal_mode = WAL')
-            connection.executescript((SCHEMA_DIRECTORY / 'app_schema.sql').read_text(encoding='utf-8'))
+            schema = (SCHEMA_DIRECTORY / 'app_schema.sql').read_text(encoding='utf-8')
+            connection.executescript(schema)

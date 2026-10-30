@@ -8,11 +8,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CN_DATABASE_PATH = PROJECT_ROOT / "data" / "cn_market.duckdb"
 HK_DATABASE_PATH = PROJECT_ROOT / "data" / "hk_market.duckdb"
 US_DATABASE_PATH = PROJECT_ROOT / "data" / "us_market.duckdb"
+CRYPTO_DATABASE_PATH = PROJECT_ROOT / "data" / "crypto_market.duckdb"
 
 SCHEMA_DIRECTORY = Path(__file__).parent
 CN_SCHEMA_PATH = SCHEMA_DIRECTORY / "cn_schema.sql"
 HK_SCHEMA_PATH = SCHEMA_DIRECTORY / "hk_schema.sql"
 US_SCHEMA_PATH = SCHEMA_DIRECTORY / "us_schema.sql"
+CRYPTO_SCHEMA_PATH = SCHEMA_DIRECTORY / "crypto_schema.sql"
 
 
 class DuckDBDatabase:
@@ -61,3 +63,10 @@ class USDuckDBDatabase(DuckDBDatabase):
 
     def __init__(self, database_path: str | Path = US_DATABASE_PATH):
         super().__init__(database_path=database_path, schema_path=US_SCHEMA_PATH)
+
+
+class CryptoDuckDBDatabase(DuckDBDatabase):
+    """加密货币独立数据库。"""
+
+    def __init__(self, database_path: str | Path = CRYPTO_DATABASE_PATH):
+        super().__init__(database_path=database_path, schema_path=CRYPTO_SCHEMA_PATH)

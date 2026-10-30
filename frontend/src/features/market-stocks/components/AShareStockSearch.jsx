@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus } from 'lucide-react';
 import { searchWatchlistStocksApi } from '@/api/quantide/api.js';
-import styles from './MarketStockBrowser.module.css';
+import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd }) {
   const [query, setQuery] = useState('');

@@ -121,21 +121,21 @@ function normalizeMarkers(markers, period, rows) {
     .sort((left, right) => String(left.time).localeCompare(String(right.time)));
 }
 
-function calculateMA(rows, dayCount) {
+function calculateMA(rows, dayCount, precision = 3) {
   let rollingTotal = 0;
   return rows.flatMap((row, index) => {
     rollingTotal += row.close;
     if (index >= dayCount) rollingTotal -= rows[index - dayCount].close;
     if (index < dayCount - 1) return [];
-    return [{ time: row.time, value: Number((rollingTotal / dayCount).toFixed(3)) }];
+    return [{ time: row.time, value: Number((rollingTotal / dayCount).toFixed(precision)) }];
   });
 }
 
-function formatPrice(value) {
+function formatPrice(value, precision = 3) {
   return Number.isFinite(Number(value))
     ? Number(value).toLocaleString('zh-CN', {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 3
+        maximumFractionDigits: precision
       })
     : '—';
 }
@@ -204,7 +204,8 @@ export default function StockKlineChart({
   markers = EMPTY_MARKERS,
   enableMouseWheelZoom = true,
   fillContainer = false,
-  alignDataLeft = false
+  alignDataLeft = false,
+  pricePrecision
 }) {
   const chartRef = useRef(null);
   const contextMenuRef = useRef(null);
@@ -316,7 +317,12 @@ export default function StockKlineChart({
       }
     });
 
+    // 低价交易对需要更多小数位；股票页面沿用原有精度。
+    const priceFormat = pricePrecision == null ? {} : {
+      priceFormat: { type: 'price', precision: pricePrecision, minMove: 10 ** -pricePrecision }
+    };
     const candleSeries = chart.addSeries(CandlestickSeries, {
+      ...priceFormat,
       upColor: '#ef4444',
       downColor: '#22c55e',
       borderUpColor: '#ef4444',
@@ -341,6 +347,7 @@ export default function StockKlineChart({
 
     movingAverages.forEach(({ days, color }) => {
       const series = chart.addSeries(LineSeries, {
+        ...priceFormat,
         color,
         lineWidth: 1,
         priceLineVisible: false,
@@ -348,7 +355,7 @@ export default function StockKlineChart({
         crosshairMarkerVisible: false
         // title: `MA${days}`,
       });
-      series.setData(calculateMA(rows, days));
+      series.setData(calculateMA(rows, days, pricePrecision));
     });
 
     const volumeSeries = chart.addSeries(
@@ -393,7 +400,7 @@ export default function StockKlineChart({
       if (tradeMarkerPrimitive) candleSeries.detachPrimitive(tradeMarkerPrimitive);
       chart.remove();
     };
-  }, [alignDataLeft, enableMouseWheelZoom, rows, seriesMarkers]);
+  }, [alignDataLeft, enableMouseWheelZoom, rows, seriesMarkers, pricePrecision]);
 
   const handleContextMenu = event => {
     event.preventDefault();
@@ -442,7 +449,7 @@ export default function StockKlineChart({
       {loading ? (
         <div className={styles.state}>
           <Loader2 className={styles.spinner} size={24} />
-          <span>正在读取股票历史行情</span>
+          <span>正在读取历史行情</span>
         </div>
       ) : error ? (
         <div className={styles.state + ' ' + styles.error}>
@@ -455,18 +462,18 @@ export default function StockKlineChart({
               <div className={styles.legendValues}>
                 <span className={styles.legendDate}>{activeBar.time}</span>
                 <span>
-                  开 <strong>{formatPrice(activeBar.open)}</strong>
+                  开 <strong>{formatPrice(activeBar.open, pricePrecision)}</strong>
                 </span>
                 <span>
-                  高 <strong>{formatPrice(activeBar.high)}</strong>
+                  高 <strong>{formatPrice(activeBar.high, pricePrecision)}</strong>
                 </span>
                 <span>
-                  低 <strong>{formatPrice(activeBar.low)}</strong>
+                  低 <strong>{formatPrice(activeBar.low, pricePrecision)}</strong>
                 </span>
                 <span>
                   收{' '}
                   <strong className={activeBar.rising ? styles.rise : styles.fall}>
-                    {formatPrice(activeBar.close)}
+                    {formatPrice(activeBar.close, pricePrecision)}
                   </strong>
                 </span>
                 <span>

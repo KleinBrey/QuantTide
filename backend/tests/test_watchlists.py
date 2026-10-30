@@ -23,6 +23,42 @@ from backend.scripts.sync_us_daily_bars import sync_us_daily_bars
 
 
 class WatchlistTests(unittest.TestCase):
+    def test_crypto_group_lifecycle_and_market_isolation(self):
+        from backend.app.database import CryptoDuckDBDatabase
+        from backend.app.repository.crypto_market_db import CryptoMarketRepository
+        db = CryptoDuckDBDatabase(self.business.database_path.parent / 'crypto.duckdb')
+        db.initialize()
+        repo = CryptoMarketRepository(db)
+        repo.upsert_daily_bars(pd.DataFrame([
+            dict(symbol=symbol, trade_date='2026-10-30', open=10, high=12, low=9,
+                 close=11, volume=1, amount=11, source='Binance')
+            for symbol in ['BTCUSDT', 'ETHUSDT']
+        ]))
+        self.service.stock_repositories['CRYPTO'] = repo
+        pool = self.repository.ensure_default_pool('CRYPTO')['id']
+        first = self.create_group('主流币', 'CRYPTO')
+        second = self.create_group('观察', 'CRYPTO')
+        btc = self.add_item(first, 'CRYPTO', ' btcusdt ')
+        eth = self.add_item(first, 'CRYPTO', 'ETHUSDT')
+        self.add_item(first, 'CRYPTO', 'BTCUSDT', status=409)
+        self.add_item(first, 'US', 'AAPL', status=422)
+        self.add_item(pool, 'CRYPTO', 'BTCUSDT')
+        self.assertEqual(self.client.put(f'/api/watchlists/groups/{first}/items/order',
+                                        json={'ids': [eth['id'], btc['id']]}).status_code, 200)
+        items = self.client.get(f'/api/watchlists/groups/{first}/items').json()
+        self.assertEqual([item['symbol'] for item in items], ['ETHUSDT', 'BTCUSDT'])
+        self.assertEqual(items[0]['name'], 'ETHUSDT')
+        self.assertEqual(self.client.patch(f'/api/watchlists/groups/{first}', json={'name': '核心'}).status_code, 200)
+        ids = [group['id'] for group in self.repository.list_groups()]
+        ids[-2:] = [second, first]
+        self.assertEqual(self.client.put('/api/watchlists/groups/order', json={'ids': ids}).status_code, 200)
+        self.assertEqual(self.client.delete(f'/api/watchlists/groups/{first}').status_code, 200)
+        self.assertEqual(len(repo.get_daily_bars('BTCUSDT')), 1)
+        self.assertEqual(len(self.repository.list_items(pool)), 1)
+        self.assertEqual(self.client.delete(f'/api/watchlists/groups/{pool}').status_code, 409)
+        self.business.initialize()
+        self.assertEqual(self.repository.get_group(second)['name'], '观察')
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -91,13 +127,14 @@ class WatchlistTests(unittest.TestCase):
             database_path=root / 'cn.duckdb',
             hk_database_path=root / 'hk.duckdb',
             us_database_path=root / 'us.duckdb',
+            crypto_database_path=root / 'crypto.duckdb',
             scheduler_enabled=False,
         )
         with patch('backend.app.main.get_settings', return_value=settings):
             with TestClient(app) as client:
                 groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([(group['market'], group['name'], group['item_count']) for group in groups],
-                                 [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0)])
+                                 [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0), ('CRYPTO', 'stock_pool', 0)])
                 for market, symbol in [('hk-share', '700'), ('us-share', 'AAPL')]:
                     self.assertEqual(client.get('/api/market-stocks', params={'market': market}).json(), [])
                     response = client.post('/api/market-stocks', json={
@@ -111,7 +148,7 @@ class WatchlistTests(unittest.TestCase):
             with TestClient(app) as client:
                 fresh_groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([group['id'] for group in fresh_groups], [group['id'] for group in groups])
-                self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1])
+                self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1, 0])
                 self.assertEqual(client.get('/api/market-stocks', params={'market': 'hk-share'}).json(), [])
                 stocks = client.get('/api/market-stocks', params={'market': 'us-share'}).json()
                 self.assertEqual([stock['symbol'] for stock in stocks], ['AAPL'])

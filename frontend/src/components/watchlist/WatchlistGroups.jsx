@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, GripVertical, LockKeyhole, Pencil, Settings2, Trash2, X } from 'lucide-react';
 import { Popover, Switch } from 'radix-ui';
-import styles from './MarketStockBrowser.module.css';
+import styles from './MarketBrowser.module.css';
 
 function reordered(groups, sourceId, targetId) {
   const next = [...groups];
@@ -12,8 +12,10 @@ function reordered(groups, sourceId, targetId) {
   return next;
 }
 
-export default function MarketStockGroups({
+export default function WatchlistGroups({
   marketId,
+  poolLabel = '股票池',
+  groupPlaceholder = '例如 AI算力',
   groups,
   groupId,
   selectGroup,
@@ -147,7 +149,7 @@ export default function MarketStockGroups({
             </div>
             {hasStockPool && (
               <div className={styles.stockPoolSetting}>
-                <label htmlFor={`stock-pool-switch-${marketId}`}>股票池</label>
+                <label htmlFor={`stock-pool-switch-${marketId}`}>{poolLabel}</label>
                 <Switch.Root
                   id={`stock-pool-switch-${marketId}`}
                   className={styles.stockPoolSwitch}
@@ -323,7 +325,7 @@ export default function MarketStockGroups({
                   maxLength={100}
                   value={newName}
                   onChange={event => setNewName(event.target.value)}
-                  placeholder="例如 AI算力"
+                  placeholder={groupPlaceholder}
                 />
               </label>
               <button className={styles.submitButton} disabled={disabled || !newName.trim()} type="submit">

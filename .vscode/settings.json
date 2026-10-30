@@ -41,9 +41,15 @@
       "path": "${workspaceFolder}/data/cn_market.duckdb",
       "attached": false,
       "readOnly": false
+    },
+    {
+      "alias": "crypto_market",
+      "type": "file",
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/crypto_market.duckdb",
+      "attached": false
     }
   ],
-  "duckdb.defaultDatabase": "cn_market",
+  "duckdb.defaultDatabase": "crypto_market",
   "[sql]": {
     "editor.formatOnSave": false
   }

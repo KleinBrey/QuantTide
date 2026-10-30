@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-Market = Literal['CN', 'HK', 'US']
+Market = Literal['CN', 'HK', 'US', 'CRYPTO']
 
 
 class GroupName(BaseModel):

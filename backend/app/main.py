@@ -29,6 +29,10 @@ from backend.app.repository.watchlist import WatchlistRepository, WatchlistError
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 from backend.app.services.task_service import TaskService
 from backend.app.services.watchlist_service import WatchlistService
+from backend.app.database import CryptoDuckDBDatabase
+from backend.app.provider import BinanceProvider
+from backend.app.repository.crypto_market_db import CryptoMarketRepository
+from backend.app.services.crypto_market_service import CryptoMarketService
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -47,6 +51,11 @@ async def lifespan(app: FastAPI):
     database.initialize()
     hk_database.initialize()
     us_database.initialize()
+    crypto_database = CryptoDuckDBDatabase(settings.crypto_database_path)
+    crypto_database.initialize()
+    app.state.crypto_market_service = CryptoMarketService(
+        BinanceProvider(), CryptoMarketRepository(crypto_database)
+    )
 
     # 注册stock表的repository，用来统一处理增删改查
     daily_stock_repository = DailyStockRepository(database)
@@ -55,11 +64,13 @@ async def lifespan(app: FastAPI):
     app_database = SQLiteDatabase(settings.app_database_path)
     app_database.initialize()
     watchlist_repository = WatchlistRepository(app_database)
-    # 启动时只确保默认分组存在；股票由用户在页面上添加，不预填名单。
+    # 启动时只确保默认分组存在；股票和交易对由用户在页面上添加。
     watchlist_repository.ensure_default_pool('HK')
     watchlist_repository.ensure_default_pool('US')
+    watchlist_repository.ensure_default_pool('CRYPTO')
     app.state.watchlist_service = WatchlistService(
         watchlist_repository, daily_stock_repository, hk_stock_repository, us_stock_repository,
+        app.state.crypto_market_service.repository,
     )
     daily_basic_repository = DailyBasicRepository(database)
     daily_repository = DailyBarRepository(database)

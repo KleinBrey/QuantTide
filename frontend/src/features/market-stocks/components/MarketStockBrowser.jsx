@@ -5,8 +5,8 @@ import { cn } from '@/shadcn/lib/utils.js';
 import { useMarketStockKline } from '../hooks/useMarketStockKline.js';
 import { useMarketStocks } from '../hooks/useMarketStocks.js';
 import MarketStockList from './MarketStockList.jsx';
-import MarketStockGroups from './MarketStockGroups.jsx';
-import styles from './MarketStockBrowser.module.css';
+import MarketStockGroups from '@/components/watchlist/WatchlistGroups.jsx';
+import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const MARKET_CONFIG = {
   'a-share': {

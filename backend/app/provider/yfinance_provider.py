@@ -21,13 +21,15 @@ class YFinanceProvider:
 
     source = "YFinance"
     _INTERVAL_MAP = {
-        "1d": "1d", "daily": "1d",
-        "1w": "1wk", "weekly": "1wk",
-        "1mo": "1mo", "monthly": "1mo",
+        "1d": "1d",
+        "daily": "1d",
+        "1w": "1wk",
+        "weekly": "1wk",
+        "1mo": "1mo",
+        "monthly": "1mo",
     }
     # Yahoo 自动复权不等同于 Futu 前复权；不将 back_adjust 冒充后复权。
-    _ADJUST_MAP = {"": False, "none": False, "raw": False,
-                   "forward": True, "qfq": True}
+    _ADJUST_MAP = {"": False, "none": False, "raw": False, "forward": True, "qfq": True}
 
     def __init__(
         self,
@@ -48,10 +50,13 @@ class YFinanceProvider:
     def _market_symbol(value: str) -> tuple[str, str]:
         """返回 Yahoo 代码和交易所时区；内部股票代码不随数据源改变。"""
         symbol = str(value).strip().upper()
+
         if symbol.startswith("HK.") or symbol.endswith(".HK") or symbol.isdigit():
             code = normalize_daily_bar_symbol(symbol, "hk-share")[:-3]
             return f"{int(code):04d}.HK", "Asia/Hong_Kong"
-        if symbol.startswith(("SH.", "SZ.", "BJ.")) or symbol.endswith((".SH", ".SZ", ".BJ")):
+        if symbol.startswith(("SH.", "SZ.", "BJ.")) or symbol.endswith(
+            (".SH", ".SZ", ".BJ")
+        ):
             raise ValueError("YFinance Provider 仅支持港股和美股")
         code = symbol.removeprefix("US.").removesuffix(".US")
         # .A 也可能是股份类别（BRK.A），不能按交易所后缀直接移除。
@@ -89,7 +94,9 @@ class YFinanceProvider:
         except KeyError as error:
             raise ValueError(f"YFinance 不支持复权方式: {adjust!r}") from error
         symbol, timezone = self._market_symbol(thscode)
-        start_date = pd.to_datetime(start, unit="ms", utc=True).tz_convert(timezone).date()
+        start_date = (
+            pd.to_datetime(start, unit="ms", utc=True).tz_convert(timezone).date()
+        )
         end_date = pd.to_datetime(end, unit="ms", utc=True).tz_convert(timezone).date()
 
         factory = self._ticker_factory
@@ -116,7 +123,9 @@ class YFinanceProvider:
                 break
             except Exception as error:
                 if attempt + 1 == self.max_attempts:
-                    raise YFinanceProviderError(f"Yahoo Finance {symbol} 获取失败: {error}") from error
+                    raise YFinanceProviderError(
+                        f"Yahoo Finance {symbol} 获取失败: {error}"
+                    ) from error
                 time.sleep(self.retry_delay * 2**attempt)
 
         if not isinstance(frame, pd.DataFrame):
@@ -124,12 +133,17 @@ class YFinanceProvider:
         if frame.empty:
             return {"data": {"item": []}}
         column_map = {
-            "Open": "open_price", "High": "high_price",
-            "Low": "low_price", "Close": "close_price", "Volume": "volume",
+            "Open": "open_price",
+            "High": "high_price",
+            "Low": "low_price",
+            "Close": "close_price",
+            "Volume": "volume",
         }
         missing = set(column_map).difference(frame.columns)
         if missing:
-            raise YFinanceProviderError(f"Yahoo Finance 日 K 数据缺少字段: {', '.join(sorted(missing))}")
+            raise YFinanceProviderError(
+                f"Yahoo Finance 日 K 数据缺少字段: {', '.join(sorted(missing))}"
+            )
         result = frame[list(column_map)].rename(columns=column_map).copy()
         dates = pd.DatetimeIndex(result.index)
         if dates.tz is not None:

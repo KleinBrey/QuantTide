@@ -12,6 +12,7 @@ import {
   deleteWatchlistItemApi
 } from '@/api/quantide/api.js';
 import { moveStock } from '../utils/stockOrder.js';
+import { useWatchlistGroupState } from '@/hooks/useWatchlistGroupState.js';
 
 // 分市场展示时保留跨市场分组中其他市场成员/分组的相对位置。
 function mergeVisibleOrder(all, visible, isVisible) {
@@ -33,8 +34,7 @@ function visibleGroups(allGroups, market, showStockPool) {
 
 export function useMarketStocks(marketId) {
   const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US' }[marketId];
-  const [allGroups, setAllGroups] = useState([]);
-  const [activeGroups, setActiveGroups] = useState({});
+  const { allGroups, setAllGroups, activeGroups, setActiveGroups } = useWatchlistGroupState();
   const [showStockPool, setShowStockPool] = useState(() => {
     try {
       return window.localStorage.getItem(STOCK_POOL_VISIBILITY_KEY) === 'true';
@@ -55,8 +55,8 @@ export function useMarketStocks(marketId) {
   const requestRef = useRef(0);
   const activeMarketRef = useRef(market);
   const mutationRef = useRef(false);
-  const activeGroupsRef = useRef({});
-  const allGroupsRef = useRef([]);
+  const activeGroupsRef = useRef(activeGroups);
+  const allGroupsRef = useRef(allGroups);
   const allItemsRef = useRef([]);
 
   const loadStocks = useCallback(
@@ -95,7 +95,7 @@ export function useMarketStocks(marketId) {
         if (requestId === requestRef.current) setLoading(false);
       }
     },
-    [market, showStockPool]
+    [market, showStockPool, setAllGroups, setActiveGroups]
   );
 
   const mutate = useCallback(async action => {

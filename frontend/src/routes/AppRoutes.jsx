@@ -2,12 +2,13 @@ import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { RouteFallback } from '@/components/pageState';
 import { defaultDashboardPath } from '@/routes/RouteConfig.js';
+import MarketStocks from '@/pages/MarketStocks.jsx';
+import CryptoMarket from '@/pages/CryptoMarket.jsx';
 
 const DataSourcesDashboard = lazy(() => import('@/pages/DataSourcesDashboard.jsx'));
 const HotRankingsDashboard = lazy(() => import('@/pages/HotRankingsDashboard.jsx'));
 const SignalsDashboard = lazy(() => import('@/pages/SignalsDashboard.jsx'));
 const StrategyBacktestsDashboard = lazy(() => import('@/pages/StrategyBacktestsDashboard.jsx'));
-const MarketStocks = lazy(() => import('@/pages/MarketStocks.jsx'));
 
 export default function AppRoutes() {
   return (
@@ -21,6 +22,7 @@ export default function AppRoutes() {
         <Route path="/a-share-market" element={<MarketStocks marketId="a-share" />} />
         <Route path="/hk-share-market" element={<MarketStocks marketId="hk-share" />} />
         <Route path="/us-share-market" element={<MarketStocks marketId="us-share" />} />
+        <Route path="/crypto-market" element={<CryptoMarket />} />
         <Route path="*" element={<Navigate to={defaultDashboardPath} replace />} />
       </Routes>
     </Suspense>

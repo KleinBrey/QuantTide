@@ -1,7 +1,7 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
 import logoUrl from '@/assets/image/logo.png';
 import React from 'react';
-import { Radar, LayoutDashboard, DatabaseBackup, Flame, History } from 'lucide-react';
+import { Radar, LayoutDashboard, DatabaseBackup, Flame, History, Bitcoin } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { dashboardGroups } from '../routes/RouteConfig.js';
 import { SidebarUser } from './SidebarUser.jsx';
@@ -38,6 +38,7 @@ const iconById = {
   'a-share-market': AShareIcon,
   'hk-share-market': HKShareIcon,
   'us-share-market': USShareIcon,
+  'crypto-market': Bitcoin,
   'data-sources': DatabaseBackup
 };
 

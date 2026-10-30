@@ -26,7 +26,8 @@ quanttide/
 │   ├── app.sqlite             # 自选分组、成员和排序等业务数据
 │   ├── cn_market.duckdb       # A 股
 │   ├── hk_market.duckdb       # 港股
-│   └── us_market.duckdb       # 美股
+│   ├── us_market.duckdb       # 美股
+│   └── crypto_market.duckdb   # 加密货币（币安现货）
 ├── frontend/
 ├── pyproject.toml
 └── README.md
@@ -183,3 +184,6 @@ A 股库表名统一为 `daily_stocks`、`daily_bars`、`daily_basic`、`daily_h
 历史股票池按所选最近时间范围重新拉取，以新快照完整替换对应交易日的旧数据。
 回测按当日或此前最近快照选股，市值、热度与行情禁止引用未来日期。
 历史补数及缺失数据规则见 [后端说明](backend/README.md)。
+
+加密货币页面位于 `/crypto-market`，可添加币安现货交易对并手动同步最近一年的日 K。
+后端启动时自动初始化 `data/crypto_market.duckdb`；日线按 UTC 日期保存，包含当天尚未收盘的行情。

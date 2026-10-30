@@ -1,0 +1,201 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 50px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.browser {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.listPane {
+  background: #111114;
+  border-right: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.listHeader {
+  align-items: center;
+  border-bottom: 1px solid #27272a;
+  color: #e4e4e7;
+  display: flex;
+  flex: 0 0 48px;
+  font-size: 13px;
+  font-weight: 700;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+
+.listActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.listActions strong {
+  background: #27272a;
+  border-radius: 999px;
+  color: #a1a1aa;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.addButton,
+.iconButton,
+.submitButton {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  color: #d4d4d8;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 4px;
+  justify-content: center;
+}
+
+.addButton {
+  font-size: 11px;
+  font-weight: 500;
+  height: 27px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.iconButton {
+  border: 0;
+  height: 24px;
+  width: 24px;
+}
+
+.addButton:hover,
+.iconButton:hover,
+.submitButton:hover {
+  background: #27272a;
+}
+
+.addButton:disabled,
+.iconButton:disabled,
+.submitButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.pairName {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pairName strong {
+  font-weight: 600;
+}
+
+.pairName .quoteAsset {
+  color: #a1a1aa;
+  font-weight: 400;
+}
+
+.chartPane {
+  background: #111114;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.emptyChart,
+.listState {
+  align-items: center;
+  color: #71717a;
+  display: flex;
+  font-size: 12px;
+  justify-content: center;
+  min-height: 180px;
+  padding: 20px;
+  text-align: center;
+}
+
+.emptyChart { height: 100%; }
+
+.addPopover {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+  box-shadow: 0 8px 24px #0006;
+  color: #e4e4e7;
+  font-size: 13px;
+  max-width: calc(100vw - 16px);
+  padding: 14px;
+  width: 270px;
+  z-index: 40;
+}
+
+.addTitle {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.addPopover form,
+.addPopover label,
+.quoteField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addPopover form { gap: 12px; }
+.addPopover label,
+.quoteField { color: #a1a1aa; font-size: 12px; }
+.addPopover input {
+  background: #111114;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  color: #e4e4e7;
+  font: inherit;
+  height: 33px;
+  padding: 0 9px;
+  width: 100%;
+  color-scheme: dark;
+}
+
+.formHint { color: #71717a; font-size: 11px; line-height: 1.6; margin: 0; }
+.submitButton { height: 32px; }
+.error { color: #fda4af; font-size: 12px; line-height: 1.5; margin: 0; padding: 8px 14px; }
+.addPopover .error { padding: 0; }
+
+.addButton:focus-visible,
+.iconButton:focus-visible,
+.submitButton:focus-visible,
+.addPopover input:focus-visible { outline: 2px solid #71717a; outline-offset: -2px; }
+
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 820px) {
+  .content { height: auto; min-height: calc(100dvh - 50px); overflow: visible; }
+  .browser { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+  .listPane { border-bottom: 1px solid #27272a; border-right: 0; }
+  .chartPane { height: max(320px, calc(100dvh - 114px)); }
+}

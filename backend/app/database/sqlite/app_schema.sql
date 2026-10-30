@@ -14,11 +14,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS watchlist_groups (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 100),
-    market TEXT CHECK (market IN ('CN', 'HK', 'US')),
+    market TEXT CHECK (market IN ('CN', 'HK', 'US', 'CRYPTO')),
     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (is_default = 0 OR (name = 'stock_pool' AND market IN ('HK', 'US') AND market IS NOT NULL))
+    CHECK (is_default = 0 OR (name = 'stock_pool' AND market IN ('HK', 'US', 'CRYPTO') AND market IS NOT NULL))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_default_market
@@ -27,7 +27,7 @@ ON watchlist_groups(market) WHERE is_default = 1;
 CREATE TABLE IF NOT EXISTS watchlist_items (
     id INTEGER PRIMARY KEY,
     group_id INTEGER NOT NULL,
-    market TEXT NOT NULL CHECK (market IN ('CN', 'HK', 'US')),
+    market TEXT NOT NULL CHECK (market IN ('CN', 'HK', 'US', 'CRYPTO')),
     symbol TEXT NOT NULL CHECK (length(trim(symbol)) BETWEEN 1 AND 32),
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
