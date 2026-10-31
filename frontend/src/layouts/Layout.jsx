@@ -4,7 +4,7 @@ import style from './Layout.module.css';
 
 export default function Layout({ children }) {
   return (
-    <SidebarProvider style={{ '--sidebar-width-icon': '4rem', '--sidebar-width': '14rem' }}>
+    <SidebarProvider style={{ '--sidebar-width-icon': '4rem', '--sidebar-width': '15rem' }}>
       <AppSidebar />
       <section style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <header className={style.siteHeader}>

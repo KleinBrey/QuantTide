@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" color="#F0F1F4" aria-label="期货">
+  <!-- A futures contract with ascending price chart -->
+  <path d="M36.2 25V10.2C36.2 6.9 33.6 4.6 30.2 4.6H10C6.7 4.6 4.7 6.9 4.7 10.2V37.8C4.7 41.2 7 43.5 10.4 43.5H31.2C34.6 43.5 36.5 41.3 36.5 38.1V33.9" stroke="currentColor" stroke-width="2.85" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M12.7 15H28.3M12.7 22.1H22.5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M14 38.3 21.8 29.2 27.1 33.1 42.8 17.1" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M35.1 17.2H42.8V24.7" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

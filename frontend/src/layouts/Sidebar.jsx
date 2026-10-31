@@ -1,35 +1,26 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
 import logoUrl from '@/assets/image/logo.png';
+import aShareIconUrl from '@/assets/icons/a-share.svg';
+import hkShareIconUrl from '@/assets/icons/hk-share.svg';
+import usShareIconUrl from '@/assets/icons/us-share.svg';
+import futuresIconUrl from '@/assets/icons/futures.svg';
+import cryptoIconUrl from '@/assets/icons/crypto.svg';
 import React from 'react';
-import { Radar, LayoutDashboard, DatabaseBackup, Flame, History, Bitcoin } from 'lucide-react';
+import { Radar, LayoutDashboard, DatabaseBackup, Flame, History } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { dashboardGroups } from '../routes/RouteConfig.js';
 import { SidebarUser } from './SidebarUser.jsx';
 import style from './Sidebar.module.css';
 
-function MarketIcon({ code, size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="2" y="3" width="20" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" />
-      <text
-        x="12"
-        y="12"
-        dy="0.35em"
-        textAnchor="middle"
-        fill="currentColor"
-        fontFamily="Arial, sans-serif"
-        fontSize="9"
-        fontWeight="700"
-      >
-        {code}
-      </text>
-    </svg>
-  );
+function MarketIcon({ src, size = 16 }) {
+  return <img src={src} width={size} height={size} alt="" aria-hidden="true" />;
 }
 
-const AShareIcon = props => <MarketIcon {...props} code="CN" />;
-const HKShareIcon = props => <MarketIcon {...props} code="HK" />;
-const USShareIcon = props => <MarketIcon {...props} code="US" />;
+const AShareIcon = props => <MarketIcon {...props} src={aShareIconUrl} />;
+const HKShareIcon = props => <MarketIcon {...props} src={hkShareIconUrl} />;
+const USShareIcon = props => <MarketIcon {...props} src={usShareIconUrl} />;
+const FuturesIcon = props => <MarketIcon {...props} src={futuresIconUrl} />;
+const CryptoIcon = props => <MarketIcon {...props} src={cryptoIconUrl} />;
 
 const iconById = {
   'hot-rankings': Flame,
@@ -38,8 +29,8 @@ const iconById = {
   'a-share-market': AShareIcon,
   'hk-share-market': HKShareIcon,
   'us-share-market': USShareIcon,
-  'futures-market': props => <MarketIcon {...props} code="期" />,
-  'crypto-market': Bitcoin,
+  'futures-market': FuturesIcon,
+  'crypto-market': CryptoIcon,
   'data-sources': DatabaseBackup
 };
 
