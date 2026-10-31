@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
   addMarketStockApi,
   resetFuturesPoolApi,
   getWatchlistGroupsApi,
   getWatchlistItemsApi,
+  syncWatchlistGroupBarsApi,
   reorderWatchlistItemsApi,
   createWatchlistGroupApi,
   renameWatchlistGroupApi,
@@ -14,6 +16,7 @@ import {
 } from '@/api/quantide/api.js';
 import { moveStock } from '../utils/stockOrder.js';
 import { useWatchlistGroupState } from '@/hooks/useWatchlistGroupState.js';
+import { invalidateMarketStockKlines } from './useMarketStockKline.js';
 
 // 分市场展示时保留跨市场分组中其他市场成员/分组的相对位置。
 function mergeVisibleOrder(all, visible, isVisible) {
@@ -52,6 +55,8 @@ export function useMarketStocks(marketId) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mutating, setMutating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [actionError, setActionError] = useState('');
   const requestRef = useRef(0);
   const activeMarketRef = useRef(market);
@@ -125,6 +130,29 @@ export function useMarketStocks(marketId) {
     },
     [mutate, loadStocks, market]
   );
+
+  const syncGroup = async () => {
+    if (loading || stocksMarket !== market || !groupId || !stocks.length) return false;
+    const groupName = groups.find(group => group.id === groupId)?.name;
+    return mutate(async () => {
+      setSyncing(true);
+      try {
+        const { data } = await syncWatchlistGroupBarsApi(groupId, market);
+        if (data.rows) {
+          toast.success(`已更新「${groupName}」${data.symbols} 个资产的最新日 K，共 ${data.rows} 条`);
+        } else {
+          toast.info(`「${groupName}」暂未获取到可更新的日 K`);
+        }
+      } catch (requestError) {
+        toast.error(requestError.message || '获取当前分组最新日 K 失败，请重试');
+      } finally {
+        // 部分失败时也刷新已保存的行情，同时清除组内其他资产的旧缓存。
+        invalidateMarketStockKlines(marketId);
+        if (activeMarketRef.current === market) setRevision(value => value + 1);
+        setSyncing(false);
+      }
+    });
+  };
 
   const selectGroup = id => {
     if (mutationRef.current || loading || stocksMarket !== market || id === activeGroupsRef.current[market]) return;
@@ -266,6 +294,9 @@ export function useMarketStocks(marketId) {
     loading: loading || stocksMarket !== market,
     error: stocksMarket === market ? error : '',
     mutating,
+    syncing,
+    revision,
+    syncGroup,
     actionError: stocksMarket === market ? actionError : '',
     groups,
     hasStockPool,
@@ -282,7 +313,6 @@ export function useMarketStocks(marketId) {
     addStock,
     removeStock,
     reorderStocks,
-    moveStock: (symbol, position) => reorderStocks(moveStock(stocks, symbol, position)),
-    refresh: () => loadStocks()
+    moveStock: (symbol, position) => reorderStocks(moveStock(stocks, symbol, position))
   };
 }

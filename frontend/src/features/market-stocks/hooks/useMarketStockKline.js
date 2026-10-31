@@ -4,6 +4,14 @@ import moment from 'moment';
 import { getDailyBarsApi } from '@/api/quantide/api.js';
 
 const historyCache = new Map();
+const marketCacheVersions = new Map();
+
+export function invalidateMarketStockKlines(marketId) {
+  marketCacheVersions.set(marketId, (marketCacheVersions.get(marketId) || 0) + 1);
+  for (const key of historyCache.keys()) {
+    if (key.startsWith(`${marketId}:`)) historyCache.delete(key);
+  }
+}
 
 function transformHistory(items) {
   if (!Array.isArray(items)) return [];
@@ -18,7 +26,7 @@ function transformHistory(items) {
   }));
 }
 
-export function useMarketStockKline(marketId, symbol) {
+export function useMarketStockKline(marketId, symbol, revision = 0) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -35,6 +43,7 @@ export function useMarketStockKline(marketId, symbol) {
     }
 
     const cacheKey = `${marketId}:${symbol}`;
+    const cacheVersion = marketCacheVersions.get(marketId) || 0;
     const cachedRows = historyCache.get(cacheKey);
     if (cachedRows) {
       setData({ rows: cachedRows });
@@ -54,7 +63,7 @@ export function useMarketStockKline(marketId, symbol) {
       end: moment().format('YYYY-MM-DD')
     })
       .then(response => {
-        if (requestId !== requestIdRef.current) return;
+        if (requestId !== requestIdRef.current || cacheVersion !== (marketCacheVersions.get(marketId) || 0)) return;
         const rows = transformHistory(response?.data);
         historyCache.set(cacheKey, rows);
         setData({ rows });
@@ -72,7 +81,7 @@ export function useMarketStockKline(marketId, symbol) {
     return () => {
       requestIdRef.current += 1;
     };
-  }, [marketId, symbol]);
+  }, [marketId, symbol, revision]);
 
   return { data, loading, error };
 }

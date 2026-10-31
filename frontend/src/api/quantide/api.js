@@ -26,6 +26,9 @@ export const renameWatchlistGroupApi = (id, name) => request.patch(`/api/watchli
 export const deleteWatchlistGroupApi = id => request.delete(`/api/watchlists/groups/${id}`);
 export const reorderWatchlistGroupsApi = ids => request.put('/api/watchlists/groups/order', { ids });
 export const getWatchlistItemsApi = id => request.get(`/api/watchlists/groups/${id}/items`);
+export const syncWatchlistGroupBarsApi = (id, market) => request.post(
+  `/api/watchlists/groups/${id}/sync-daily-bars`, { market }, { timeout: 600000 }
+);
 export const addWatchlistItemApi = (id, stock) => request.post(`/api/watchlists/groups/${id}/items`, stock);
 export const deleteWatchlistItemApi = (groupId, itemId) => request.delete(`/api/watchlists/groups/${groupId}/items/${itemId}`);
 export const reorderWatchlistItemsApi = (id, ids) => request.put(`/api/watchlists/groups/${id}/items/order`, { ids });

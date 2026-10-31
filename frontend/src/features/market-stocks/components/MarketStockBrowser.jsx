@@ -41,7 +41,7 @@ export default function MarketStockBrowser({ marketId }) {
 
 function MarketStockContent({ marketId, market, stockList }) {
   const { selectedStock } = stockList;
-  const kline = useMarketStockKline(marketId, selectedStock?.symbol);
+  const kline = useMarketStockKline(marketId, selectedStock?.symbol, stockList.revision);
   const [period, setPeriod] = useState('daily');
 
   return (

@@ -94,6 +94,13 @@ class USMarketService(HotStockService):
 
         return frame[columns].reset_index(drop=True)
 
+    def sync_group_daily_bars(
+        self, symbols: list[str], lookback_days: int = 365
+    ) -> dict[str, int]:
+        """同步指定分组成员，统一返回资产数和写入行数。"""
+        result = self.update_daily_bars(lookback_days=lookback_days, symbols=symbols)
+        return {"symbols": len(symbols), "rows": result["rows"]}
+
     def update_daily_bars(
         self,
         lookback_days: int = 3,
@@ -101,6 +108,7 @@ class USMarketService(HotStockService):
         request_interval: float = 0.5,
         *,
         now_ms: int | None = None,
+        symbols: list[str] | None = None,
     ) -> dict[str, int]:
         """同步 SQLite US 股票池日 K；部分失败时保留成功数据并在结束后抛异常。"""
         if lookback_days <= 0:
@@ -113,14 +121,15 @@ class USMarketService(HotStockService):
         if (
             self.yfinance_provider is None
             or self.daily_repository is None
-            or self.watchlist_repository is None
+            or (symbols is None and self.watchlist_repository is None)
         ):
             raise RuntimeError("未配置 YFinance Provider、日 K 或股票池 Repository")
 
-        pool = self.watchlist_repository.get_pool("US")
-        symbols = [
-            row["symbol"] for row in self.watchlist_repository.list_items(pool["id"])
-        ]
+        if symbols is None:
+            pool = self.watchlist_repository.get_pool("US")
+            symbols = [
+                row["symbol"] for row in self.watchlist_repository.list_items(pool["id"])
+            ]
         if not symbols:
             print(f"{self._market_name}股票池为空，跳过日 K 同步")
             return {"stocks": 0, "rows": 0}

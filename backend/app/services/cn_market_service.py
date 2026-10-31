@@ -360,6 +360,37 @@ class CNMarketService(HotStockService):
             raise RuntimeError("同步未完全完成，请查看以上失败记录；可重跑覆盖同步")
         return total
 
+    def sync_group_daily_bars(
+        self, symbols: list[str], lookback_days: int = 365
+    ) -> dict[str, int]:
+        """只获取指定分组股票的日 K，不触发全市场同步。"""
+        if lookback_days <= 0 or lookback_days > 365:
+            raise ValueError("分组日 K 同步范围须为 1 至 365 天")
+        end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        start = end - timedelta(days=lookback_days - 1)
+        written = 0
+        failed = []
+        with concurrent_requests(
+            symbols,
+            lambda symbol: self.tushare_provider.fetch_symbol_daily_bars(symbol, start, end),
+            max_workers=4,
+            request_interval=0.5,
+            thread_name_prefix="watchlist-cn-daily-bar",
+        ) as results:
+            for symbol, future in results:
+                try:
+                    rows = self.format_daily_list(future.result())
+                    rows = rows.loc[~rows["volume"].eq(0)]
+                    written += self.daily_repository.upsert_daily_bars(rows)
+                except Exception as error:
+                    failed.append(symbol)
+                    progress_write(f"{symbol} 日 K 同步失败：{error}")
+        if failed:
+            raise RuntimeError(
+                f"日 K 未完整同步，已写入 {written} 条，失败股票：" + ", ".join(sorted(failed))
+            )
+        return {"symbols": len(symbols), "rows": written}
+
     def update_daily_bars(self, lookback_days: int = 60) -> int:
         """同步最近 N 个自然日（含今天）内的全市场日 K。"""
 

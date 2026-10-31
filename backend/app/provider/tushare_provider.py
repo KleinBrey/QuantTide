@@ -201,6 +201,22 @@ class TushareProvider:
             raise ValueError("历史股票池包含未知交易所")
         return result
 
+    def fetch_symbol_daily_bars(self, symbol: str, start: date, end: date) -> pd.DataFrame:
+        """按股票获取区间日 K，供当前自选分组手动更新使用。"""
+        result = self.pro.daily(
+            ts_code=symbol,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        )
+        if result is None or result.empty:
+            return pd.DataFrame()
+        if len(result) >= 6000:
+            raise RuntimeError("日 K 达到接口上限，拒绝保存可能截断的数据")
+        dates = pd.to_datetime(result["trade_date"], format="%Y%m%d", errors="raise").dt.date
+        if not result["ts_code"].eq(symbol).all() or not dates.between(start, end).all():
+            raise ValueError("日 K 返回的股票或日期与请求范围不一致")
+        return result
+
     def fetch_daily_bar(self, trade_date: date) -> pd.DataFrame:
         """获取指定交易日全市场未复权日 K，保留 Tushare 原始字段和单位。"""
         result = self.pro.daily(trade_date=trade_date.strftime("%Y%m%d"))

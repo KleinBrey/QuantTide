@@ -43,6 +43,7 @@ from backend.app.repository.task import TaskRepository
 from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 from backend.app.services.crypto_market_service import CryptoMarketService
+from backend.app.services.futures_market_service import FuturesMarketService
 from backend.app.services.task_service import TaskService
 from backend.app.services.watchlist_service import WatchlistService
 
@@ -130,6 +131,11 @@ async def lifespan(app: FastAPI):
         provider=binance_provider,
         repository=crypto_repository,
     )
+    futures_market_service = FuturesMarketService(
+        provider=tushare_provider,
+        repository=futures_repository,
+        watchlist_repository=watchlist_repository,
+    )
     watchlist_service = WatchlistService(
         repository=watchlist_repository,
         cn_repository=daily_stock_repository,
@@ -164,6 +170,7 @@ async def lifespan(app: FastAPI):
     app.state.hk_market_service = hk_market_service
     app.state.us_market_service = us_market_service
     app.state.crypto_market_service = crypto_market_service
+    app.state.futures_market_service = futures_market_service
     app.state.crypto_repository = crypto_repository
     app.state.watchlist_service = watchlist_service
     app.state.task_service = task_service

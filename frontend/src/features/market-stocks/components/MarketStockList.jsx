@@ -143,6 +143,7 @@ export default function MarketStockList({
   loading,
   error,
   mutating,
+  syncing,
   actionError,
   addStock,
   removeStock,
@@ -151,7 +152,7 @@ export default function MarketStockList({
   groups,
   groupId,
   addToGroup,
-  refresh
+  syncGroup
 }) {
   const gridRef = useRef(null);
   const nameInputRef = useRef(null);
@@ -212,17 +213,17 @@ export default function MarketStockList({
     <>
       <div className={styles.listHeader}>
         <span>名称 / 代码</span>
-        <div className={styles.listActions} aria-busy={loading}>
+        <div className={styles.listActions} aria-busy={syncing}>
           <strong>{stocks.length}</strong>
           <button
-            aria-label="刷新股票列表"
+            aria-label="获取当前分组的最新日 K 线"
             className={styles.closeButton}
-            disabled={disabled}
-            onClick={refresh}
-            title="刷新列表"
+            disabled={disabled || !groupId || !stocks.length}
+            onClick={syncGroup}
+            title="获取当前分组的最新日 K 线"
             type="button"
           >
-            <RefreshCcw className={loading ? 'dashboard-spin' : undefined} size={14} />
+            <RefreshCcw className={syncing ? 'dashboard-spin' : undefined} size={14} />
           </button>
           <Popover.Root
             open={addOpen}

@@ -50,11 +50,20 @@ class CryptoMarketService:
         start, end = self._daily_range(days)
         return self.repository.upsert_daily_bars(self._fetch_daily_bars(symbol, start, end))
 
+    def sync_group_daily_bars(
+        self, symbols: list[str], lookback_days: int = 365
+    ) -> dict[str, int]:
+        """同步指定分组成员，统一返回资产数和写入行数。"""
+        result = self.update_daily_bars(lookback_days=lookback_days, symbols=symbols)
+        return {"symbols": len(symbols), "rows": result["rows"]}
+
     def update_daily_bars(
         self,
         lookback_days: int = 3,
         max_workers: int = 4,
         request_interval: float = 0.5,
+        *,
+        symbols: list[str] | None = None,
     ) -> dict[str, int]:
         """同步 SQLite CRYPTO 默认池；部分失败时保留成功数据并在结束后抛异常。"""
         start, end = self._daily_range(lookback_days)
@@ -62,13 +71,13 @@ class CryptoMarketService:
             raise ValueError("max_workers 必须大于 0")
         if request_interval < 0:
             raise ValueError("request_interval 不能小于 0")
-        if self.watchlist_repository is None:
-            raise RuntimeError("未配置交易对池 Repository")
-
-        pool = self.watchlist_repository.get_pool("CRYPTO")
-        symbols = [
-            row["symbol"] for row in self.watchlist_repository.list_items(pool["id"])
-        ]
+        if symbols is None:
+            if self.watchlist_repository is None:
+                raise RuntimeError("未配置交易对池 Repository")
+            pool = self.watchlist_repository.get_pool("CRYPTO")
+            symbols = [
+                row["symbol"] for row in self.watchlist_repository.list_items(pool["id"])
+            ]
         if not symbols:
             print("加密货币交易对池为空，跳过日 K 同步")
             return {"symbols": 0, "rows": 0}

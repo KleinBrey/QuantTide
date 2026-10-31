@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import {
   getWatchlistGroupsApi, getWatchlistItemsApi, createWatchlistGroupApi,
   renameWatchlistGroupApi, deleteWatchlistGroupApi, reorderWatchlistGroupsApi,
-  addWatchlistItemApi, deleteWatchlistItemApi, reorderWatchlistItemsApi
+  addWatchlistItemApi, deleteWatchlistItemApi, reorderWatchlistItemsApi, syncWatchlistGroupBarsApi
 } from '@/api/quantide/api.js';
 import { getCryptoSymbols, syncCryptoBars } from '../api/cryptoApi.js';
 import { useWatchlistGroupState } from '@/hooks/useWatchlistGroupState.js';
@@ -55,7 +55,7 @@ export function useCryptoMarket() {
     return () => { requestId.current += 1; };
   }, [load]);
 
-  async function action(callback) {
+  async function action(callback, notifyError = false) {
     if (busy.current) return false;
     busy.current = true;
     setSyncing(true);
@@ -64,12 +64,31 @@ export function useCryptoMarket() {
       await callback();
       return true;
     } catch (error) {
-      setError(error.message);
+      if (notifyError) toast.error(error.message || '获取当前分组最新日 K 失败，请重试');
+      else setError(error.message);
       return false;
     } finally {
       busy.current = false;
       setSyncing(false);
     }
+  }
+
+  async function syncGroup() {
+    if (loading || !groupId || !symbols.length) return false;
+    const groupName = groups.find(group => group.id === groupId)?.name;
+    return action(async () => {
+      try {
+        const { data } = await syncWatchlistGroupBarsApi(groupId, 'CRYPTO');
+        if (data.rows) {
+          toast.success(`已更新「${groupName}」${data.symbols} 个资产的最新日 K，共 ${data.rows} 条`);
+        } else {
+          toast.info(`「${groupName}」暂未获取到可更新的日 K`);
+        }
+      } finally {
+        // 部分交易对失败时也重新读取已经保存的行情。
+        setRevision(value => value + 1);
+      }
+    }, true);
   }
 
   async function sync(symbol, add = false) {
@@ -118,7 +137,7 @@ export function useCryptoMarket() {
   });
 
   return {
-    symbols, selected, setSelected, loading, syncing, error, revision, sync,
+    symbols, selected, setSelected, loading, syncing, error, revision, sync, syncGroup,
     groups, groupId, createGroup, renameGroup, deleteGroup, reorderGroups, addToGroup, removeSymbol, reorderSymbols,
     hasStockPool: allGroups.some(group => group.market === 'CRYPTO' && group.is_default),
     showStockPool,

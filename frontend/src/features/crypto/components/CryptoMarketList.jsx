@@ -158,6 +158,7 @@ export default function CryptoMarketList({
   syncing,
   error,
   sync,
+  syncGroup,
   groups,
   groupId,
   addToGroup,
@@ -223,10 +224,10 @@ export default function CryptoMarketList({
           <button
             className={styles.iconButton}
             type="button"
-            aria-label="同步日 K"
-            title="同步所选交易对日 K"
-            disabled={!selected || syncing}
-            onClick={() => sync(selected)}
+            aria-label="获取当前分组的最新日 K 线"
+            title="获取当前分组的最新日 K 线"
+            disabled={disabled || !groupId || !symbols.length}
+            onClick={syncGroup}
           >
             <RefreshCcw size={14} className={syncing ? styles.spinning : ''} />
           </button>

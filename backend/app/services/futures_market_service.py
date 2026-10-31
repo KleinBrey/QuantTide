@@ -117,11 +117,21 @@ class FuturesMarketService:
             raise RuntimeError(f"{exchange} 主力对应的月合约资料缺失")
         return rows
 
-    def update_daily_bars(self, lookback_days=365):
+    def sync_group_daily_bars(
+        self, symbols: list[str], lookback_days: int = 365
+    ) -> dict[str, int]:
+        """同步指定分组成员，统一返回资产数和写入行数。"""
+        result = self.update_daily_bars(lookback_days=lookback_days, symbols=symbols)
+        return {"symbols": len(symbols), "rows": result["rows"]}
+
+    def update_daily_bars(self, lookback_days=365, *, symbols=None):
         if lookback_days <= 0:
             raise ValueError("lookback_days 必须大于 0")
-        pool = self.watchlist_repository.get_pool("FUTURES")
-        items = self.watchlist_repository.list_items(pool["id"])
+        if symbols is None:
+            pool = self.watchlist_repository.get_pool("FUTURES")
+            items = self.watchlist_repository.list_items(pool["id"])
+        else:
+            items = [{"symbol": symbol} for symbol in symbols]
         if not items:
             progress_write("期货合约池为空，跳过日 K 同步")
             return {"contracts": 0, "rows": 0}

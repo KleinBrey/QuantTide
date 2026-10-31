@@ -27,5 +27,9 @@ class AddItem(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
 
 
+class SyncGroupBars(BaseModel):
+    market: Market
+
+
 class Order(BaseModel):
     ids: list[int] = Field(max_length=10000)

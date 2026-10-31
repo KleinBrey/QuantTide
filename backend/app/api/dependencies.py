@@ -17,6 +17,7 @@ from backend.app.repository import (
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
 from backend.app.repository.crypto_market_db import CryptoMarketRepository
 from backend.app.services.crypto_market_service import CryptoMarketService
+from backend.app.services.futures_market_service import FuturesMarketService
 from backend.app.services.task_service import TaskService
 from backend.app.services.watchlist_service import WatchlistService
 
@@ -93,6 +94,10 @@ def get_crypto_market_service(request: Request) -> CryptoMarketService:
     return request.app.state.crypto_market_service
 
 
+def get_futures_market_service(request: Request) -> FuturesMarketService:
+    return request.app.state.futures_market_service
+
+
 # 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
 FuturesRepository = Annotated[object, Depends(get_futures_repository)]
 CryptoRepository = Annotated[CryptoMarketRepository, Depends(get_crypto_repository)]
@@ -116,5 +121,6 @@ CNMarketServiceDep = Annotated[CNMarketService, Depends(get_cn_market_service)]
 HKMarketServiceDep = Annotated[HKMarketService, Depends(get_hk_market_service)]
 USMarketServiceDep = Annotated[USMarketService, Depends(get_us_market_service)]
 CryptoMarketServiceDep = Annotated[CryptoMarketService, Depends(get_crypto_market_service)]
+FuturesMarketServiceDep = Annotated[FuturesMarketService, Depends(get_futures_market_service)]
 
 WatchlistServiceDep = Annotated[WatchlistService, Depends(get_watchlist_service)]
