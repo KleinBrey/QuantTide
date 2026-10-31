@@ -52,7 +52,7 @@ class YFinanceProvider:
         symbol = str(value).strip().upper()
 
         if symbol.startswith("HK.") or symbol.endswith(".HK") or symbol.isdigit():
-            code = normalize_daily_bar_symbol(symbol, "hk-share")[:-3]
+            code = normalize_daily_bar_symbol(symbol, "hk_stock")[:-3]
             return f"{int(code):04d}.HK", "Asia/Hong_Kong"
         if symbol.startswith(("SH.", "SZ.", "BJ.")) or symbol.endswith(
             (".SH", ".SZ", ".BJ")

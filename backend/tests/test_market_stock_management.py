@@ -27,8 +27,8 @@ class MarketStockManagementTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(router, prefix="/api")
         for market, db_class, stock_class, bar_class, dependency in [
-            ("hk-share", HKDuckDBDatabase, HKStockRepository, HKDailyBarRepository, get_hk_stock_repository),
-            ("us-share", USDuckDBDatabase, USStockRepository, USDailyBarRepository, get_us_stock_repository),
+            ("hk_stock", HKDuckDBDatabase, HKStockRepository, HKDailyBarRepository, get_hk_stock_repository),
+            ("us_stock", USDuckDBDatabase, USStockRepository, USDailyBarRepository, get_us_stock_repository),
         ]:
             db = db_class(Path(temporary.name) / f"{market}.duckdb")
             db.initialize()
@@ -41,14 +41,14 @@ class MarketStockManagementTests(unittest.TestCase):
         self.watchlists = WatchlistRepository(sqlite)
         self.watchlists.ensure_default_pool('HK')
         self.watchlists.ensure_default_pool('US')
-        service = WatchlistService(self.watchlists, None, self.repositories['hk-share'], self.repositories['us-share'])
+        service = WatchlistService(self.watchlists, None, self.repositories['hk_stock'], self.repositories['us_stock'])
         app.dependency_overrides[get_watchlist_service] = lambda: service
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
     def test_add_normalizes_symbols_and_rejects_duplicate_without_overwriting(self):
         for market, raw, normalized in [
-            ("hk-share", "700", "00700.HK"), ("us-share", " aapl ", "AAPL"),
+            ("hk_stock", "700", "00700.HK"), ("us_stock", " aapl ", "AAPL"),
         ]:
             with self.subTest(market=market):
                 payload = {"market": market, "symbol": raw, "name": " 公司名称 "}
@@ -65,9 +65,9 @@ class MarketStockManagementTests(unittest.TestCase):
 
     def test_validation_does_not_write_invalid_records(self):
         for market, symbol, name in [
-            ("hk-share", "AAPL", "公司"), ("hk-share", "123456", "公司"),
-            ("us-share", "../AAPL", "公司"), ("us-share", " ", "公司"),
-            ("hk-share", "700", "  "), ("a-share", "600519.SH", "公司"),
+            ("hk_stock", "AAPL", "公司"), ("hk_stock", "123456", "公司"),
+            ("us_stock", "../AAPL", "公司"), ("us_stock", " ", "公司"),
+            ("hk_stock", "700", "  "), ("cn_stock", "600519.SH", "公司"),
         ]:
             with self.subTest(market=market, symbol=symbol, name=name):
                 response = self.client.post("/api/market-stocks", json={
@@ -79,8 +79,8 @@ class MarketStockManagementTests(unittest.TestCase):
 
     def test_hot_ranking_symbols_join_only_the_matching_sqlite_pool(self):
         for market, raw, symbol, market_code in [
-            ('hk-share', '0700.HK', '00700.HK', 'HK'),
-            ('us-share', 'NVDA.O', 'NVDA', 'US'),
+            ('hk_stock', '0700.HK', '00700.HK', 'HK'),
+            ('us_stock', 'NVDA.O', 'NVDA', 'US'),
         ]:
             with self.subTest(market=market):
                 repository = self.repositories[market]
@@ -107,17 +107,17 @@ class MarketStockManagementTests(unittest.TestCase):
                 self.assertEqual(len(fresh.list_items(other_group['id'])), 1)
 
     def test_delete_is_market_scoped_and_preserves_historical_bars(self):
-        for market, symbol in [("hk-share", "00700.HK"), ("us-share", "AAPL")]:
+        for market, symbol in [("hk_stock", "00700.HK"), ("us_stock", "AAPL")]:
             self.repositories[market].upsert_stocks(pd.DataFrame([{
                 "symbol": symbol, "name": "公司", "source": "Manual",
             }]))
-            market_code = 'HK' if market == 'hk-share' else 'US'
+            market_code = 'HK' if market == 'hk_stock' else 'US'
             self.watchlists.add_item(self.watchlists.get_pool(market_code)['id'], market_code, symbol)
             self.bars[market].upsert_daily_bars(pd.DataFrame([{
                 "symbol": symbol, "trade_date": "2026-10-06", "open": 10,
                 "high": 12, "low": 9, "close": 11, "volume": 100, "source": "Test",
             }]))
-        for market, symbol in [("hk-share", "700"), ("us-share", "aapl")]:
+        for market, symbol in [("hk_stock", "700"), ("us_stock", "aapl")]:
             with self.subTest(market=market):
                 for _ in range(2):
                     response = self.client.delete("/api/market-stocks", params={"market": market, "symbol": symbol})
@@ -126,8 +126,8 @@ class MarketStockManagementTests(unittest.TestCase):
                 self.assertEqual(rows, [])
                 self.assertEqual(len(self.repositories[market].get_table_data()), 1)
                 self.assertEqual(len(self.bars[market].get_table_data()), 1)
-                if market == "hk-share":
-                    self.assertEqual(len(self.client.get('/api/market-stocks', params={'market': 'us-share'}).json()), 1)
+                if market == "hk_stock":
+                    self.assertEqual(len(self.client.get('/api/market-stocks', params={'market': 'us_stock'}).json()), 1)
 
 
 if __name__ == "__main__":

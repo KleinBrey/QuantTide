@@ -28,7 +28,7 @@ class HotStockDailyRankTests(unittest.TestCase):
             ]:
                 stock_repository.upsert_stocks(pd.DataFrame([
                     dict(symbol=symbol, trade_date=day, name=name,
-                         exchange="SZ", market="a-share", source="test")
+                         exchange="SZ", market="cn_stock", source="test")
                     for symbol, name in members.items()
                 ]))
 
@@ -105,7 +105,7 @@ class HotStockDailyRankTests(unittest.TestCase):
             database = DuckDBDatabase(Path(tmp) / "market.duckdb")
             database.initialize()
             DailyStockRepository(database).upsert_stocks(pd.DataFrame([
-                dict(symbol=symbol, trade_date="2025-10-01", name=symbol, exchange="SZ", market="a-share", source="test")
+                dict(symbol=symbol, trade_date="2025-10-01", name=symbol, exchange="SZ", market="cn_stock", source="test")
                 for symbol in ["300034.SZ", "000001.SZ", "000002.SZ"]
             ]))
             settings = SimpleNamespace(database_path=database.database_path, sync_workers=2)

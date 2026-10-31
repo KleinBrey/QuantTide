@@ -23,7 +23,7 @@ class GlobalStock(BaseModel):
 
 
 class AddMarketStock(BaseModel):
-    market: str = Field(pattern=r"^(hk-share|us-share)$")
+    market: str = Field(pattern=r"^(hk_stock|us_stock)$")
     symbol: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=100)
 

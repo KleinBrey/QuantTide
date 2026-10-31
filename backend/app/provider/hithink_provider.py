@@ -25,6 +25,8 @@ session.headers.update({"X-api-key": HITHINK_FINANCE_API_KEY})
 
 class HithinkProvider:
 
+    # a-share 路径和 asset_type 是 HiThink 外部协议值。
+
     def fetch_hot_stock_rank_trend(
         self, thscode: str, start_date: str, end_date: str
     ) -> list[dict]:

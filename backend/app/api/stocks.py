@@ -46,13 +46,13 @@ def stocks(
 def market_stocks(
     watchlist_service: WatchlistServiceDep,
     market: Annotated[
-        Literal["hk-share", "us-share"],
+        Literal["hk_stock", "us_stock"],
         Query(description="股票池所在的市场数据库"),
     ],
 ) -> list[dict]:
     """返回 SQLite 默认股票池成员，并从 DuckDB 补充基础信息。"""
 
-    pool = watchlist_service.repository.get_pool("HK" if market == "hk-share" else "US")
+    pool = watchlist_service.repository.get_pool("HK" if market == "hk_stock" else "US")
     return watchlist_service.list_items(pool["id"])
 
 
@@ -73,8 +73,8 @@ def add_market_stock(
     name = stock.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="股票名称不能为空")
-    repository = hk_repository if stock.market == "hk-share" else us_repository
-    market = "HK" if stock.market == "hk-share" else "US"
+    repository = hk_repository if stock.market == "hk_stock" else us_repository
+    market = "HK" if stock.market == "hk_stock" else "US"
     pool = watchlist_service.repository.get_pool(market)
     with database_sync_lock:
         if any(
@@ -95,7 +95,7 @@ def add_market_stock(
 @router.delete("/market-stocks")
 def delete_market_stock(
     watchlist_service: WatchlistServiceDep,
-    market: Literal["hk-share", "us-share"],
+    market: Literal["hk_stock", "us_stock"],
     symbol: str,
 ) -> dict[str, str]:
     """仅从股票池删除，不删除历史 K 线。"""
@@ -105,7 +105,7 @@ def delete_market_stock(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     with database_sync_lock:
-        market_code = "HK" if market == "hk-share" else "US"
+        market_code = "HK" if market == "hk_stock" else "US"
         pool = watchlist_service.repository.get_pool(market_code)
         watchlist_service.repository.remove_stock(pool["id"], market_code, normalized)
     return {"status": "success"}

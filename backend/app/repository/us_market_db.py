@@ -143,7 +143,7 @@ class USDailyBarRepository(BaseRepository):
         start_date: object,
         end_date: object,
     ) -> pd.DataFrame:
-        normalized_symbol = normalize_daily_bar_symbol(symbol, "us-share")
+        normalized_symbol = normalize_daily_bar_symbol(symbol, "us_stock")
         normalized_start = pd.to_datetime(start_date, errors="raise").date()
         normalized_end = pd.to_datetime(end_date, errors="raise").date()
         if normalized_start > normalized_end:

@@ -20,7 +20,7 @@ class FutuProvider:
 
     source = "Futu"
 
-    _A_SHARE_MARKETS = ("SH", "SZ")
+    _CN_STOCK_MARKETS = ("SH", "SZ")
     _INTERVAL_MAP = {
         "1d": "K_DAY",
         "daily": "K_DAY",
@@ -142,7 +142,7 @@ class FutuProvider:
             raise ValueError(f"A 股代码不能同时包含市场前缀和后缀: {value!r}")
 
         market = prefix or suffix or exchange_for(code)
-        if market not in cls._A_SHARE_MARKETS:
+        if market not in cls._CN_STOCK_MARKETS:
             raise ValueError(f"Futu Provider 暂不支持该 A 股市场: {market}")
         return f"{market}.{code}"
 
@@ -200,7 +200,7 @@ class FutuProvider:
             market = "US"
             code = normalized
 
-        if market in cls._A_SHARE_MARKETS:
+        if market in cls._CN_STOCK_MARKETS:
             return cls._futu_code(f"{market}.{code}")
         if market == "HK":
             if not code.isdigit() or not 1 <= len(code) <= 5:
@@ -247,7 +247,7 @@ class FutuProvider:
                 )
                 frames.append(self._check_result("获取股票信息", ret_code, data))
             else:
-                for market in self._A_SHARE_MARKETS:
+                for market in self._CN_STOCK_MARKETS:
                     ret_code, data = quote_context.get_stock_basicinfo(
                         market,
                         stock_type="STOCK",

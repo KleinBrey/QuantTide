@@ -136,13 +136,13 @@ class WatchlistTests(unittest.TestCase):
                 groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([(group['market'], group['name'], group['item_count']) for group in groups],
                                  [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0), ('CRYPTO', 'stock_pool', 0), ('FUTURES', 'stock_pool', 0)])
-                for market, symbol in [('hk-share', '700'), ('us-share', 'AAPL')]:
+                for market, symbol in [('hk_stock', '700'), ('us_stock', 'AAPL')]:
                     self.assertEqual(client.get('/api/market-stocks', params={'market': market}).json(), [])
                     response = client.post('/api/market-stocks', json={
                         'market': market, 'symbol': symbol, 'name': '测试公司',
                     })
                     self.assertEqual(response.status_code, 201, response.text)
-                response = client.delete('/api/market-stocks', params={'market': 'hk-share', 'symbol': '700'})
+                response = client.delete('/api/market-stocks', params={'market': 'hk_stock', 'symbol': '700'})
                 self.assertEqual(response.status_code, 200)
 
             # 重启不重复创建分组、不恢复已移除的港股，也不删除美股和基础信息。
@@ -150,8 +150,8 @@ class WatchlistTests(unittest.TestCase):
                 fresh_groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([group['id'] for group in fresh_groups], [group['id'] for group in groups])
                 self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1, 0, 0])
-                self.assertEqual(client.get('/api/market-stocks', params={'market': 'hk-share'}).json(), [])
-                stocks = client.get('/api/market-stocks', params={'market': 'us-share'}).json()
+                self.assertEqual(client.get('/api/market-stocks', params={'market': 'hk_stock'}).json(), [])
+                stocks = client.get('/api/market-stocks', params={'market': 'us_stock'}).json()
                 self.assertEqual([stock['symbol'] for stock in stocks], ['AAPL'])
                 self.assertEqual(len(app.state.hk_stock_repository.get_table_data()), 1)
                 self.assertEqual(len(app.state.us_stock_repository.get_table_data()), 1)

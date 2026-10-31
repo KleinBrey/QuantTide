@@ -6,7 +6,7 @@ from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.repository.futures_market_db import MAIN_CONTRACT_FILTER
 from backend.app.utils.symbol import exchange_for, normalize_daily_bar_symbol
 
-MARKET_IDS = {"CN": "a-share", "HK": "hk-share", "US": "us-share", "FUTURES": "futures"}
+MARKET_IDS = {"CN": "cn_stock", "HK": "hk_stock", "US": "us_stock", "FUTURES": "futures"}
 
 
 def normalize_watchlist_symbol(symbol, market):

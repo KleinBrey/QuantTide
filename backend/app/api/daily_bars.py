@@ -45,9 +45,9 @@ def daily_bars(
         Query(description="结束日期，格式 YYYY-MM-DD，包含当天"),
     ],
     market: Annotated[
-        Literal["a-share", "hk-share", "us-share", "futures"],
+        Literal["cn_stock", "hk_stock", "us_stock", "futures"],
         Query(description="日 K 所在市场数据库"),
-    ] = "a-share",
+    ] = "cn_stock",
 ) -> list[dict]:
     """按市场从对应 DuckDB 查询指定日期范围内的日 K 线。"""
 
@@ -60,9 +60,9 @@ def daily_bars(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
     repositories = {
-        "a-share": repository,
-        "hk-share": hk_repository,
-        "us-share": us_repository,
+        "cn_stock": repository,
+        "hk_stock": hk_repository,
+        "us_stock": us_repository,
         "futures": futures_repository,
     }
     daily_bar_table = repositories[market].get_by_symbol_and_date_range(

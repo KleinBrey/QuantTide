@@ -40,7 +40,7 @@ uv run uvicorn backend.app.main:app \
   否则先从问财同步后返回。
 - `GET /api/hk-hot-stock`：读取最新港股热度榜，使用独立的两小时数据库缓存。
 - `GET /api/us-hot-stock`：读取最新美股热度榜，使用独立的两小时数据库缓存。
-- `GET /api/daily-bars`：通过 `market=a-share|hk-share|us-share` 从对应市场
+- `GET /api/daily-bars`：通过 `market=cn_stock|hk_stock|us_stock` 从对应市场
   DuckDB 查询历史日 K。
 
 ### `app/config/`
