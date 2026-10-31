@@ -26,6 +26,66 @@
   width: 100%;
 }
 
+.marketToolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.marketFilters {
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+}
+
+.marketFilter {
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 6px 16px;
+  white-space: nowrap;
+}
+
+.marketFilter[aria-pressed='false']:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.marketFilter[aria-pressed='true'] {
+  background: var(--primary);
+  box-shadow: 0 1px 3px #0002;
+  color: var(--primary-foreground);
+}
+
+.marketFilter:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.marketFilter:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.taskCount {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .grid :global(.ag-header) {
   border: 0;
 }

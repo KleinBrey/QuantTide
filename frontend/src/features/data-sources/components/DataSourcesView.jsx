@@ -190,6 +190,15 @@ const TASK_MARKETS = {
   crypto_daily_bars: ['加密货币']
 };
 
+const MARKET_FILTERS = [
+  { value: 'all', label: '全部' },
+  { value: 'A 股', label: 'A股' },
+  { value: '港股', label: '港股' },
+  { value: '美股', label: '美股' },
+  { value: '期货', label: '期货' },
+  { value: '加密货币', label: '加密货币' }
+];
+
 const LATEST_FIELDS = {
   futures_market: [{ id: 'futures-daily-k', label: '最新数据' }],
   daily_bars: [{ id: 'daily-k', label: '最新数据' }],
@@ -239,6 +248,7 @@ export default function DataSourcesView() {
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [localError, setLocalError] = useState('');
+  const [selectedMarket, setSelectedMarket] = useState('all');
   const cancelDeleteButton = useRef(null);
   const draggingTask = useRef(false);
   const rowData = useMemo(
@@ -262,6 +272,10 @@ export default function DataSourcesView() {
       }),
     [tasks, runningTaskId, deletingId, settings.scheduler_enabled, latestUpdateTimes, latestDataStatus]
   );
+  const filteredRowData = useMemo(
+    () => selectedMarket === 'all' ? rowData : rowData.filter(task => task.markets.includes(selectedMarket)),
+    [rowData, selectedMarket]
+  );
 
   function confirmDelete(task) {
     setLocalError('');
@@ -271,12 +285,16 @@ export default function DataSourcesView() {
   async function finishTaskDrag({ api }) {
     if (!draggingTask.current) return;
     draggingTask.current = false;
-    const ids = [];
-    api.forEachNodeAfterFilterAndSort(node => ids.push(node.data.id));
+    const visibleIds = [];
+    api.forEachNodeAfterFilterAndSort(node => visibleIds.push(node.data.id));
+    const visibleIdSet = new Set(visibleIds);
+    let visibleIndex = 0;
+    // 仅替换当前市场任务占用的位置，其他市场任务保留原来的位置。
+    const ids = rowData.map(task => visibleIdSet.has(task.id) ? visibleIds[visibleIndex++] : task.id);
     try {
       await reorderTasks(ids);
     } catch (err) {
-      api.setGridOption('rowData', [...rowData]);
+      api.setGridOption('rowData', [...filteredRowData]);
       toast.error(`任务顺序保存失败：${err.message || '请稍后重试'}`);
     }
   }
@@ -321,6 +339,23 @@ export default function DataSourcesView() {
             </Button>
           </div>
         </div>
+        <div className={styles.marketToolbar}>
+          <div className={styles.marketFilters} role="group" aria-label="按市场筛选任务">
+            {MARKET_FILTERS.map(market => (
+              <button
+                key={market.value}
+                type="button"
+                className={styles.marketFilter}
+                aria-pressed={selectedMarket === market.value}
+                disabled={loading || reordering}
+                onClick={() => setSelectedMarket(market.value)}
+              >
+                {market.label}
+              </button>
+            ))}
+          </div>
+          <span className={styles.taskCount} role="status">共 {filteredRowData.length} 个任务</span>
+        </div>
         {reordering && (
           <p className={styles.orderStatus} role="status">
             正在保存任务顺序…
@@ -333,10 +368,12 @@ export default function DataSourcesView() {
           <AgGridProvider modules={modules}>
             <AgGridReact
               theme={taskGridTheme}
-              rowData={rowData}
+              rowData={filteredRowData}
               loading={loading}
               loadingOverlayComponent={TaskLoadingOverlay}
-              overlayNoRowsTemplate='<span class="ag-overlay-no-rows-center">暂无任务，点击“新增任务”添加。</span>'
+              overlayNoRowsTemplate={selectedMarket === 'all'
+                ? '<span class="ag-overlay-no-rows-center">暂无任务，点击“新增任务”添加。</span>'
+                : '<span class="ag-overlay-no-rows-center">当前市场暂无任务，点击“新增任务”添加。</span>'}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               context={{
@@ -361,7 +398,7 @@ export default function DataSourcesView() {
               onDragStopped={finishTaskDrag}
               onDragCancelled={({ api }) => {
                 draggingTask.current = false;
-                api.setGridOption('rowData', [...rowData]);
+                api.setGridOption('rowData', [...filteredRowData]);
               }}
               domLayout="normal"
               suppressCellFocus
