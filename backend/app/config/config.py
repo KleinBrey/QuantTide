@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录：从当前文件所在目录往上三级
@@ -35,7 +35,12 @@ class Settings(BaseSettings):
     database_path: Path = Field(default=PROJECT_ROOT / "data" / "cn_market.duckdb")
     hk_database_path: Path = Field(default=PROJECT_ROOT / "data" / "hk_market.duckdb")
     us_database_path: Path = Field(default=PROJECT_ROOT / "data" / "us_market.duckdb")
-    crypto_database_path: Path = Field(default=PROJECT_ROOT / "data" / "crypto_market.duckdb")
+    futures_database_path: Path = Field(
+        default=PROJECT_ROOT / "data" / "futures_market.duckdb",
+    )
+    crypto_database_path: Path = Field(
+        default=PROJECT_ROOT / "data" / "crypto_market.duckdb"
+    )
     app_database_path: Path = Field(default=PROJECT_ROOT / "data" / "app.sqlite")
 
     # 跨域 # CORS 允许的源

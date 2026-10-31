@@ -1,6 +1,11 @@
 """脚本注册表；run 使用完整模块路径:入口函数，按需导入执行。"""
 
 SCRIPTS: dict[str, dict[str, object]] = {
+    "futures_market": {
+        "name": "期货市场同步",
+        "run": "backend.scripts.sync_futures_market:sync_futures_market",
+        "params": {"lookback_days": 365},
+    },
     "realtime_hot": {
         "name": "实时股票热度",
         "run": "backend.scripts.sync_realtime_hot:sync_realtime_hot",

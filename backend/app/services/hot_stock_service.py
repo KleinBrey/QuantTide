@@ -142,7 +142,7 @@ class HotStockService:
 
     @staticmethod
     def _to_shanghai_naive(value: datetime) -> datetime:
-        """将时间统一为上海时区的无时区时间，兼容 DuckDB TIMESTAMP。"""
+        """将时间转换为上海本地的无时区时间，用于写入 DuckDB TIMESTAMP。"""
 
         if value.tzinfo is None:
             return value

@@ -179,6 +179,7 @@ const columnDefs = [
 ];
 
 const TASK_MARKETS = {
+  futures_market: ['期货'],
   realtime_hot: ['A 股', '港股', '美股'],
   daily_stocks: ['A 股'],
   daily_basic: ['A 股'],
@@ -189,6 +190,7 @@ const TASK_MARKETS = {
 };
 
 const LATEST_FIELDS = {
+  futures_market: [{ id: 'futures-daily-k', label: '最新数据' }],
   daily_bars: [{ id: 'daily-k', label: '最新数据' }],
   daily_basic: [{ id: 'stock-daily-basic', label: '最新数据' }],
   daily_stocks: [{ id: 'stock-list', label: '最新数据' }],

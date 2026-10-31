@@ -1,7 +1,7 @@
 import re
 
 
-DAILY_BAR_MARKETS = ("a-share", "hk-share", "us-share")
+DAILY_BAR_MARKETS = ("a-share", "hk-share", "us-share", "futures")
 _US_EXCHANGE_SUFFIXES = (".O", ".N", ".A")
 _US_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]*$")
 
@@ -31,6 +31,11 @@ def normalize_daily_bar_symbol(value: object, market: str) -> str:
     symbol = str(value).strip().upper()
     if not symbol:
         raise ValueError("股票代码不能为空")
+
+    if market == "futures":
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*\.(CFX|DCE|ZCE|SHF|INE|GFE)", symbol):
+            raise ValueError("请输入主力合约代码，例如 RB.SHF 或 IF.CFX")
+        return symbol
 
     if market == "a-share":
         return validate_symbol(symbol)

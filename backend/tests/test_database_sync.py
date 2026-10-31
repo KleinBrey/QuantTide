@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
+from backend.app.api import database_sync, routes
 
 
 class DatabaseSyncTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class DatabaseSyncTests(unittest.TestCase):
         self.app.include_router(routes.router, prefix="/api")
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
-        lock_patch = patch.object(routes, "database_sync_lock", threading.Lock())
+        lock_patch = patch.object(database_sync, "database_sync_lock", threading.Lock())
         self.lock = lock_patch.start()
         self.addCleanup(lock_patch.stop)
 
@@ -35,8 +35,8 @@ class DatabaseSyncTests(unittest.TestCase):
             execution_threads.append(threading.get_ident())
 
         with (
-            patch.object(routes, "sync_daily_bars", side_effect=sync) as task,
-            patch.object(routes, "run_in_threadpool", side_effect=run_in_threadpool),
+            patch.object(database_sync, "sync_daily_bars", side_effect=sync) as task,
+            patch.object(database_sync, "run_in_threadpool", side_effect=run_in_threadpool),
         ):
             response = self.client.post("/api/database-sync/daily-k")
         self.assertEqual(response.status_code, 200, response.text)
@@ -49,7 +49,7 @@ class DatabaseSyncTests(unittest.TestCase):
         self.assertFalse(self.lock.locked())
 
     def test_hot_stock_endpoint_uses_realtime_sync(self):
-        with patch.object(routes, "sync_realtime_hot") as task:
+        with patch.object(database_sync, "sync_realtime_hot") as task:
             response = self.client.post("/api/database-sync/hot-stock")
         self.assertEqual(response.status_code, 200, response.text)
         task.assert_called_once_with()
@@ -59,7 +59,7 @@ class DatabaseSyncTests(unittest.TestCase):
     def test_shared_lock_prevents_concurrent_sync(self):
         self.lock.acquire()
         self.addCleanup(self.lock.release)
-        with patch.object(routes, "sync_daily_bars") as task:
+        with patch.object(database_sync, "sync_daily_bars") as task:
             for endpoint in ["daily-k", "hot-stock", "stock-list", "stock-daily-basic"]:
                 with self.subTest(endpoint=endpoint):
                     response = self.client.post(f"/api/database-sync/{endpoint}")
@@ -67,7 +67,7 @@ class DatabaseSyncTests(unittest.TestCase):
             task.assert_not_called()
 
     def test_script_errors_release_lock_for_retry(self):
-        with patch.object(routes, "sync_daily_bars", side_effect=[RuntimeError("行情接口不可用"), None]):
+        with patch.object(database_sync, "sync_daily_bars", side_effect=[RuntimeError("行情接口不可用"), None]):
             response = self.client.post("/api/database-sync/daily-k")
             self.assertEqual(response.status_code, 500, response.text)
             self.assertIn("sync_daily_bars.py", response.json()["detail"])
@@ -78,7 +78,7 @@ class DatabaseSyncTests(unittest.TestCase):
         for attribute in [
             "daily_stock_repository", "daily_basic_repository", "daily_repository",
             "daily_hot_repository", "hk_stock_hot_repository", "us_stock_hot_repository",
-            "hk_daily_repository", "us_daily_repository",
+            "hk_daily_repository", "us_daily_repository", "futures_repository",
         ]:
             setattr(self.app.state, attribute, Mock(get_latest_update_time=Mock(return_value=None)))
         latest = datetime(2026, 10, 7, 10, 30)
@@ -88,6 +88,11 @@ class DatabaseSyncTests(unittest.TestCase):
         self.assertEqual(response.json()["hk-daily-k"], latest.isoformat())
         self.assertIsNone(response.json()["us-daily-k"])
         self.assertIsNone(response.json()["daily-k"])
+        self.assertIsNone(response.json()["futures-daily-k"])
+        self.app.state.futures_repository.get_latest_update_time.return_value = latest
+        response = self.client.get("/api/database-sync/latest-update-times")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["futures-daily-k"], latest.isoformat())
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addMarketStockApi,
+  resetFuturesPoolApi,
   getWatchlistGroupsApi,
   getWatchlistItemsApi,
   reorderWatchlistItemsApi,
@@ -28,12 +29,12 @@ const STOCK_POOL_VISIBILITY_KEY = 'quantide:show-stock-pool';
 
 function visibleGroups(allGroups, market, showStockPool) {
   const customGroups = allGroups.filter(group => isVisibleGroup(group, market));
-  const pool = showStockPool && allGroups.find(group => group.is_default && group.market === market);
-  return pool ? [{ ...pool, name: '股票池' }, ...customGroups] : customGroups;
+  const pool = (showStockPool || market === 'FUTURES') && allGroups.find(group => group.is_default && group.market === market);
+  return pool ? [{ ...pool, name: market === 'FUTURES' ? '主力合约' : '股票池' }, ...customGroups] : customGroups;
 }
 
 export function useMarketStocks(marketId) {
-  const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US' }[marketId];
+  const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US', futures: 'FUTURES' }[marketId];
   const { allGroups, setAllGroups, activeGroups, setActiveGroups } = useWatchlistGroupState();
   const [showStockPool, setShowStockPool] = useState(() => {
     try {
@@ -154,7 +155,15 @@ export function useMarketStocks(marketId) {
       mutate(async () => {
         const active = allGroupsRef.current.find(group => group.id === activeGroupsRef.current[market]);
         let symbol = stock.symbol;
-        if (active.is_default) {
+        if (market === 'FUTURES') {
+          // 日线任务读取默认池；加入自选分组的合约也需要进入同步范围。
+          const pool = allGroupsRef.current.find(group => group.is_default && group.market === market);
+          const poolItems = (await getWatchlistItemsApi(pool.id)).data;
+          if (!poolItems.some(item => item.symbol === symbol)) {
+            await addWatchlistItemApi(pool.id, { market, symbol });
+          }
+          if (active.id !== pool.id) await addWatchlistItemApi(active.id, { market, symbol });
+        } else if (active.is_default) {
           symbol = (await addMarketStockApi({ ...stock, market: marketId })).data.symbol;
         } else {
           try {
@@ -206,6 +215,15 @@ export function useMarketStocks(marketId) {
       setAllGroups(merged);
     });
 
+  const resetFuturesPool = () =>
+    runAction(async () => {
+      const { group_id: poolId } = (await resetFuturesPoolApi()).data;
+      if (activeMarketRef.current !== market) return;
+      activeGroupsRef.current[market] = poolId;
+      setActiveGroups(current => ({ ...current, [market]: poolId }));
+      await loadStocks();
+    });
+
   const createGroup = name =>
     runAction(async () => {
       const created = (await createWatchlistGroupApi({ name, market })).data;
@@ -255,6 +273,7 @@ export function useMarketStocks(marketId) {
     toggleStockPool,
     groupId,
     selectGroup,
+    resetFuturesPool,
     createGroup,
     renameGroup,
     deleteGroup,

@@ -14,38 +14,15 @@ export function transformStockHistory(items = []) {
 }
 
 export function transformHotRankingResponse(payload) {
-  const normalizeRows = rows =>
-    (Array.isArray(rows) ? rows : []).map((row, index) => ({
-      ...row,
-      rank: row.rank ?? index + 1,
-      name: row.name ?? row.股票简称 ?? '',
-      thscode: row.thscode ?? row.code ?? row.symbol ?? '',
-      heat: row.rank ?? row.hotRank ?? '-'
-    }));
-
-  if (Array.isArray(payload)) {
-    return {
-      id: 'hot-stock-list',
-      title: '股票热榜',
-      timestamp: payload[0]?.update_time ?? null,
-      rows: normalizeRows(payload)
-    };
-  }
-
-  if (Array.isArray(payload?.items)) {
-    const ranking = payload.items.find(item => item.id === 'hot-stock-list') || payload.items[0];
-    return {
-      id: ranking?.id || 'hot-stock-list',
-      title: ranking?.title || '同花顺热榜',
-      timestamp: ranking?.timestamp || ranking?.updatedAt || null,
-      rows: normalizeRows(ranking?.rows)
-    };
-  }
-
+  const rows = Array.isArray(payload) ? payload : [];
   return {
     id: 'hot-stock-list',
-    title: '同花顺热榜',
-    timestamp: payload?.data?.timestamp ?? null,
-    rows: normalizeRows(payload?.data?.item)
+    title: '股票热榜',
+    timestamp: rows[0]?.update_time ?? null,
+    rows: rows.map(row => ({
+      ...row,
+      thscode: row.symbol,
+      heat: row.rank
+    }))
   };
 }

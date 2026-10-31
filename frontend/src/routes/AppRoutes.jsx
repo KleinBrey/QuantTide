@@ -22,6 +22,7 @@ export default function AppRoutes() {
         <Route path="/a-share-market" element={<MarketStocks marketId="a-share" />} />
         <Route path="/hk-share-market" element={<MarketStocks marketId="hk-share" />} />
         <Route path="/us-share-market" element={<MarketStocks marketId="us-share" />} />
+        <Route path="/futures-market" element={<MarketStocks marketId="futures" />} />
         <Route path="/crypto-market" element={<CryptoMarket />} />
         <Route path="*" element={<Navigate to={defaultDashboardPath} replace />} />
       </Routes>

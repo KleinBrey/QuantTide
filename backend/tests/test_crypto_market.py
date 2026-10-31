@@ -7,7 +7,8 @@ import requests
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api.crypto import router
+from backend.app.api.routes import router
+from backend.app.jobs.tasks import database_sync_lock
 from backend.app.database import CryptoDuckDBDatabase
 from backend.app.repository.crypto_market_db import CryptoMarketRepository
 from backend.app.services.crypto_market_service import CryptoMarketService
@@ -50,6 +51,12 @@ class CryptoMarketTests(unittest.TestCase):
         # 重建连接后仍可读取，证明页面使用的是落盘行情。
         self.db.initialize()
         self.assertEqual(len(self.repository.get_daily_bars("BTCUSDT")), 1)
+
+    def test_shared_lock_prevents_sync_without_requesting_provider(self):
+        with database_sync_lock:
+            response = self.client.post("/api/crypto/sync", json={"symbol": "BTCUSDT"})
+        self.assertEqual(response.status_code, 409)
+        self.provider.fetch_historical.assert_not_called()
 
     def test_invalid_empty_and_upstream_failure(self):
         for body in [{"symbol": "BTC/USDT"}, {"symbol": "BTCUSDT", "days": 0}]:

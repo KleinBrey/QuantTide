@@ -1,4 +1,6 @@
-from fastapi import Request
+from typing import Annotated
+
+from fastapi import Depends, Request
 
 from backend.app.repository import (
     DailyBarRepository,
@@ -13,8 +15,13 @@ from backend.app.repository import (
     USStockRepository,
 )
 from backend.app.services import CNMarketService, HKMarketService, USMarketService
+from backend.app.services.crypto_market_service import CryptoMarketService
 from backend.app.services.task_service import TaskService
 from backend.app.services.watchlist_service import WatchlistService
+
+
+def get_futures_repository(request: Request):
+    return request.app.state.futures_repository
 
 
 def get_task_service(request: Request) -> TaskService:
@@ -75,3 +82,33 @@ def get_hk_market_service(request: Request) -> HKMarketService:
 
 def get_us_market_service(request: Request) -> USMarketService:
     return request.app.state.us_market_service
+
+
+def get_crypto_market_service(request: Request) -> CryptoMarketService:
+    return request.app.state.crypto_market_service
+
+
+# 使用 Annotated 封装依赖声明，避免每个接口重复书写 Depends。
+FuturesRepository = Annotated[object, Depends(get_futures_repository)]
+DailyStockRepo = Annotated[DailyStockRepository, Depends(get_daily_stock_repository)]
+HKStockListRepository = Annotated[HKStockRepository, Depends(get_hk_stock_repository)]
+USStockListRepository = Annotated[USStockRepository, Depends(get_us_stock_repository)]
+DailyRepository = Annotated[DailyBarRepository, Depends(get_daily_repository)]
+HKDailyRepository = Annotated[HKDailyBarRepository, Depends(get_hk_daily_repository)]
+USDailyRepository = Annotated[USDailyBarRepository, Depends(get_us_daily_repository)]
+DailyBasicRepo = Annotated[DailyBasicRepository, Depends(get_daily_basic_repository)]
+DailyHotRepo = Annotated[DailyHotRepository, Depends(get_daily_hot_repository)]
+HKStockHotRepository = Annotated[
+    HKStockHotDailyRepository,
+    Depends(get_hk_stock_hot_repository),
+]
+USStockHotRepository = Annotated[
+    USStockHotDailyRepository,
+    Depends(get_us_stock_hot_repository),
+]
+CNMarketServiceDep = Annotated[CNMarketService, Depends(get_cn_market_service)]
+HKMarketServiceDep = Annotated[HKMarketService, Depends(get_hk_market_service)]
+USMarketServiceDep = Annotated[USMarketService, Depends(get_us_market_service)]
+CryptoMarketServiceDep = Annotated[CryptoMarketService, Depends(get_crypto_market_service)]
+
+WatchlistServiceDep = Annotated[WatchlistService, Depends(get_watchlist_service)]

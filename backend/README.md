@@ -54,7 +54,7 @@ uv run uvicorn backend.app.main:app \
 - `duckdb/hk_schema.sql`、`duckdb/us_schema.sql`：分别创建港股与美股的基础信息、日 K 和热度表；
 - `sqlite/connection.py`：管理业务数据库 `data/app.sqlite` 的连接；
 - `sqlite/app_schema.sql`：创建自选股分组、成员和排序等业务表；
-- `__init__.py`：统一导出数据库类，现有导入方式保持兼容；
+- `__init__.py`：统一导出当前数据库类；
 - `operation.sql`、`study.md`：DuckDB 操作和学习记录。
 
 主要表：

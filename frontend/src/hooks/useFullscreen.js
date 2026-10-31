@@ -8,15 +8,15 @@ export const FULLSCREEN_MODE = Object.freeze({
 });
 
 function getFullscreenElement() {
-  return document.fullscreenElement || document.webkitFullscreenElement || null;
+  return document.fullscreenElement || null;
 }
 
 function getRequestFullscreen(element) {
-  return element?.requestFullscreen || element?.webkitRequestFullscreen;
+  return element?.requestFullscreen;
 }
 
 function getExitFullscreen() {
-  return document.exitFullscreen || document.webkitExitFullscreen;
+  return document.exitFullscreen;
 }
 
 /**
@@ -52,11 +52,9 @@ export function useFullscreen({ mode = FULLSCREEN_MODE.BROWSER, targetRef, onErr
 
     syncBrowserFullscreen();
     document.addEventListener('fullscreenchange', syncBrowserFullscreen);
-    document.addEventListener('webkitfullscreenchange', syncBrowserFullscreen);
 
     return () => {
       document.removeEventListener('fullscreenchange', syncBrowserFullscreen);
-      document.removeEventListener('webkitfullscreenchange', syncBrowserFullscreen);
     };
   }, [mode, targetRef]);
 

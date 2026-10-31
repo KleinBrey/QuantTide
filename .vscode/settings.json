@@ -47,9 +47,16 @@
       "type": "file",
       "path": "/Users/kleinbrey/Documents/QuantTide/data/crypto_market.duckdb",
       "attached": false
+    },
+    {
+      "alias": "futures_market",
+      "type": "file",
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/futures_market.duckdb",
+      "attached": false,
+      "readOnly": false
     }
   ],
-  "duckdb.defaultDatabase": "crypto_market",
+  "duckdb.defaultDatabase": "futures_market",
   "[sql]": {
     "editor.formatOnSave": false
   }

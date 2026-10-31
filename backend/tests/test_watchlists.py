@@ -128,13 +128,14 @@ class WatchlistTests(unittest.TestCase):
             hk_database_path=root / 'hk.duckdb',
             us_database_path=root / 'us.duckdb',
             crypto_database_path=root / 'crypto.duckdb',
+            futures_database_path=root / 'futures.duckdb',
             scheduler_enabled=False,
         )
         with patch('backend.app.main.get_settings', return_value=settings):
             with TestClient(app) as client:
                 groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([(group['market'], group['name'], group['item_count']) for group in groups],
-                                 [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0), ('CRYPTO', 'stock_pool', 0)])
+                                 [('HK', 'stock_pool', 0), ('US', 'stock_pool', 0), ('CRYPTO', 'stock_pool', 0), ('FUTURES', 'stock_pool', 0)])
                 for market, symbol in [('hk-share', '700'), ('us-share', 'AAPL')]:
                     self.assertEqual(client.get('/api/market-stocks', params={'market': market}).json(), [])
                     response = client.post('/api/market-stocks', json={
@@ -148,7 +149,7 @@ class WatchlistTests(unittest.TestCase):
             with TestClient(app) as client:
                 fresh_groups = client.get('/api/watchlists/groups').json()
                 self.assertEqual([group['id'] for group in fresh_groups], [group['id'] for group in groups])
-                self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1, 0])
+                self.assertEqual([group['item_count'] for group in fresh_groups], [0, 1, 0, 0])
                 self.assertEqual(client.get('/api/market-stocks', params={'market': 'hk-share'}).json(), [])
                 stocks = client.get('/api/market-stocks', params={'market': 'us-share'}).json()
                 self.assertEqual([stock['symbol'] for stock in stocks], ['AAPL'])

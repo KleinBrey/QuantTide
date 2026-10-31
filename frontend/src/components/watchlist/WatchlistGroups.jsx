@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, LockKeyhole, Pencil, Settings2, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, GripVertical, LockKeyhole, Pencil, RotateCcw, Settings2, Trash2, X } from 'lucide-react';
 import { Popover, Switch } from 'radix-ui';
 import styles from './MarketBrowser.module.css';
 
@@ -28,7 +28,8 @@ export default function WatchlistGroups({
   actionError,
   hasStockPool,
   showStockPool,
-  toggleStockPool
+  toggleStockPool,
+  resetFuturesPool
 }) {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -159,6 +160,24 @@ export default function WatchlistGroups({
                 >
                   <Switch.Thumb className={styles.stockPoolSwitchThumb} />
                 </Switch.Root>
+              </div>
+            )}
+            {marketId === 'futures' && (
+              <div className={styles.stockPoolSetting}>
+                <span>主力合约</span>
+                <button
+                  className={styles.addButton}
+                  aria-label="重置主力合约"
+                  title="将当前合约资料中的全部主力合约加入主力合约分组"
+                  disabled={disabled}
+                  type="button"
+                  onClick={async () => {
+                    if (await resetFuturesPool()) setOpen(false);
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  {mutating ? '重置中…' : '重置主力合约'}
+                </button>
               </div>
             )}
             <div className={styles.manageGroups}>

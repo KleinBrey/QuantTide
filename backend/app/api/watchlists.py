@@ -23,6 +23,11 @@ def search_stocks(
     return service.search(q.strip(), market, limit)
 
 
+@router.post("/futures-pool/reset")
+def reset_futures_pool(service: Service):
+    return service.reset_futures_pool()
+
+
 @router.get("/groups")
 def list_groups(service: Service):
     return service.repository.list_groups()

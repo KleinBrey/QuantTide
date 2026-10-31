@@ -60,7 +60,7 @@ function StockDragPreview({ dragSource }) {
     >
       <div className={styles.stockItem}>
         <span>{rowNode.data.name}</span>
-        <small>{rowNode.data.symbol}</small>
+        <small>{rowNode.data.display_symbol || rowNode.data.symbol}</small>
       </div>
     </div>
   );
@@ -71,9 +71,9 @@ function StockCell({ data, context }) {
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild disabled={context.disabled}>
-        <div data-stock-row className={styles.stockItem} title={`${data.name} · ${data.symbol}`}>
+        <div data-stock-row className={styles.stockItem} title={`${data.name} · ${data.display_symbol || data.symbol}${data.trade_date ? ` · 主力映射日期 ${data.trade_date}` : ''}`}>
           <span>{data.name}</span>
-          <small>{data.symbol}</small>
+          <small>{data.display_symbol || data.symbol}</small>
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -233,15 +233,15 @@ export default function MarketStockList({
             }}
           >
             <Popover.Trigger asChild>
-              <button aria-label="添加股票" className={styles.addButton} disabled={disabled || !groupId} type="button">
+              <button aria-label={marketId === 'futures' ? '添加合约' : '添加股票'} className={styles.addButton} disabled={disabled || !groupId} type="button">
                 <Plus size={14} />
-                添加股票
+                {marketId === 'futures' ? '添加合约' : '添加股票'}
               </button>
             </Popover.Trigger>
             <Popover.Portal>
               <Popover.Content
                 align="start"
-                aria-label="添加股票"
+                aria-label={marketId === 'futures' ? '添加合约' : '添加股票'}
                 className={styles.addPopover}
                 collisionPadding={8}
                 sideOffset={8}
@@ -251,13 +251,13 @@ export default function MarketStockList({
                 }}
               >
                 <div className={styles.addTitle}>
-                  <span>添加{marketId === 'a-share' ? 'A股' : marketId === 'hk-share' ? '港股' : '美股'}</span>
+                  <span>添加{marketId === 'futures' ? '期货主力合约' : marketId === 'a-share' ? 'A股' : marketId === 'hk-share' ? '港股' : '美股'}</span>
                   <Popover.Close aria-label="关闭添加股票" className={styles.closeButton} disabled={mutating}>
                     <X size={16} />
                   </Popover.Close>
                 </div>
-                {marketId === 'a-share' ? (
-                  <AShareStockSearch
+                {(marketId === 'a-share' || marketId === 'futures') ? (
+                  <AShareStockSearch market={marketId === 'futures' ? 'FUTURES' : 'CN'}
                     inputRef={nameInputRef}
                     stocks={stocks}
                     disabled={disabled}
@@ -342,7 +342,7 @@ export default function MarketStockList({
               suppressMoveWhenRowDragging
               suppressRowDrag={disabled}
               dragAndDropImageComponent={StockDragPreview}
-              rowDragText={({ rowNode }) => `${rowNode.data.name} · ${rowNode.data.symbol}`}
+              rowDragText={({ rowNode }) => `${rowNode.data.name} · ${rowNode.data.display_symbol || rowNode.data.symbol}`}
               onRowDragEnd={handleDragEnd}
               onRowClicked={({ data }) => setSelectedStock(data)}
               onCellKeyDown={({ event, data }) => {
@@ -360,7 +360,7 @@ export default function MarketStockList({
         </div>
       ) : !loading ? (
         <div className={styles.listState}>
-          {error || (groupId ? '暂无股票，点击上方添加股票' : '暂无自选分组，请在上方新建分组')}
+          {error || (groupId ? (marketId === 'futures' ? '暂无合约，点击上方添加合约' : '暂无股票，点击上方添加股票') : '暂无自选分组，请在上方新建分组')}
         </div>
       ) : null}
     </>

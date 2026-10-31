@@ -187,3 +187,31 @@ A 股库表名统一为 `daily_stocks`、`daily_bars`、`daily_basic`、`daily_h
 
 加密货币页面位于 `/crypto-market`，可添加币安现货交易对并手动同步最近一年的日 K。
 后端启动时自动初始化 `data/crypto_market.duckdb`；日线按 UTC 日期保存，包含当天尚未收盘的行情。
+
+
+### 期货（默认主力合约）
+
+期货使用 Tushare，复用项目已有的数据源配置。资料与日线独立保存到
+`data/futures_market.duckdb`，自选分组仍保存在 `data/app.sqlite`。
+数据库初始化只创建当前表结构，不执行历史版本的数据迁移。
+
+1. 在“数据同步”添加并运行“期货市场同步”，先获取主力合约资料；合约池为空时跳过日 K 同步。
+2. 打开侧栏“期货”，点击“添加合约”，按名称或代码搜索（例如 RB.SHF）。
+3. 再次运行“期货市场同步”任务，先更新合约资料，再同步合约池最近 365 个自然日的日 K；回溯天数可调整，也可设置定时执行。
+4. 返回期货页面查看 K 线。支持自选分组、拖动排序、移入分组、移除和日/周/月 K 线。
+
+`fut_basic(fut_type=2)` 返回主力及连续合约，按代码前缀等于 `fut_code` 筛选主力。
+Tushare 的 `fut_code` 在 provider 中转换为内部字段 `code`；合约表的
+`main_symbol`、`main_name`、`trade_date` 保存主力月合约代码、名称及映射交易日。
+资料同步先通过 `fut_trade_cal` 查询最近一个月至今天的开市日期，再通过 `fut_mapping` 获取最近交易日的主力月合约，
+关联 `fut_basic(fut_type=1)` 的名称。列表和搜索展示实际合约名称及代码（例如铁矿石2701 / I2701.DCE），
+鼠标悬停可查看映射日期；再次运行“期货市场同步”即可更新换月后的显示。
+自选成员及 K 线仍使用稳定的主力序列代码，图表标题标明主力名称。
+仅保留能映射到具体月份合约的品种；同步后自动移除失去映射的期货资料及分组成员，搜索和重置主力分组也只使用这些品种。
+日线调用 `fut_daily`，保存未复权主力连续价格（换月可能产生跳空）；成交量和持仓量单位为手，成交额转换为元。
+默认池中的合约是日线同步范围。加入自选分组时也加入默认池；从默认池移除后停止后续同步，历史数据保留。
+
+代码按职责分开：`futures_schema.sql` 定义表，`futures_market_db.py` 负责读写，
+`futures_market_service.py` 负责同步，`sync_futures_market.py` 统一提供合约资料和日 K 线任务入口。
+运行 `python -m backend.scripts.sync_futures_market` 可选择日 K 线回溯范围。
+接口文档：[合约资料](https://tushare.pro/document/2?doc_id=135)、[日线行情](https://tushare.pro/document/2?doc_id=138)。

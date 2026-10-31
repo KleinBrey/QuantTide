@@ -1,4 +1,4 @@
-from .duckdb import CryptoDuckDBDatabase, DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
+from .duckdb import FuturesDuckDBDatabase, CryptoDuckDBDatabase, DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
 from .sqlite import SQLiteDatabase
 
-__all__ = ["CryptoDuckDBDatabase", "DuckDBDatabase", "HKDuckDBDatabase", "USDuckDBDatabase", "SQLiteDatabase"]
+__all__ = ["FuturesDuckDBDatabase", "CryptoDuckDBDatabase", "DuckDBDatabase", "HKDuckDBDatabase", "USDuckDBDatabase", "SQLiteDatabase"]

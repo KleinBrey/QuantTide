@@ -44,6 +44,12 @@ export const dashboardGroups = [
         description: '美股市场'
       },
       {
+        id: 'futures-market',
+        path: '/futures-market',
+        title: '期货',
+        description: '期货主力合约行情'
+      },
+      {
         id: 'crypto-market',
         path: '/crypto-market',
         title: '加密货币',

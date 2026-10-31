@@ -195,6 +195,7 @@ function resetTimeScale(chart, rowCount, alignDataLeft) {
 }
 
 export default function StockKlineChart({
+  emptyTitle = '个股 K 线',
   data,
   stock,
   loading,
@@ -427,7 +428,7 @@ export default function StockKlineChart({
     <section className={`${styles.kline}${fillContainer ? ` ${styles.fillContainer}` : ''}`}>
       <div className={styles.header}>
         <div>
-          <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : '个股 K 线'}</h3>
+          <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : emptyTitle}</h3>
           {/* <span>TradingView Charts</span> */}
         </div>
         <div className={styles.periods}>

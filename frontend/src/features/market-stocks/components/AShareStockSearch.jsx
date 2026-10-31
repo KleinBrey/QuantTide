@@ -3,7 +3,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { searchWatchlistStocksApi } from '@/api/quantide/api.js';
 import styles from '@/components/watchlist/MarketBrowser.module.css';
 
-export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd }) {
+export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd, market = 'CN' }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -17,7 +17,7 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
     if (!query.trim()) return undefined;
     const timer = setTimeout(async () => {
       try {
-        const response = await searchWatchlistStocksApi({ q: query.trim(), market: 'CN', limit: 30 });
+        const response = await searchWatchlistStocksApi({ q: query.trim(), market, limit: 30 });
         if (!cancelled) setResults(response.data);
       } catch (requestError) {
         if (!cancelled) setError(requestError.message || '搜索失败，请重试');
@@ -29,7 +29,7 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, market]);
 
   const add = async stock => {
     setError('');
@@ -43,14 +43,14 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
   return (
     <div>
       <label>
-        搜索 A 股
+        {market === 'FUTURES' ? '搜索主力合约' : '搜索 A 股'}
         <input
           ref={inputRef}
-          aria-label="搜索 A 股"
+          aria-label={market === 'FUTURES' ? '搜索主力合约' : '搜索 A 股'}
           autoComplete="off"
           maxLength={100}
           disabled={disabled}
-          placeholder="输入名称或代码，如 贵州茅台 / 600519"
+          placeholder={market === 'FUTURES' ? '输入名称或代码，如 螺纹钢 / RB2701' : '输入名称或代码，如 贵州茅台 / 600519'}
           value={query}
           onChange={event => setQuery(event.target.value)}
         />
@@ -60,7 +60,7 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
           {error}
         </p>
       )}
-      <div className={styles.stockSearchResults} aria-label="A 股搜索结果" aria-busy={searching}>
+      <div className={styles.stockSearchResults} aria-label={market === 'FUTURES' ? '主力合约搜索结果' : 'A 股搜索结果'} aria-busy={searching}>
         {searching ? (
           <p className={styles.searchHint}>
             <Loader2 className="dashboard-spin" size={14} />
@@ -74,13 +74,13 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
                 key={stock.symbol}
                 className={styles.stockSearchResult}
                 type="button"
-                aria-label={`添加 ${stock.name} ${stock.symbol}`}
+                aria-label={`添加 ${stock.name} ${stock.display_symbol || stock.symbol}`}
                 disabled={disabled || added}
                 onClick={() => add(stock)}
               >
                 <span>
                   <strong>{stock.name}</strong>
-                  <small>{stock.symbol}</small>
+                  <small>{stock.display_symbol || stock.symbol}</small>
                 </span>
                 {added ? <small>已添加</small> : <Plus size={15} />}
               </button>
@@ -89,7 +89,7 @@ export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd })
         )}
         {!searching && !error && !results.length && (
           <p className={styles.searchHint}>
-            {query.trim() ? '未找到股票，请检查名称、代码或同步股票列表' : '搜索后点击股票，加入当前分组'}
+            {query.trim() ? (market === 'FUTURES' ? '未找到合约，请先在数据同步中运行“期货市场同步”任务' : '未找到股票，请检查名称、代码或同步股票列表') : '搜索后点击条目，加入当前分组'}
           </p>
         )}
       </div>

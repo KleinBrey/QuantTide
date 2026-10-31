@@ -17,8 +17,8 @@ class WatchlistRepository:
 
     def ensure_default_pool(self, market):
         """应用启动时确保默认股票池存在，保留已有分组和成员。"""
-        if market not in {'HK', 'US', 'CRYPTO'}:
-            raise ValueError('默认池仅支持 HK、US 和 CRYPTO 市场')
+        if market not in {'HK', 'US', 'CRYPTO', 'FUTURES'}:
+            raise ValueError('默认池仅支持 HK、US、CRYPTO 和 FUTURES 市场')
         with self.db.connection() as connection:
             connection.execute('BEGIN IMMEDIATE')
             row = connection.execute(
@@ -51,6 +51,18 @@ class WatchlistRepository:
                 raise WatchlistError('该市场没有 stock_pool 分组', 404)
             return dict(row)
 
+    def reset_futures_pool(self, symbols):
+        """一次事务替换默认主力合约分组，其他分组不变。"""
+        pool = self.get_pool('FUTURES')
+        with self.db.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            connection.execute('DELETE FROM watchlist_items WHERE group_id = ?', (pool['id'],))
+            connection.executemany(
+                "INSERT INTO watchlist_items (group_id, market, symbol, sort_order) VALUES (?, 'FUTURES', ?, ?)",
+                [(pool['id'], symbol, index) for index, symbol in enumerate(symbols)],
+            )
+        return pool['id']
+
     def list_groups(self):
         with self.db.connection() as connection:
             return [dict(row) for row in connection.execute('''
@@ -58,6 +70,17 @@ class WatchlistRepository:
                 LEFT JOIN watchlist_items i ON i.group_id = g.id
                 GROUP BY g.id ORDER BY g.sort_order, g.id
             ''')]
+
+    def retain_futures_items(self, symbols):
+        """移除已无主力月份映射的期货成员，保留其余成员的 ID 和排序。"""
+        if not symbols:
+            return 0
+        with self.db.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            connection.execute('CREATE TEMP TABLE valid_futures (symbol TEXT PRIMARY KEY)')
+            connection.executemany('INSERT INTO valid_futures VALUES (?)', [(symbol,) for symbol in symbols])
+            return connection.execute("""DELETE FROM watchlist_items
+                WHERE market = 'FUTURES' AND symbol NOT IN (SELECT symbol FROM valid_futures)""").rowcount
 
     def create_group(self, name, market=None):
         with self.db.connection() as connection:

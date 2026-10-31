@@ -9,6 +9,7 @@ import MarketStockGroups from '@/components/watchlist/WatchlistGroups.jsx';
 import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const MARKET_CONFIG = {
+  futures: { title: '期货主力合约行情' },
   'a-share': {
     title: 'A股行情'
   },
@@ -27,7 +28,11 @@ export default function MarketStockBrowser({ marketId }) {
   return (
     <div className={cn('dashboard-content', styles.content)}>
       <section aria-label={market.title} className={cn('dashboard-panel', styles.panel)}>
-        <MarketStockGroups marketId={marketId} {...stockList} />
+        <MarketStockGroups
+          marketId={marketId}
+          {...stockList}
+          hasStockPool={marketId !== 'futures' && stockList.hasStockPool}
+        />
         <MarketStockContent key={marketId} marketId={marketId} market={market} stockList={stockList} />
       </section>
     </div>
@@ -47,6 +52,7 @@ function MarketStockContent({ marketId, market, stockList }) {
 
       <div className={styles.chartPane}>
         <StockKlineChart
+          emptyTitle={marketId === 'futures' ? '主力合约 K 线' : undefined}
           data={kline.data}
           fillContainer
           enableMouseWheelZoom

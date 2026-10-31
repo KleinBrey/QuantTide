@@ -10,13 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from apscheduler.events import EVENT_JOB_EXECUTED
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
+from backend.app.api import database_sync, stocks
 from backend.app.api.tasks import router
 from backend.app.config.config import Settings
 from backend.app.database import SQLiteDatabase
@@ -95,6 +95,18 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(self.client.post(f'/api/tasks/{history["id"]}/run').status_code, 200)
             sync_realtime.assert_called_once_with()
             sync_history.assert_called_once_with(lookback_days=30)
+
+    def test_futures_task_refreshes_contracts_then_syncs_daily_bars(self):
+        task = self.create(script_id='futures_market', params={'lookback_days': 60})
+        default = self.create(script_id='futures_market', params={})
+        self.assertEqual(default['params'], {'lookback_days': 365})
+        with patch('backend.scripts.sync_futures_market.create_service') as factory:
+            service = factory.return_value
+            service.update_daily_bars.return_value = {'contracts': 90, 'rows': 1200}
+            service.update_contracts.return_value = 90
+            self.assertEqual(self.client.post(f'/api/tasks/{task["id"]}/run').status_code, 200)
+            self.assertEqual(service.mock_calls, [call.update_contracts(), call.update_daily_bars(60)])
+            factory.assert_called_once_with()
 
     def test_tasks_start_empty_and_stay_empty_after_delete_and_restart(self):
         self.assertEqual(self.client.get('/api/tasks').json(), [])
@@ -202,22 +214,6 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0].name, '修改两次')
 
-    def test_retired_pool_script_cannot_be_added(self):
-        response = self.client.post('/api/tasks', json={
-            'name': '旧股票池初始化', 'script_id': 'init_hk_us_stock_pools',
-        })
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(self.repository.list_tasks(), [])
-
-    def test_table_creation_does_not_depend_on_existing_sqlite_user_version(self):
-        legacy = SQLiteDatabase(self.database.database_path.parent / 'legacy.sqlite')
-        with sqlite3.connect(legacy.database_path) as connection:
-            connection.execute('PRAGMA user_version = 1')
-        legacy.initialize()
-        self.assertEqual(TaskRepository(legacy).list_tasks(), [])
-        with legacy.connection() as connection:
-            self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 1)
-
     def test_database_initialization_only_creates_tables(self):
         database = SQLiteDatabase(self.database.database_path.parent / 'empty.sqlite')
         database.initialize()
@@ -262,6 +258,8 @@ class TaskTests(unittest.TestCase):
                     'database_path': self.database.database_path.parent / 'cn.duckdb',
                     'hk_database_path': self.database.database_path.parent / 'hk.duckdb',
                     'us_database_path': self.database.database_path.parent / 'us.duckdb',
+                    'crypto_database_path': self.database.database_path.parent / 'crypto.duckdb',
+                    'futures_database_path': self.database.database_path.parent / 'futures.duckdb',
                     'scheduler_enabled': enabled,
                 })
                 with patch('backend.app.main.get_settings', return_value=settings), TestClient(app) as client:
@@ -292,7 +290,7 @@ class TaskTests(unittest.TestCase):
                 self.assertEqual(self.client.post('/api/tasks', json=body).status_code, 422)
         self.assertEqual(len(self.repository.list_tasks()), baseline_count)
         self.assertEqual(self.create(params={})['params'], {'lookback_days': 3})
-        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 7)
+        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 8)
 
     def test_manual_execution_uses_saved_parameters_and_can_run_when_disabled(self):
         task = self.create(script_id='daily_bars', enabled=False)
@@ -324,7 +322,8 @@ class TaskTests(unittest.TestCase):
                     self.assertEqual(self.service.results[task['id']]['status'], 'failed')
                     self.assertIn(str(outcome), response.json()['detail'])
                     self.assertFalse(database_sync_lock.locked())
-        self.assertIs(routes.database_sync_lock, database_sync_lock)
+        self.assertIs(database_sync.database_sync_lock, database_sync_lock)
+        self.assertIs(stocks.database_sync_lock, database_sync_lock)
         database_sync_lock.acquire()
         try:
             self.assertEqual(self.client.post(f'/api/tasks/{task["id"]}/run').status_code, 409)

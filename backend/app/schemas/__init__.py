@@ -1,9 +1,9 @@
-from .market import AddMarketStock, DailyBar, HotStock, GlobalStock, Stock
+from .market import AddMarketStock, DailyBar, HotStock, GlobalStock, Stock, SyncCryptoBars
 from .task import CronSchedule, IntervalSchedule, TaskEnabled, TaskInput, TaskOrder
 from .watchlist import AddItem, CreateGroup, GroupName, Market, Order
 
 __all__ = [
-    "AddMarketStock", "DailyBar", "HotStock", "GlobalStock", "Stock",
+    "AddMarketStock", "DailyBar", "HotStock", "GlobalStock", "Stock", "SyncCryptoBars",
     "CronSchedule", "IntervalSchedule", "TaskEnabled", "TaskInput", "TaskOrder",
     "AddItem", "CreateGroup", "GroupName", "Market", "Order",
 ]

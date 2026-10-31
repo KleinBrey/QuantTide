@@ -103,6 +103,40 @@ class TushareProvider:
         code = validate_symbol(value)
         return f"{code}.{exchange_for(code)}"
 
+    def fetch_futures_contracts(self, exchange, fut_type="2"):
+        rows = self.pro.fut_basic(
+            exchange=exchange,
+            fut_type=fut_type,
+            fields="ts_code,name,exchange,fut_code",
+        )
+        return rows.rename(columns={"fut_code": "code"}) if rows is not None else None
+
+    def fetch_futures_mapping(self, trade_date: date):
+        return self.pro.fut_mapping(trade_date=trade_date.strftime("%Y%m%d"))
+
+    def fetch_futures_trade_dates(self, start: date, end: date) -> list[date]:
+        """通过期货交易日历获取区间内开市日期，去重并按日期排序。"""
+        result = self.pro.fut_trade_cal(
+            is_open="1",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        )
+        if result is None or result.empty:
+            return []
+        dates = pd.to_datetime(
+            result.loc[result["is_open"].astype(str) == "1", "cal_date"],
+            format="%Y%m%d",
+            errors="raise",
+        ).dt.date
+        return sorted(set(day for day in dates if start <= day <= end))
+
+    def fetch_futures_daily(self, symbol, start, end):
+        return self.pro.fut_daily(
+            ts_code=symbol,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        )
+
     def fetch_trade_dates(self, start: date, end: date) -> list[date]:
         """读取交易所日历，避免用工作日猜测交易日。"""
         result = self.pro.trade_cal(

@@ -38,6 +38,7 @@ const iconById = {
   'a-share-market': AShareIcon,
   'hk-share-market': HKShareIcon,
   'us-share-market': USShareIcon,
+  'futures-market': props => <MarketIcon {...props} code="期" />,
   'crypto-market': Bitcoin,
   'data-sources': DatabaseBackup
 };

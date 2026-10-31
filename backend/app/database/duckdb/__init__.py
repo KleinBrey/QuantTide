@@ -1,3 +1,3 @@
-from .connection import CryptoDuckDBDatabase, DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
+from .connection import FuturesDuckDBDatabase, CryptoDuckDBDatabase, DuckDBDatabase, HKDuckDBDatabase, USDuckDBDatabase
 
-__all__ = ["CryptoDuckDBDatabase", "DuckDBDatabase", "HKDuckDBDatabase", "USDuckDBDatabase"]
+__all__ = ["FuturesDuckDBDatabase", "CryptoDuckDBDatabase", "DuckDBDatabase", "HKDuckDBDatabase", "USDuckDBDatabase"]

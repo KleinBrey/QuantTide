@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Stock(BaseModel):
@@ -26,6 +26,16 @@ class AddMarketStock(BaseModel):
     market: str = Field(pattern=r"^(hk-share|us-share)$")
     symbol: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=100)
+
+
+class SyncCryptoBars(BaseModel):
+    symbol: str = Field(pattern=r"^[A-Z0-9]{2,30}$")
+    days: int = Field(default=365, ge=1, le=1000)
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper() if isinstance(value, str) else value
 
 
 class DailyBar(BaseModel):

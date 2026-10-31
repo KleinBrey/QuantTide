@@ -13,7 +13,7 @@ def timestamp(value):
     return int(pd.Timestamp(value, tz="Asia/Shanghai").timestamp() * 1000)
 
 
-def market_data(transposed=False):
+def market_data():
     values = {
         "Open": [10, 11, 12], "High": [12, 13, 14], "Low": [9, 10, 11],
         "Close": [11, 12, 13], "Volume": [100, 200, 300], "Amount": [1.1, 2.4, 3.9],
@@ -21,7 +21,7 @@ def market_data(transposed=False):
     result = {}
     for field, items in values.items():
         frame = pd.DataFrame({"688318.SH": items}, index=pd.to_datetime(["2026-08-26", "2026-08-27", "2026-08-28"]))
-        result[field] = frame.T if transposed else frame
+        result[field] = frame
     return result
 
 
@@ -51,22 +51,20 @@ class TdxProviderTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.provider._stock_code(value)
 
-    def test_historical_contract_dates_units_and_both_frame_orientations(self):
-        for transposed in (False, True):
-            with self.subTest(transposed=transposed):
-                self.client.get_market_data.return_value = market_data(transposed)
-                result = self.provider.fetch_historical("SH.688318", self.start, self.end)
-                self.client.get_market_data.assert_called_with(
-                    field_list=["Open", "High", "Low", "Close", "Volume", "Amount"],
-                    stock_list=["688318.SH"], period="1d",
-                    start_time="2026-08-27 00:00:00", end_time="2026-08-28 23:59:59",
-                    count=-1, dividend_type="front", fill_data=False,
-                )
-                rows = result["data"]["item"]
-                self.assertEqual([row["date_ms"] for row in rows], [self.start, self.end])
-                self.assertEqual(rows[0], dict(open_price=11, high_price=13, low_price=10,
-                    close_price=12, volume=200, turnover=24000, date_ms=self.start, source="Tdx"))
-                self.assertEqual(rows[1]["turnover"], 39000)
+    def test_historical_contract_dates_units_and_frame_layout(self):
+        self.client.get_market_data.return_value = market_data()
+        result = self.provider.fetch_historical("SH.688318", self.start, self.end)
+        self.client.get_market_data.assert_called_with(
+            field_list=["Open", "High", "Low", "Close", "Volume", "Amount"],
+            stock_list=["688318.SH"], period="1d",
+            start_time="2026-08-27 00:00:00", end_time="2026-08-28 23:59:59",
+            count=-1, dividend_type="front", fill_data=False,
+        )
+        rows = result["data"]["item"]
+        self.assertEqual([row["date_ms"] for row in rows], [self.start, self.end])
+        self.assertEqual(rows[0], dict(open_price=11, high_price=13, low_price=10,
+            close_price=12, volume=200, turnover=24000, date_ms=self.start, source="Tdx"))
+        self.assertEqual(rows[1]["turnover"], 39000)
 
     def test_historical_mapping_sorting_offset_and_empty_rows(self):
         data = market_data()

@@ -18,6 +18,8 @@ export function deleteMarketStockApi(params) {
   return request.delete('/api/market-stocks', params);
 }
 
+export const resetFuturesPoolApi = () => request.post('/api/watchlists/futures-pool/reset');
+
 export const getWatchlistGroupsApi = () => request.get('/api/watchlists/groups');
 export const createWatchlistGroupApi = body => request.post('/api/watchlists/groups', body);
 export const renameWatchlistGroupApi = (id, name) => request.patch(`/api/watchlists/groups/${id}`, { name });

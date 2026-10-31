@@ -188,11 +188,9 @@ class TdxProvider:
             frame = data[field]
             if not isinstance(frame, pd.DataFrame):
                 raise TdxProviderError(f"通达信 {field} 应为 DataFrame")
-            # SDK 1.3.1 为日期索引、证券代码列；兼容文档描述的转置布局。
+            # SDK 返回以日期为索引、证券代码为列的数据。
             if code in frame.columns:
                 values = frame[code]
-            elif code in frame.index:
-                values = frame.loc[code]
             elif frame.empty:
                 values = pd.Series(dtype=float)
             else:

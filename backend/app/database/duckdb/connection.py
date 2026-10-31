@@ -51,6 +51,13 @@ class DuckDBDatabase:
         return connection
 
 
+class FuturesDuckDBDatabase(DuckDBDatabase):
+    """期货合约和日线使用独立文件。"""
+
+    def __init__(self, database_path=PROJECT_ROOT / "data" / "futures_market.duckdb"):
+        super().__init__(database_path, SCHEMA_DIRECTORY / "futures_schema.sql")
+
+
 class HKDuckDBDatabase(DuckDBDatabase):
     """港股 DuckDB 连接，默认使用独立的港股库和表结构。"""
 

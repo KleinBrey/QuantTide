@@ -20,7 +20,22 @@ def main() -> None:
     #     fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pb",
     # )
 
-    data = provider.pro.daily(trade_date="20260810")
+    # data = provider.pro.daily(trade_date="20260810")
+
+    # data = provider.pro.fut_basic(
+    #     fut_type="2", fields="ts_code,name,exchange,fut_code,d_month"
+    # )
+
+    data = provider.pro.fut_mapping(
+        ts_code="TF.CFX",
+        trade_date="20261030",
+    )
+
+    df = provider.pro.fut_trade_cal(
+        is_open="1", start_date="20260101", end_date="20261031"
+    )
+
+    print(df.to_string())
 
     # 提取单个股票，跨时间段的历史日线
     # data = provider.pro.daily(
@@ -34,7 +49,7 @@ def main() -> None:
     #     is_new="N",
     #     fields="ts_code,ts_name,hot,concept",
     # )
-    print(data)
+    print(data.to_string())
 
 
 if __name__ == "__main__":
