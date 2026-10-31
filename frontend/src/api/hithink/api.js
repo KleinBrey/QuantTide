@@ -1,5 +1,7 @@
 import request from './request.js';
 
+// 以下 a-share 路径由 HiThink 外部接口定义，与前端市场命名独立。
+
 /**
  * 获取交易日历
  */

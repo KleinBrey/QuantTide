@@ -1,8 +1,8 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/shadcn/components/ui/sidebar';
 import logoUrl from '@/assets/image/logo.png';
-import aShareIconUrl from '@/assets/icons/a-share.svg';
-import hkShareIconUrl from '@/assets/icons/hk-share.svg';
-import usShareIconUrl from '@/assets/icons/us-share.svg';
+import cnStockIconUrl from '@/assets/icons/cn_stock.svg';
+import hkStockIconUrl from '@/assets/icons/hk_stock.svg';
+import usStockIconUrl from '@/assets/icons/us_stock.svg';
 import futuresIconUrl from '@/assets/icons/futures.svg';
 import cryptoIconUrl from '@/assets/icons/crypto.svg';
 import React from 'react';
@@ -16,9 +16,9 @@ function MarketIcon({ src, size = 16 }) {
   return <img src={src} width={size} height={size} alt="" aria-hidden="true" />;
 }
 
-const AShareIcon = props => <MarketIcon {...props} src={aShareIconUrl} />;
-const HKShareIcon = props => <MarketIcon {...props} src={hkShareIconUrl} />;
-const USShareIcon = props => <MarketIcon {...props} src={usShareIconUrl} />;
+const CNStockIcon = props => <MarketIcon {...props} src={cnStockIconUrl} />;
+const HKStockIcon = props => <MarketIcon {...props} src={hkStockIconUrl} />;
+const USStockIcon = props => <MarketIcon {...props} src={usStockIconUrl} />;
 const FuturesIcon = props => <MarketIcon {...props} src={futuresIconUrl} />;
 const CryptoIcon = props => <MarketIcon {...props} src={cryptoIconUrl} />;
 
@@ -26,9 +26,9 @@ const iconById = {
   'hot-rankings': Flame,
   signals: Radar,
   'strategy-backtests': History,
-  'a-share-market': AShareIcon,
-  'hk-share-market': HKShareIcon,
-  'us-share-market': USShareIcon,
+  'cn_stock-market': CNStockIcon,
+  'hk_stock-market': HKStockIcon,
+  'us_stock-market': USStockIcon,
   'futures-market': FuturesIcon,
   'crypto-market': CryptoIcon,
   'data-sources': DatabaseBackup

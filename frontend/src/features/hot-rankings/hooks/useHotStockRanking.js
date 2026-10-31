@@ -4,22 +4,22 @@ import { getHKHotStocksApi, getHotStocksApi, getUSHotStocksApi } from '../api/ho
 import { transformHotRankingResponse } from '../utils/transformers.js';
 
 const MARKET_CONFIG = {
-  'a-share': {
+  'cn_stock': {
     title: 'A股热榜',
     request: getHotStocksApi
   },
-  'hk-share': {
+  'hk_stock': {
     title: '港股热榜',
     request: getHKHotStocksApi
   },
-  'us-share': {
+  'us_stock': {
     title: '美股热榜',
     request: getUSHotStocksApi
   }
 };
 
-export function useHotStockRanking(marketId = 'a-share') {
-  const market = MARKET_CONFIG[marketId] ?? MARKET_CONFIG['a-share'];
+export function useHotStockRanking(marketId = 'cn_stock') {
+  const market = MARKET_CONFIG[marketId] ?? MARKET_CONFIG['cn_stock'];
 
   // 分别保存热榜数据、加载状态和请求错误。
   const [ranking, setRanking] = useState({

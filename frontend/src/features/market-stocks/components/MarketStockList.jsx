@@ -14,7 +14,7 @@ import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import { ChevronRight, ChevronsDown, ChevronsUp, FolderPlus, Loader2, Plus, RefreshCcw, Trash2, X } from 'lucide-react';
 import { ContextMenu, Popover } from 'radix-ui';
 
-import AShareStockSearch from './AShareStockSearch.jsx';
+import CNStockSearch from './CNStockSearch.jsx';
 import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const modules = [
@@ -251,13 +251,13 @@ export default function MarketStockList({
                 }}
               >
                 <div className={styles.addTitle}>
-                  <span>添加{marketId === 'futures' ? '期货主力合约' : marketId === 'a-share' ? 'A股' : marketId === 'hk-share' ? '港股' : '美股'}</span>
+                  <span>添加{marketId === 'futures' ? '期货主力合约' : marketId === 'cn_stock' ? 'A股' : marketId === 'hk_stock' ? '港股' : '美股'}</span>
                   <Popover.Close aria-label="关闭添加股票" className={styles.closeButton} disabled={mutating}>
                     <X size={16} />
                   </Popover.Close>
                 </div>
-                {(marketId === 'a-share' || marketId === 'futures') ? (
-                  <AShareStockSearch market={marketId === 'futures' ? 'FUTURES' : 'CN'}
+                {(marketId === 'cn_stock' || marketId === 'futures') ? (
+                  <CNStockSearch market={marketId === 'futures' ? 'FUTURES' : 'CN'}
                     inputRef={nameInputRef}
                     stocks={stocks}
                     disabled={disabled}
@@ -275,7 +275,7 @@ export default function MarketStockList({
                         disabled={mutating}
                         maxLength={100}
                         onChange={event => setName(event.target.value)}
-                        placeholder={marketId === 'hk-share' ? '如 腾讯控股' : '如 苹果'}
+                        placeholder={marketId === 'hk_stock' ? '如 腾讯控股' : '如 苹果'}
                         required
                         value={name}
                       />
@@ -287,7 +287,7 @@ export default function MarketStockList({
                         disabled={mutating}
                         maxLength={32}
                         onChange={event => setSymbol(event.target.value)}
-                        placeholder={marketId === 'hk-share' ? '如 00700.HK 或 700' : '如 AAPL'}
+                        placeholder={marketId === 'hk_stock' ? '如 00700.HK 或 700' : '如 AAPL'}
                         required
                         value={symbol}
                       />

@@ -4,14 +4,14 @@ import MarketRankingPanel from './MarketRankingPanel.jsx';
 import styles from './HotRankings.module.css';
 
 export default function HotRankingsView() {
-  const aShareRanking = useHotStockRanking('a-share');
-  const hkShareRanking = useHotStockRanking('hk-share');
-  const usShareRanking = useHotStockRanking('us-share');
+  const cnStockRanking = useHotStockRanking('cn_stock');
+  const hkStockRanking = useHotStockRanking('hk_stock');
+  const usStockRanking = useHotStockRanking('us_stock');
 
   const markets = [
-    { id: 'a-share', title: 'A股热榜', state: aShareRanking },
-    { id: 'hk-share', title: '港股热榜', state: hkShareRanking },
-    { id: 'us-share', title: '美股热榜', state: usShareRanking }
+    { id: 'cn_stock', title: 'A股热榜', state: cnStockRanking },
+    { id: 'hk_stock', title: '港股热榜', state: hkStockRanking },
+    { id: 'us_stock', title: '美股热榜', state: usStockRanking }
   ];
 
   return (

@@ -6,9 +6,9 @@ import { transformStockHistory } from '../utils/transformers.js';
 const klineCache = new Map();
 const pendingRequests = new Map();
 const DATA_SOURCE_LABELS = {
-  'a-share': '本地 DuckDB / Tushare',
-  'hk-share': '本地 DuckDB / Yahoo Finance',
-  'us-share': '本地 DuckDB / Yahoo Finance'
+  'cn_stock': '本地 DuckDB / Tushare',
+  'hk_stock': '本地 DuckDB / Yahoo Finance',
+  'us_stock': '本地 DuckDB / Yahoo Finance'
 };
 
 export function useStockKline() {
@@ -17,7 +17,7 @@ export function useStockKline() {
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
 
-  const loadKline = useCallback(async (symbol, marketId = 'a-share') => {
+  const loadKline = useCallback(async (symbol, marketId = 'cn_stock') => {
     if (!symbol) return;
 
     const requestId = ++requestIdRef.current;

@@ -34,7 +34,7 @@ function visibleGroups(allGroups, market, showStockPool) {
 }
 
 export function useMarketStocks(marketId) {
-  const market = { 'a-share': 'CN', 'hk-share': 'HK', 'us-share': 'US', futures: 'FUTURES' }[marketId];
+  const market = { 'cn_stock': 'CN', 'hk_stock': 'HK', 'us_stock': 'US', futures: 'FUTURES' }[marketId];
   const { allGroups, setAllGroups, activeGroups, setActiveGroups } = useWatchlistGroupState();
   const [showStockPool, setShowStockPool] = useState(() => {
     try {

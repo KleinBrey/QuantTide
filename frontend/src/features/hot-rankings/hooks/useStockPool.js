@@ -3,7 +3,7 @@ import { addMarketStockApi, getMarketStocksApi } from '@/api/quantide/api.js';
 import { stockPoolSymbol } from '../utils/stockPool.js';
 
 export function useStockPool(marketId, rows) {
-  const enabled = marketId === 'hk-share' || marketId === 'us-share';
+  const enabled = marketId === 'hk_stock' || marketId === 'us_stock';
   const [symbols, setSymbols] = useState(new Set());
   const [pending, setPending] = useState(new Set());
   const [ready, setReady] = useState(false);

@@ -100,7 +100,7 @@ function StockPoolCell({ data, onAddStock }) {
   );
 }
 
-export default function RankingTable({ rows, loading, marketId = 'a-share', showKline = false }) {
+export default function RankingTable({ rows, loading, marketId = 'cn_stock', showKline = false }) {
   const {
     enabled,
     symbols,

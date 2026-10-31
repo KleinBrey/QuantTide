@@ -10,19 +10,19 @@ import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const MARKET_CONFIG = {
   futures: { title: '期货主力合约行情' },
-  'a-share': {
+  'cn_stock': {
     title: 'A股行情'
   },
-  'hk-share': {
+  'hk_stock': {
     title: '港股行情'
   },
-  'us-share': {
+  'us_stock': {
     title: '美股行情'
   }
 };
 
 export default function MarketStockBrowser({ marketId }) {
-  const market = MARKET_CONFIG[marketId] || MARKET_CONFIG['hk-share'];
+  const market = MARKET_CONFIG[marketId] || MARKET_CONFIG['hk_stock'];
   const stockList = useMarketStocks(marketId);
 
   return (

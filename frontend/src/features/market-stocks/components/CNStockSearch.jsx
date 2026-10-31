@@ -3,7 +3,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { searchWatchlistStocksApi } from '@/api/quantide/api.js';
 import styles from '@/components/watchlist/MarketBrowser.module.css';
 
-export default function AShareStockSearch({ inputRef, stocks, disabled, onAdd, market = 'CN' }) {
+export default function CNStockSearch({ inputRef, stocks, disabled, onAdd, market = 'CN' }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);

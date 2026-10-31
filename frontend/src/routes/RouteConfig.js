@@ -26,20 +26,20 @@ export const dashboardGroups = [
     title: '市场',
     items: [
       {
-        id: 'a-share-market',
-        path: '/a-share-market',
+        id: 'cn_stock-market',
+        path: '/cn_stock-market',
         title: 'A股',
         description: 'A股市场'
       },
       {
-        id: 'hk-share-market',
-        path: '/hk-share-market',
+        id: 'hk_stock-market',
+        path: '/hk_stock-market',
         title: '港股',
         description: '港股市场'
       },
       {
-        id: 'us-share-market',
-        path: '/us-share-market',
+        id: 'us_stock-market',
+        path: '/us_stock-market',
         title: '美股',
         description: '美股市场'
       },
