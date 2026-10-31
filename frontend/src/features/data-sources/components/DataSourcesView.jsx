@@ -171,7 +171,7 @@ function TaskActionsCell({ data, context }) {
 const columnDefs = [
   { colId: 'order', headerName: '排序', width: 40, minWidth: 40, rowDrag: true },
   { field: 'name', headerName: '任务', width: 150, minWidth: 150, cellRenderer: TaskNameCell },
-  { field: 'markets', headerName: '市场', width: 72, minWidth: 72, cellRenderer: TaskMarketsCell },
+  { field: 'markets', headerName: '市场', width: 84, minWidth: 84, cellRenderer: TaskMarketsCell },
   { colId: 'status', headerName: '状态', width: 120, minWidth: 120, cellRenderer: TaskStatusCell },
   { colId: 'schedule', headerName: '调度时间', minWidth: 200, flex: 1, cellRenderer: TaskScheduleCell },
   { colId: 'latest', headerName: '数据更新时间', minWidth: 200, flex: 1, cellRenderer: TaskLatestDataCell },
@@ -179,14 +179,15 @@ const columnDefs = [
 ];
 
 const TASK_MARKETS = {
-  futures_market: ['期货'],
   realtime_hot: ['A 股', '港股', '美股'],
   daily_stocks: ['A 股'],
   daily_basic: ['A 股'],
   daily_bars: ['A 股'],
   daily_hot: ['A 股'],
   hk_daily_bars: ['港股'],
-  us_daily_bars: ['美股']
+  us_daily_bars: ['美股'],
+  futures_market: ['期货'],
+  crypto_daily_bars: ['加密货币']
 };
 
 const LATEST_FIELDS = {
@@ -201,7 +202,8 @@ const LATEST_FIELDS = {
   ],
   daily_hot: [{ id: 'hot-stock', label: 'A 股热度' }],
   hk_daily_bars: [{ id: 'hk-daily-k', label: '最新数据' }],
-  us_daily_bars: [{ id: 'us-daily-k', label: '最新数据' }]
+  us_daily_bars: [{ id: 'us-daily-k', label: '最新数据' }],
+  crypto_daily_bars: [{ id: 'crypto-daily-k', label: '最新数据' }]
 };
 
 function latestDataText(taskId, latestUpdateTimes, latestDataStatus) {
@@ -212,7 +214,7 @@ function latestDataText(taskId, latestUpdateTimes, latestDataStatus) {
 
 function scheduleText(task) {
   if (!task.schedule) return '仅手动运行';
-  const rule = task.schedule.trigger === 'cron' ? formatTaskCron(task.schedule.cron) : `每 ${task.schedule.seconds} 秒`;
+  const rule = task.schedule.trigger === 'cron' ? formatTaskCron(task.schedule.cron) : `每 ${task.schedule.seconds / 3600} 小时`;
   return `${rule}${task.enabled ? '' : ' · 已停用'}`;
 }
 

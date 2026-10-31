@@ -1,11 +1,6 @@
 """脚本注册表；run 使用完整模块路径:入口函数，按需导入执行。"""
 
 SCRIPTS: dict[str, dict[str, object]] = {
-    "futures_market": {
-        "name": "期货市场同步",
-        "run": "backend.scripts.sync_futures_market:sync_futures_market",
-        "params": {"lookback_days": 365},
-    },
     "realtime_hot": {
         "name": "实时股票热度",
         "run": "backend.scripts.sync_realtime_hot:sync_realtime_hot",
@@ -38,6 +33,16 @@ SCRIPTS: dict[str, dict[str, object]] = {
     "us_daily_bars": {
         "name": "美股日 K 线",
         "run": "backend.scripts.sync_us_daily_bars:sync_us_daily_bars",
+        "params": {"lookback_days": 365},
+    },
+    "crypto_daily_bars": {
+        "name": "加密货币日 K 线",
+        "run": "backend.scripts.sync_crypto_daily_bars:sync_crypto_daily_bars",
+        "params": {"lookback_days": 365},
+    },
+    "futures_market": {
+        "name": "期货市场同步",
+        "run": "backend.scripts.sync_futures_market:sync_futures_market",
         "params": {"lookback_days": 365},
     },
 }

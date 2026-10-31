@@ -419,7 +419,7 @@ DuckDB 继续保存股票基础信息和历史行情，港美股日 K 同步读�
 `name`、`模块路径:入口函数` 格式的 `run` 和可选的默认参数 `params`。
 API、任务调度和脚本菜单共用这些函数；导入注册表不会运行脚本。
 同步入口统一以异常报告失败（包括部分失败），任务层不解析脚本返回值来判断失败。
-港股、美股日 K 任务分别使用 `hk_daily_bars`、`us_daily_bars`。
+港股、美股和加密货币日 K 任务分别使用 `hk_daily_bars`、`us_daily_bars`、`crypto_daily_bars`。
 热度任务 ID 与脚本对应：`realtime_hot` 执行三市场实时股票热度同步，`daily_hot` 执行 A 股历史热度同步并接受 `lookback_days`。
 
 ```text
@@ -430,11 +430,12 @@ scripts/
 ├── sync_daily_bars.py            # A 股日 K
 ├── sync_hk_daily_bars.py          # 港股日 K
 ├── sync_us_daily_bars.py          # 美股日 K
+├── sync_crypto_daily_bars.py      # 加密货币交易对池日 K
 ├── sync_daily_hot.py             # A 股历史热度
 └── sync_realtime_hot.py          # 实时股票热度（A 股、港股、美股）
 ```
 
-前五个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
+前六个脚本的同步函数默认更新最近 3 个自然日，日常更新与历史补数只差 `lookback_days`。
 直接运行脚本显示日期选择菜单（60、180、365、1095 日，`e` 退出）。
 任务页面通过“同步最近多少个自然日”填写，API 和定时任务直接向同步函数传入 `lookback_days`，不会显示菜单：
 
@@ -444,6 +445,7 @@ uv run python -m backend.scripts.sync_daily_basic
 uv run python -m backend.scripts.sync_daily_bars
 uv run python -m backend.scripts.sync_hk_daily_bars
 uv run python -m backend.scripts.sync_us_daily_bars
+uv run python -m backend.scripts.sync_crypto_daily_bars
 ```
 
 同步脚本会在写入前初始化数据库。A 股每日指标、日 K 和股票池按交易日历过滤休市日，
@@ -578,6 +580,13 @@ uv run python -m backend.scripts.sync_daily_stocks
 分组和成员复用 `app.sqlite` 的 `watchlist_groups` / `watchlist_items`，市场标识为 `CRYPTO`；
 行情仍保留在独立 DuckDB。启动时仅初始化当前表结构并确保默认分组存在，
 交易对由用户添加到分组。当前日 K 未收盘，重新同步时会更新。
+
+`uv run python -m backend.scripts.sync_crypto_daily_bars` 可批量更新默认 `CRYPTO stock_pool`
+中的交易对日 K，菜单支持 60、180、365、1095 日。也可直接调用
+`sync_crypto_daily_bars(lookback_days=3, max_workers=None, request_interval=0.5)`，
+默认同步最近 3 个 UTC 自然日，并发上限为 `min(SYNC_WORKERS, lookback_days)`。
+成功返回 `symbols`（池内交易对数）和 `rows`（写入条数）；空池跳过请求，
+部分失败时继续同步其他交易对，保留成功数据并汇总抛出异常，可重跑补齐。
 
 - `GET /api/crypto/symbols`：已同步交易对。
 - `GET /api/crypto/daily-bars/{symbol}`：本地日 K。

@@ -18,7 +18,7 @@ function SelectTrigger({ className, children, ...props }) {
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground aria-invalid:border-destructive aria-invalid:ring-destructive/20',
+        'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs ring-inset outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground aria-invalid:border-destructive aria-invalid:ring-destructive/20',
         className
       )}
       {...props}
@@ -42,7 +42,7 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            'relative z-50 flex max-h-[min(15rem,var(--available-height))] w-(--anchor-width) min-w-32 flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none',
+            'relative z-50 flex max-h-[min(15rem,var(--available-height))] w-(--anchor-width) min-w-32 flex-col overflow-hidden rounded-lg border border-border bg-select text-popover-foreground shadow-xl outline-none',
             className
           )}
           {...props}
@@ -61,7 +61,7 @@ function SelectItem({ className, children, ...props }) {
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        'relative flex w-full cursor-default items-center rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50',
+        'relative flex w-full cursor-default items-center rounded-md py-1.5 pr-8 pl-2 text-sm outline-none select-none data-highlighted:bg-select-accent data-highlighted:text-accent-foreground data-selected:bg-select-accent data-selected:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50',
         className
       )}
       {...props}

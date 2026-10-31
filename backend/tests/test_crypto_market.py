@@ -34,6 +34,7 @@ class CryptoMarketTests(unittest.TestCase):
                "turnover": 27.5, "source": "Binance"}
         self.provider.fetch_historical.return_value = [row]
         self.assertEqual(self.client.get("/api/crypto/symbols").json(), [])
+        self.assertIsNone(self.repository.get_latest_update_time())
         response = self.client.post("/api/crypto/sync", json={"symbol": " btcusdt "})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"symbol": "BTCUSDT", "rows": 1})
@@ -48,6 +49,7 @@ class CryptoMarketTests(unittest.TestCase):
         self.assertEqual(bars[0]["close"], 12)
         self.assertEqual(bars[0]["amount"], 27.5)
         self.assertEqual(self.client.get("/api/crypto/symbols").json()[0]["symbol"], "BTCUSDT")
+        self.assertIsNotNone(self.repository.get_latest_update_time())
         # 重建连接后仍可读取，证明页面使用的是落盘行情。
         self.db.initialize()
         self.assertEqual(len(self.repository.get_daily_bars("BTCUSDT")), 1)

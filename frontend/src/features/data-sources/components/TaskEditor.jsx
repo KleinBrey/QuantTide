@@ -23,7 +23,7 @@ export default function TaskEditor({ task, scripts, settings, onSave, onClose })
   const [days, setDays] = useState(task?.params?.lookback_days ?? script?.params.lookback_days ?? 3);
   const [mode, setMode] = useState(task?.schedule?.trigger || 'manual');
   const [cronSchedule, setCronSchedule] = useState(() => parseTaskCron(task?.schedule?.cron));
-  const [seconds, setSeconds] = useState(task?.schedule?.seconds || 3600);
+  const [hours, setHours] = useState((task?.schedule?.seconds ?? 3600) / 3600);
   const [enabled, setEnabled] = useState(task?.enabled ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -48,7 +48,11 @@ export default function TaskEditor({ task, scripts, settings, onSave, onClose })
       if (mode === 'cron') {
         schedule = { trigger: 'cron', cron: cronSchedule.period === 'custom' ? task.schedule.cron : buildTaskCron(cronSchedule) };
       } else if (mode === 'interval') {
-        schedule = { trigger: 'interval', seconds: Number(seconds) };
+        const seconds = Math.round(Number(hours) * 3600);
+        if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+          throw new Error('请输入有效的执行间隔（至少 1 秒）');
+        }
+        schedule = { trigger: 'interval', seconds };
       }
       await onSave(task?.id, { name: name.trim(), script_id: scriptId, params, schedule, enabled });
       onClose();
@@ -153,8 +157,8 @@ export default function TaskEditor({ task, scripts, settings, onSave, onClose })
               <p id="schedule-help" className={styles.help}>{cronSchedule.period === 'workdays' ? '工作日为周一至周五。' : ''}时区：{settings.timezone}。</p>
             </>}
             {mode === 'interval' && <>
-              <label>执行间隔（秒）</label>
-              <Input type="number" min="1" step="1" required value={seconds} onChange={event => setSeconds(event.target.value)} />
+              <label htmlFor="task-interval-hours">执行间隔（小时）</label>
+              <Input id="task-interval-hours" type="number" min="0" step="any" required value={hours} onChange={event => setHours(event.target.value)} />
             </>}
             {mode !== 'manual' && <label className={styles.checkbox}>
               <input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} />启用自动调度

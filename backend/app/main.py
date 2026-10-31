@@ -164,6 +164,7 @@ async def lifespan(app: FastAPI):
     app.state.hk_market_service = hk_market_service
     app.state.us_market_service = us_market_service
     app.state.crypto_market_service = crypto_market_service
+    app.state.crypto_repository = crypto_repository
     app.state.watchlist_service = watchlist_service
     app.state.task_service = task_service
     app.state.scheduler = scheduler

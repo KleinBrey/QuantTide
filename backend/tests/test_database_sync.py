@@ -79,6 +79,7 @@ class DatabaseSyncTests(unittest.TestCase):
             "daily_stock_repository", "daily_basic_repository", "daily_repository",
             "daily_hot_repository", "hk_stock_hot_repository", "us_stock_hot_repository",
             "hk_daily_repository", "us_daily_repository", "futures_repository",
+            "crypto_repository",
         ]:
             setattr(self.app.state, attribute, Mock(get_latest_update_time=Mock(return_value=None)))
         latest = datetime(2026, 10, 7, 10, 30)
@@ -89,10 +90,13 @@ class DatabaseSyncTests(unittest.TestCase):
         self.assertIsNone(response.json()["us-daily-k"])
         self.assertIsNone(response.json()["daily-k"])
         self.assertIsNone(response.json()["futures-daily-k"])
+        self.assertIsNone(response.json()["crypto-daily-k"])
         self.app.state.futures_repository.get_latest_update_time.return_value = latest
+        self.app.state.crypto_repository.get_latest_update_time.return_value = latest
         response = self.client.get("/api/database-sync/latest-update-times")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["futures-daily-k"], latest.isoformat())
+        self.assertEqual(response.json()["crypto-daily-k"], latest.isoformat())
 
 
 if __name__ == "__main__":

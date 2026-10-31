@@ -1,5 +1,7 @@
 """加密货币行情的数据库读写。"""
 
+from datetime import datetime
+
 import pandas as pd
 
 from ..database import CryptoDuckDBDatabase
@@ -8,6 +10,11 @@ from ..database import CryptoDuckDBDatabase
 class CryptoMarketRepository:
     def __init__(self, db: CryptoDuckDBDatabase):
         self.db = db
+
+    def get_latest_update_time(self) -> datetime | None:
+        with self.db.connection(read_only=True) as connection:
+            row = connection.execute("SELECT MAX(update_time) FROM daily_bars").fetchone()
+        return row[0] if row and row[0] is not None else None
 
     def list_symbols(self) -> list[dict]:
         # 列表直接取已保存行情的交易对，无需再维护一份重复名单。

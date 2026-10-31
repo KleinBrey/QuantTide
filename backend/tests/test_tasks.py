@@ -290,7 +290,7 @@ class TaskTests(unittest.TestCase):
                 self.assertEqual(self.client.post('/api/tasks', json=body).status_code, 422)
         self.assertEqual(len(self.repository.list_tasks()), baseline_count)
         self.assertEqual(self.create(params={})['params'], {'lookback_days': 3})
-        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 8)
+        self.assertEqual(len(self.client.get('/api/tasks/scripts').json()['scripts']), 9)
 
     def test_manual_execution_uses_saved_parameters_and_can_run_when_disabled(self):
         task = self.create(script_id='daily_bars', enabled=False)
@@ -333,17 +333,26 @@ class TaskTests(unittest.TestCase):
     def test_market_tasks_dispatch_only_their_own_script(self):
         hk = self.create(script_id='hk_daily_bars')
         us = self.create(script_id='us_daily_bars')
+        crypto = self.create(script_id='crypto_daily_bars')
         with (
             patch('backend.scripts.sync_hk_daily_bars.sync_hk_daily_bars', return_value={'stocks': 1, 'rows': 2}) as sync_hk,
             patch('backend.scripts.sync_us_daily_bars.sync_us_daily_bars', return_value={'stocks': 1, 'rows': 2}) as sync_us,
+            patch('backend.scripts.sync_crypto_daily_bars.sync_crypto_daily_bars', return_value={'symbols': 1, 'rows': 2}) as sync_crypto,
         ):
             self.assertEqual(self.client.post(f'/api/tasks/{hk["id"]}/run').status_code, 200)
             sync_hk.assert_called_once_with(lookback_days=60)
             sync_us.assert_not_called()
+            sync_crypto.assert_not_called()
             sync_hk.reset_mock()
             self.assertEqual(self.client.post(f'/api/tasks/{us["id"]}/run').status_code, 200)
             sync_us.assert_called_once_with(lookback_days=60)
             sync_hk.assert_not_called()
+            sync_crypto.assert_not_called()
+            sync_us.reset_mock()
+            self.assertEqual(self.client.post(f'/api/tasks/{crypto["id"]}/run').status_code, 200)
+            sync_crypto.assert_called_once_with(lookback_days=60)
+            sync_hk.assert_not_called()
+            sync_us.assert_not_called()
 
     def test_running_task_cannot_be_edited_or_deleted_and_scheduled_tasks_wait(self):
         first = self.create(schedule={'trigger': 'interval', 'seconds': 3600})

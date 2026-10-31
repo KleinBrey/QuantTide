@@ -21,6 +21,7 @@ from backend.scripts.sync_realtime_hot import sync_realtime_hot
 
 from .dependencies import (
     CryptoMarketServiceDep,
+    CryptoRepository,
     DailyBasicRepo,
     DailyHotRepo,
     DailyRepository,
@@ -146,6 +147,7 @@ def database_latest_update_times(
     hk_daily_repository: HKDailyRepository,
     us_daily_repository: USDailyRepository,
     futures_repository: FuturesRepository,
+    crypto_repository: CryptoRepository,
 ) -> dict[str, datetime | None]:
     """返回各同步数据表的最新更新时间。"""
 
@@ -157,6 +159,7 @@ def database_latest_update_times(
         "hk-daily-k": hk_daily_repository.get_latest_update_time(),
         "us-daily-k": us_daily_repository.get_latest_update_time(),
         "futures-daily-k": futures_repository.get_latest_update_time(),
+        "crypto-daily-k": crypto_repository.get_latest_update_time(),
         "stock-daily-basic": daily_basic_repository.get_latest_update_time(),
         "stock-list": daily_stock_repository.get_latest_update_time(),
     }

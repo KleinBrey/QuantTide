@@ -121,6 +121,12 @@
   color: #6ee7b7;
 }
 
+.marketBadge[data-market='加密货币'] {
+  background: #ec489914;
+  border-color: #f472b633;
+  color: #f472b6;
+}
+
 .metadata {
   display: grid;
   gap: 9px;

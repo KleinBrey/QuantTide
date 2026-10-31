@@ -46,7 +46,8 @@
       "alias": "crypto_market",
       "type": "file",
       "path": "/Users/kleinbrey/Documents/QuantTide/data/crypto_market.duckdb",
-      "attached": false
+      "attached": false,
+      "readOnly": false
     },
     {
       "alias": "futures_market",

@@ -70,6 +70,7 @@ uv run python -m backend.scripts.sync_daily_basic
 uv run quant-sync
 uv run python -m backend.scripts.sync_hk_daily_bars
 uv run python -m backend.scripts.sync_us_daily_bars
+uv run python -m backend.scripts.sync_crypto_daily_bars
 uv run python -m backend.scripts.sync_realtime_hot
 ```
 
