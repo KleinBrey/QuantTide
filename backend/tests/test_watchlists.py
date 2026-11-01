@@ -31,7 +31,7 @@ class WatchlistTests(unittest.TestCase):
         repo = CryptoMarketRepository(db)
         repo.upsert_daily_bars(pd.DataFrame([
             dict(symbol=symbol, trade_date='2026-10-30', open=10, high=12, low=9,
-                 close=11, volume=1, amount=11, source='Binance')
+                 close=11, volume=1, amount=11, source='Binance USD-M Perpetual')
             for symbol in ['BTCUSDT', 'ETHUSDT']
         ]))
         self.service.stock_repositories['CRYPTO'] = repo

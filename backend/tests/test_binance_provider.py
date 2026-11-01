@@ -19,7 +19,7 @@ class BinanceProviderTests(unittest.TestCase):
             Mock(json=Mock(return_value=first_page)),
             Mock(json=Mock(return_value=[kline(60000000)])),
         ]
-        provider = BinanceProvider(timeout=8, base_url="https://api.binance.com/")
+        provider = BinanceProvider(timeout=8, base_url="https://fapi.binance.com/")
         items = provider.fetch_historical(
             " btcusdt ", 0, 60000000, interval="1m", offset=999
         )
@@ -27,10 +27,10 @@ class BinanceProviderTests(unittest.TestCase):
         self.assertEqual(items[-1], {
             "date_ms": 60000000, "open_price": 10.1, "high_price": 12.0,
             "low_price": 9.0, "close_price": 11.0, "volume": 2.5,
-            "turnover": 27.5, "source": "Binance",
+            "turnover": 27.5, "source": "Binance USD-M Perpetual",
         })
         first, second = get.call_args_list
-        self.assertEqual(first.args[0], "https://api.binance.com/api/v3/klines")
+        self.assertEqual(first.args[0], "https://fapi.binance.com/fapi/v1/klines")
         self.assertEqual(first.kwargs, {"timeout": 8, "params": {
             "symbol": "BTCUSDT", "interval": "1m", "startTime": 0,
             "endTime": 60000000, "limit": 1000,
@@ -60,25 +60,28 @@ class BinanceProviderTests(unittest.TestCase):
             with self.subTest(endpoint=endpoint):
                 get.return_value.json.return_value = payload
                 expected = (
-                    [{**row, "source": "Binance"} for row in payload]
+                    [{**row, "source": "Binance USD-M Perpetual"} for row in payload]
                     if isinstance(payload, list)
-                    else {**payload, "source": "Binance"}
+                    else {**payload, "source": "Binance USD-M Perpetual"}
                 )
                 self.assertEqual(method("btcusdt", **kwargs), expected)
-                self.assertEqual(get.call_args.args[0], f"https://api.binance.com/api/v3/{endpoint}")
+                self.assertEqual(get.call_args.args[0], f"https://fapi.binance.com/fapi/v1/{endpoint}")
                 self.assertEqual(get.call_args.kwargs["params"], {"symbol": "BTCUSDT", **kwargs})
 
     @patch("backend.app.provider.binance_provider.requests.get")
     def test_invalid_arguments_do_not_request(self, get):
         provider = BinanceProvider()
-        for kwargs in [{"interval": "2d"}, {"adjust": "forward"}, {"offset": -1}]:
+        for kwargs in [{"interval": "1s"}, {"interval": "2d"}, {"adjust": "forward"}, {"offset": -1}]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 provider.fetch_historical("BTCUSDT", 0, 1, **kwargs)
         with self.assertRaises(ValueError):
             provider.fetch_historical("BTCUSDT", 2, 1)
         with self.assertRaises(ValueError):
             provider.fetch_snapshot(" ")
-        for method, limits in [(provider.fetch_depth, [0, 5001]),
+        for symbol in ["BTCUSDT_261225", "BTC/USDT"]:
+            with self.assertRaises(ValueError):
+                provider.fetch_snapshot(symbol)
+        for method, limits in [(provider.fetch_depth, [0, 1, 5000, 1001]),
                                (provider.fetch_trades, [0, 1001])]:
             for limit in limits:
                 with self.assertRaises(ValueError):

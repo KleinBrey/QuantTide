@@ -1,4 +1,4 @@
-"""币安现货行情最小连通性测试。"""
+"""币安 U 本位永续合约行情最小连通性测试。"""
 
 import time
 from pprint import pprint

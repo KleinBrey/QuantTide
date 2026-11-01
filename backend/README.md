@@ -76,11 +76,11 @@ uv run uvicorn backend.app.main:app \
 - `tushare_provider.py`：股票列表、日 K、复权行情和每日市值指标；
 - `hithink_provider.py`：HiThink 股票列表、快照和历史行情；
 - `akshare_provider.py`：AkShare 股票列表和历史行情适配；
-- `binance_provider.py`：币安现货公开行情，无需 API Key，使用已有的 `requests`；
+- `binance_provider.py`：币安 U 本位永续合约公开行情，无需 API Key，使用已有的 `requests`；
   提供 `fetch_historical`（K 线）、`fetch_snapshot`（滚动 24 小时行情）、
   `fetch_depth`（盘口）、`fetch_trades`（近期成交）；K 线和成交直接返回列表，
   快照和盘口直接返回字典，
-  每条记录带有 `source="Binance"`。交易对使用 `BTCUSDT` 等币安代码；
+  每条记录带有 `source="Binance USD-M Perpetual"`。永续合约使用 `BTCUSDT` 等币安代码；
 - `futu_provider.py`：通过本机 Futu OpenD 获取股票列表、快照、历史 K 线和热议榜；
 - `tdx_provider.py`：通过 `tdxaidata.tqs` 获取通达信后台历史 K 线、Tick、分时、
   当日集合竞价、指数成份股和实时订阅，无需启动客户端；查询接口返回统一的
@@ -110,7 +110,8 @@ K 线沿用通用 OHLC 字段，但 `date_ms` 保留实际 UTC 开盘时间，
 `volume` 为基础币数量，`turnover` 为计价币成交额，可能包含未收盘 K 线。
 快照、盘口和成交保留币安原始字段及数值字符串。
 加密货币通过独立的 `CryptoMarketService` 接入，不混用股票市场同步流程。
-接口依据：[币安现货行情文档](https://developers.binance.info/zh-CN/docs/catalog/core-trading-spot-trading/api/rest-api/market)。
+接口依据：[币安 U 本位合约行情文档](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)。
+默认请求 `https://fapi.binance.com/fapi/v1/`，K 线、24 小时报价、盘口和近期成交均使用永续合约行情；不支持 `1s` 周期和交割合约代码。
 
 ```bash
 uv run python -m backend.app.provider.example.binance_smoke_test
@@ -430,7 +431,7 @@ scripts/
 ├── sync_daily_bars.py            # A 股日 K
 ├── sync_hk_daily_bars.py          # 港股日 K
 ├── sync_us_daily_bars.py          # 美股日 K
-├── sync_crypto_daily_bars.py      # 加密货币交易对池日 K
+├── sync_crypto_daily_bars.py      # 加密货币永续合约池日 K
 ├── sync_daily_hot.py             # A 股历史热度
 └── sync_realtime_hot.py          # 实时股票热度（A 股、港股、美股）
 ```
@@ -576,22 +577,24 @@ uv run python -m backend.scripts.sync_daily_stocks
 ### 加密货币市场
 
 `crypto_market.duckdb` 使用独立的 `crypto_schema.sql`，由应用启动时初始化，路径可通过 `CRYPTO_DATABASE_PATH` 配置。
-`CryptoMarketRepository` 负责日 K 查询和覆盖写入；`CryptoMarketService` 负责币安数据转换，日期使用 UTC。
+`CryptoMarketRepository` 负责 `daily_bars` 的日 K 查询和覆盖写入；`CryptoMarketService` 负责币安数据转换，日期使用 UTC。
 分组和成员复用 `app.sqlite` 的 `watchlist_groups` / `watchlist_items`，市场标识为 `CRYPTO`；
 行情仍保留在独立 DuckDB。启动时仅初始化当前表结构并确保默认分组存在，
-交易对由用户添加到分组。当前日 K 未收盘，重新同步时会更新。
+永续合约由用户添加到分组，默认仅获取永续合约。当前日 K 未收盘，重新同步时会更新。
+行情统一存入 `daily_bars`，列表报价和 K 线统一读取该表。
+各分组点击刷新即可获取最近一年的永续行情。
 
 `uv run python -m backend.scripts.sync_crypto_daily_bars` 可批量更新默认 `CRYPTO stock_pool`
-中的交易对日 K，菜单支持 60、180、365、1095 日。也可直接调用
+中的永续合约日 K，菜单支持 60、180、365、1095 日。也可直接调用
 `sync_crypto_daily_bars(lookback_days=3, max_workers=None, request_interval=0.5)`，
 默认同步最近 3 个 UTC 自然日，并发上限为 `min(SYNC_WORKERS, lookback_days)`。
-成功返回 `symbols`（池内交易对数）和 `rows`（写入条数）；空池跳过请求，
-部分失败时继续同步其他交易对，保留成功数据并汇总抛出异常，可重跑补齐。
+成功返回 `symbols`（池内永续合约数）和 `rows`（写入条数）；空池跳过请求，
+部分失败时继续同步其他永续合约，保留成功数据并汇总抛出异常，可重跑补齐。
 
-- `GET /api/crypto/symbols`：已同步交易对。
+- `GET /api/crypto/symbols`：已同步永续合约。
 - `GET /api/crypto/daily-bars/{symbol}`：本地日 K。
 - `POST /api/crypto/sync`：请求体如 `{"symbol":"BTCUSDT","days":365}`，同步 1–1000 个自然日；使用现有同步锁防止并发写入。
 
-前端 `/crypto-market` 提供添加交易对、手动同步、行情列表及日/周/月 K 图。
+前端 `/crypto-market` 提供添加永续合约、手动同步、行情列表及日/周/月 K 图。
 分组管理与港美股共用 `components/watchlist/WatchlistGroups.jsx`，支持新建、重命名、删除、排序和默认池开关；
-交易对右键可加入其他分组、移出当前分组、调整顺序，也可拖动排序。删除分组或成员不会删除历史行情。
+永续合约右键可加入其他分组、移出当前分组、调整顺序，也可拖动排序。删除分组或成员不会删除历史行情。

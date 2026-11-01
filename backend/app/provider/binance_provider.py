@@ -1,16 +1,17 @@
-"""通过币安现货 REST API 获取公开行情，无需 API Key。"""
+"""通过币安 U 本位永续合约 REST API 获取公开行情，无需 API Key。"""
 
 from __future__ import annotations
+
+import re
 
 import requests
 
 
 class BinanceProvider:
-    """获取币安行情：多条记录返回列表，单个快照或盘口返回字典。"""
+    """获取币安永续合约行情：多条记录返回列表，单个快照或盘口返回字典。"""
 
-    source = "Binance"
+    source = "Binance USD-M Perpetual"
     _INTERVALS = {
-        "1s",
         "1m",
         "3m",
         "5m",
@@ -35,7 +36,7 @@ class BinanceProvider:
     }
 
     def __init__(
-        self, timeout: float = 30, *, base_url: str = "https://api.binance.com"
+        self, timeout: float = 30, *, base_url: str = "https://fapi.binance.com"
     ) -> None:
         self.timeout = timeout
         self.base_url = base_url.rstrip("/")
@@ -43,17 +44,17 @@ class BinanceProvider:
     def _get(self, path: str, params: dict) -> dict | list:
         """统一设置超时；HTTP 错误直接向调用方抛出。"""
         response = requests.get(
-            f"{self.base_url}/api/v3/{path}", params=params, timeout=self.timeout
+            f"{self.base_url}/fapi/v1/{path}", params=params, timeout=self.timeout
         )
         response.raise_for_status()
         return response.json()
 
     @staticmethod
     def _symbol(thscode: str) -> str:
-        """使用币安交易对代码，例如 BTCUSDT。"""
+        """使用永续合约代码，例如 BTCUSDT；不接受带交割日期的合约。"""
         symbol = thscode.strip().upper()
-        if not symbol:
-            raise ValueError("交易对代码不能为空")
+        if not re.fullmatch(r"[A-Z0-9]{2,30}", symbol):
+            raise ValueError("永续合约代码格式不正确，例如 BTCUSDT")
         return symbol
 
     def fetch_historical(
@@ -67,7 +68,7 @@ class BinanceProvider:
     ) -> list[dict]:
         """按开盘时间获取 K 线，start/end 为毫秒时间戳，包含首尾。
 
-        币安现货不复权，仅接受 none/raw/空字符串。date_ms 保留实际
+        币安永续合约不复权，仅接受 none/raw/空字符串。date_ms 保留实际
         UTC 开盘时间；volume 是基础币数量，turnover 是计价币成交额。
         返回结果可能包含尚未收盘的当前 K 线。
         """
@@ -76,7 +77,7 @@ class BinanceProvider:
         if offset < 0:
             raise ValueError("offset 不能小于 0")
         if adjust.lower() not in {"", "none", "raw"}:
-            raise ValueError("币安现货不支持复权，请使用 none 或 raw")
+            raise ValueError("币安永续合约不支持复权，请使用 none 或 raw")
         # 不能统一转小写：币安的 1m 表示分钟，1M 表示月。
         period = self._INTERVAL_MAP.get(interval, interval)
         if period not in self._INTERVALS:
@@ -119,14 +120,14 @@ class BinanceProvider:
         return items[offset:]
 
     def fetch_snapshot(self, thscode: str) -> dict:
-        """获取单个交易对的滚动 24 小时行情，保留币安原始字段。"""
+        """获取单个永续合约的滚动 24 小时行情，保留币安原始字段。"""
         row = self._get("ticker/24hr", {"symbol": self._symbol(thscode)})
         return {**row, "source": self.source}
 
     def fetch_depth(self, thscode: str, limit: int = 100) -> dict:
         """获取盘口；bids/asks 每项为 [价格, 数量]，保留原始字符串精度。"""
-        if not 1 <= limit <= 5000:
-            raise ValueError("limit 必须在 1 到 5000 之间")
+        if limit not in {5, 10, 20, 50, 100, 500, 1000}:
+            raise ValueError("limit 必须为 5、10、20、50、100、500 或 1000")
         row = self._get("depth", {"symbol": self._symbol(thscode), "limit": limit})
         return {**row, "source": self.source}
 

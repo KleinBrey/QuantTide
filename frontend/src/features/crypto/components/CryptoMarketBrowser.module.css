@@ -141,16 +141,14 @@
 }
 
 .addPopover form,
-.addPopover label,
-.quoteField {
+.addPopover label {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .addPopover form { gap: 12px; }
-.addPopover label,
-.quoteField { color: #a1a1aa; font-size: 12px; }
+.addPopover label { color: #a1a1aa; font-size: 12px; }
 .addPopover input {
   background: #111114;
   border: 1px solid #3f3f46;

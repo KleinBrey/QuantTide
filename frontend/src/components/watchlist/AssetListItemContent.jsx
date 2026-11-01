@@ -19,7 +19,7 @@ function formatPrice(value, market) {
   return price.toFixed(market === 'HK' ? 3 : 2);
 }
 
-export default function AssetListItemContent({ name, symbol, price, change_pct, quote_date, market }) {
+export default function AssetListItemContent({ name, symbol, subtitle, price, change_pct, quote_date, market }) {
   const displaySymbol = market === 'FUTURES' ? symbol?.split('.')[0] : symbol;
   const change = finiteNumber(change_pct);
   const tone = change > 0 ? styles.quoteUp : change < 0 ? styles.quoteDown : '';
@@ -32,7 +32,7 @@ export default function AssetListItemContent({ name, symbol, price, change_pct, 
     <>
       <div className={styles.assetIdentity}>
         <span className={styles.assetName}>{name || displaySymbol}</span>
-        {market !== 'CRYPTO' && <small className={styles.assetSymbol}>{displaySymbol}</small>}
+        <small className={styles.assetSymbol}>{subtitle || displaySymbol}</small>
       </div>
       <div className={`${styles.assetQuote} ${tone}`} title={quoteTitle}>
         <span className={styles.assetPrice} aria-label="最新价">{formatPrice(price, market)}</span>

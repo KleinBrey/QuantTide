@@ -83,7 +83,7 @@ def sync_crypto_daily_bars(body: SyncCryptoBars, service: CryptoMarketServiceDep
         count = service.sync_daily_bars(body.symbol, body.days)
     except requests.RequestException as error:
         raise HTTPException(
-            status_code=502, detail="行情获取失败，请检查交易对代码和网络后重试"
+            status_code=502, detail="永续合约行情获取失败，请确认币安支持该永续合约并检查网络后重试"
         ) from error
     finally:
         database_sync_lock.release()

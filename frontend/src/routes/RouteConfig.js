@@ -53,7 +53,7 @@ export const dashboardGroups = [
         id: 'crypto-market',
         path: '/crypto-market',
         title: '加密货币',
-        description: '加密货币现货行情'
+        description: '加密货币永续合约行情'
       }
     ]
   },

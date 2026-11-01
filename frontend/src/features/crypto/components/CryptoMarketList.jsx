@@ -13,18 +13,12 @@ import {
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import { Plus, RefreshCcw, X } from 'lucide-react';
 import { ContextMenu, Popover } from 'radix-ui';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/shadcn/components/ui/select.jsx';
 import sharedStyles from '@/components/watchlist/MarketBrowser.module.css';
 import AssetListItemContent from '@/components/watchlist/AssetListItemContent.jsx';
-import { pairName, QUOTE_ASSETS } from '../utils/pairName.js';
+import { pairName } from '../utils/pairName.js';
 import styles from './CryptoMarketBrowser.module.css';
+
+const QUOTE_ASSET = 'USDT';
 
 const modules = [
   ClientSideRowModelModule,
@@ -49,10 +43,15 @@ const theme = themeQuartz.withPart(colorSchemeDark).withParams({
   fontSize: 13,
   cellHorizontalPadding: 10
 });
-const columnDefs = [{ headerName: '交易对', field: 'symbol', flex: 1, cellRenderer: CryptoCell }];
+const columnDefs = [{ headerName: '永续合约', field: 'symbol', flex: 1, cellRenderer: CryptoCell }];
 const defaultColDef = { sortable: false, resizable: false, suppressMovable: true };
 const rowSelection = { mode: 'singleRow', checkboxes: false, enableClickSelection: 'enableSelection' };
 const getRowId = params => params.data.symbol;
+
+function CryptoListItemContent({ symbol, ...item }) {
+  const [name, quote] = pairName(symbol).split(' / ');
+  return <AssetListItemContent {...item} symbol={symbol} name={name} subtitle={quote} />;
+}
 
 function CryptoDragPreview({ dragSource }) {
   const rowNode = dragSource.getDragItem().rowNode;
@@ -68,7 +67,7 @@ function CryptoDragPreview({ dragSource }) {
       aria-hidden="true"
     >
       <div className={sharedStyles.stockItem}>
-        <AssetListItemContent {...rowNode.data} name={pairName(rowNode.data.symbol)} />
+        <CryptoListItemContent {...rowNode.data} />
       </div>
     </div>
   );
@@ -81,7 +80,7 @@ function CryptoCell({ data: item, context }) {
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild disabled={disabled}>
         <div data-crypto-row className={sharedStyles.stockItem} title={item.symbol}>
-          <AssetListItemContent {...item} name={pairName(item.symbol)} />
+          <CryptoListItemContent {...item} />
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -142,7 +141,7 @@ export default function CryptoMarketList({
   loading,
   syncing,
   error,
-  sync,
+  addSymbol,
   syncGroup,
   groups,
   groupId,
@@ -152,7 +151,6 @@ export default function CryptoMarketList({
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [quoteAsset, setQuoteAsset] = useState('USDT');
   const inputRef = useRef(null);
   const gridRef = useRef(null);
   const disabled = loading || syncing;
@@ -192,10 +190,9 @@ export default function CryptoMarketList({
 
   async function handleAdd(event) {
     event.preventDefault();
-    const symbol = `${input.trim().toUpperCase()}${quoteAsset}`;
-    if (await sync(symbol, true)) {
+    const symbol = `${input.trim().toUpperCase()}${QUOTE_ASSET}`;
+    if (await addSymbol(symbol)) {
       setInput('');
-      setQuoteAsset('USDT');
       setAddOpen(false);
     }
   }
@@ -203,7 +200,7 @@ export default function CryptoMarketList({
   return (
     <>
       <div className={styles.listHeader}>
-        <span>交易对 / 代码</span>
+        <span>永续合约 / 代码</span>
         <div className={styles.listActions} aria-busy={syncing}>
           <strong>{symbols.length}</strong>
           <button
@@ -225,28 +222,24 @@ export default function CryptoMarketList({
             <Popover.Trigger asChild>
               <button className={styles.addButton} type="button" disabled={syncing || loading || !groupId}>
                 <Plus size={14} />
-                添加交易对
+                添加永续合约
               </button>
             </Popover.Trigger>
             <Popover.Portal>
               <Popover.Content
                 className={styles.addPopover}
-                aria-label="添加交易对"
+                aria-label="添加永续合约"
                 align="start"
                 sideOffset={8}
                 collisionPadding={8}
-                onInteractOutside={event => {
-                  // 下拉菜单通过 Portal 显示，选择选项时保留外层添加弹窗。
-                  if (event.target.closest('[data-slot="select-content"]')) event.preventDefault();
-                }}
                 onOpenAutoFocus={event => {
                   event.preventDefault();
                   inputRef.current?.focus();
                 }}
               >
                 <div className={styles.addTitle}>
-                  <span>添加交易对</span>
-                  <Popover.Close className={styles.iconButton} aria-label="关闭添加交易对" disabled={syncing}>
+                  <span>添加永续合约</span>
+                  <Popover.Close className={styles.iconButton} aria-label="关闭添加永续合约" disabled={syncing}>
                     <X size={16} />
                   </Popover.Close>
                 </div>
@@ -260,35 +253,16 @@ export default function CryptoMarketList({
                       onChange={event => setInput(event.target.value.toUpperCase())}
                       required
                       pattern="[A-Za-z0-9]+"
-                      maxLength={30 - quoteAsset.length}
+                      maxLength={30 - QUOTE_ASSET.length}
                       disabled={syncing}
                       autoComplete="off"
                     />
                   </label>
-                  <div className={styles.quoteField}>
-                    <span id="crypto-quote-label">计价币</span>
-                    <Select
-                      value={quoteAsset}
-                      onValueChange={setQuoteAsset}
-                      disabled={syncing}
-                      modal={false}
-                      items={QUOTE_ASSETS.map(asset => ({ value: asset, label: asset }))}
-                    >
-                      <SelectTrigger aria-labelledby="crypto-quote-label">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent alignItemWithTrigger={false}>
-                        <SelectGroup>
-                          {QUOTE_ASSETS.map(asset => (
-                            <SelectItem key={asset} value={asset}>
-                              {asset}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <p className={styles.formHint}>没有本地行情时同步最近一年的日 K。</p>
+                  <label>
+                    计价币
+                    <input value={QUOTE_ASSET} disabled />
+                  </label>
+                  <p className={styles.formHint}>使用 USDT 永续合约，无本地行情时同步最近一年日 K。</p>
                   {error && (
                     <p className={styles.error} role="alert">
                       {error}
@@ -309,7 +283,7 @@ export default function CryptoMarketList({
         </p>
       )}
       {symbols.length ? (
-        <div aria-label="交易对" className={sharedStyles.stockList}>
+        <div aria-label="永续合约" className={sharedStyles.stockList}>
           <AgGridProvider modules={modules}>
             <AgGridReact
               ref={gridRef}
@@ -344,7 +318,7 @@ export default function CryptoMarketList({
           </AgGridProvider>
         </div>
       ) : (
-        <div className={styles.listState}>{loading ? '正在读取交易对…' : '暂无交易对，点击上方添加交易对'}</div>
+        <div className={styles.listState}>{loading ? '正在读取永续合约…' : '暂无永续合约，点击上方添加永续合约'}</div>
       )}
     </>
   );

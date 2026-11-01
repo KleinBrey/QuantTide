@@ -1,4 +1,4 @@
-"""加密货币默认交易对池批量同步的集成回归。"""
+"""加密货币默认永续合约池批量同步的集成回归。"""
 
 import tempfile
 import unittest
@@ -26,9 +26,13 @@ class SyncCryptoDailyBarsTests(unittest.TestCase):
         self.provider = Mock()
         self.row = {
             "date_ms": 1793404800000,  # 2026-10-31 00:00 UTC
-            "open_price": 10, "high_price": 12, "low_price": 9,
-            "close_price": 11, "volume": 2.5, "turnover": 27.5,
-            "source": "Binance",
+            "open_price": 10,
+            "high_price": 12,
+            "low_price": 9,
+            "close_price": 11,
+            "volume": 2.5,
+            "turnover": 27.5,
+            "source": "Binance USD-M Perpetual",
         }
         self.provider.fetch_historical.return_value = [self.row]
 
@@ -49,25 +53,32 @@ class SyncCryptoDailyBarsTests(unittest.TestCase):
 
     def test_syncs_only_default_pool_with_shared_utc_range_and_upserts(self):
         self.add_pool(["BTCUSDT", "ETHUSDT"])
-        custom = self.watchlists.create_group("其他交易对", "CRYPTO")
+        custom = self.watchlists.create_group("其他永续合约", "CRYPTO")
         self.watchlists.add_item(custom["id"], "CRYPTO", "DOGEUSDT")
         us_pool = self.watchlists.ensure_default_pool("US")
         self.watchlists.add_item(us_pool["id"], "US", "AAPL")
         now = datetime(2026, 10, 31, 10, 30, tzinfo=timezone.utc)
-        with patch("backend.app.services.crypto_market_service.datetime", wraps=datetime) as clock:
+        with patch(
+            "backend.app.services.crypto_market_service.datetime", wraps=datetime
+        ) as clock:
             clock.now.return_value = now
-            self.assertEqual(self.sync(lookback_days=3, max_workers=2), {"symbols": 2, "rows": 2})
+            self.assertEqual(
+                self.sync(lookback_days=3, max_workers=2), {"symbols": 2, "rows": 2}
+            )
 
         calls = self.provider.fetch_historical.call_args_list
         self.assertEqual({call.args[0] for call in calls}, {"BTCUSDT", "ETHUSDT"})
         start = datetime(2026, 10, 29, tzinfo=timezone.utc)
         for call in calls:
-            self.assertEqual(call.args[1:], (int(start.timestamp() * 1000), int(now.timestamp() * 1000)))
+            self.assertEqual(
+                call.args[1:],
+                (int(start.timestamp() * 1000), int(now.timestamp() * 1000)),
+            )
         bars = self.repository.get_daily_bars("BTCUSDT")
         self.assertEqual(len(bars), 1)
         self.assertEqual(str(bars[0]["trade_date"].date()), "2026-10-31")
         self.assertEqual(bars[0]["amount"], 27.5)
-        self.assertEqual(bars[0]["source"], "Binance")
+        self.assertEqual(bars[0]["source"], "Binance USD-M Perpetual")
 
         self.row["close_price"] = 12
         self.sync(max_workers=1)
@@ -93,7 +104,7 @@ class SyncCryptoDailyBarsTests(unittest.TestCase):
             return [self.row]
 
         self.provider.fetch_historical.side_effect = fetch
-        with self.assertRaisesRegex(RuntimeError, "已写入 2 条，失败交易对：BADUSDT"):
+        with self.assertRaisesRegex(RuntimeError, "已写入 2 条，失败永续合约：BADUSDT"):
             self.sync(max_workers=1)
         self.assertEqual(self.provider.fetch_historical.call_count, 3)
         self.assertEqual(len(self.repository.get_daily_bars("BTCUSDT")), 1)
@@ -107,11 +118,17 @@ class SyncCryptoDailyBarsTests(unittest.TestCase):
         self.assertEqual(self.repository.list_symbols(), [])
 
     def test_invalid_parameters_do_not_request_provider(self):
-        for kwargs in [{"lookback_days": 0}, {"max_workers": 0}, {"request_interval": -1}]:
+        for kwargs in [
+            {"lookback_days": 0},
+            {"max_workers": 0},
+            {"request_interval": -1},
+        ]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 sync_crypto_daily_bars(
-                    provider=self.provider, database=self.database,
-                    app_database=self.business, **kwargs,
+                    provider=self.provider,
+                    database=self.database,
+                    app_database=self.business,
+                    **kwargs,
                 )
         self.provider.fetch_historical.assert_not_called()
 

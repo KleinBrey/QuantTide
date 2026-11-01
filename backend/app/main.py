@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
     watchlist_repository = WatchlistRepository(app_database)
     task_repository = TaskRepository(app_database)
 
-    # 启动时只确保默认分组存在；股票和交易对由用户在页面上添加。
+    # 启动时只确保默认分组存在；股票和永续合约由用户在页面上添加。
     for market in ("HK", "US", "CRYPTO", "FUTURES"):
         watchlist_repository.ensure_default_pool(market)
 

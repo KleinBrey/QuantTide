@@ -9,9 +9,11 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.routes import router
 from backend.app.jobs.tasks import database_sync_lock
-from backend.app.database import CryptoDuckDBDatabase
+from backend.app.database import CryptoDuckDBDatabase, SQLiteDatabase
 from backend.app.repository.crypto_market_db import CryptoMarketRepository
+from backend.app.repository.watchlist import WatchlistRepository
 from backend.app.services.crypto_market_service import CryptoMarketService
+from backend.app.services.watchlist_service import WatchlistService
 
 
 class CryptoMarketTests(unittest.TestCase):
@@ -31,7 +33,7 @@ class CryptoMarketTests(unittest.TestCase):
     def test_sync_persistence_utc_date_and_upsert(self):
         row = {"date_ms": 1767225600000, "open_price": 10, "high_price": 12,
                "low_price": 9, "close_price": 11, "volume": 2.5,
-               "turnover": 27.5, "source": "Binance"}
+               "turnover": 27.5, "source": "Binance USD-M Perpetual"}
         self.provider.fetch_historical.return_value = [row]
         self.assertEqual(self.client.get("/api/crypto/symbols").json(), [])
         self.assertIsNone(self.repository.get_latest_update_time())
@@ -59,6 +61,42 @@ class CryptoMarketTests(unittest.TestCase):
             response = self.client.post("/api/crypto/sync", json={"symbol": "BTCUSDT"})
         self.assertEqual(response.status_code, 409)
         self.provider.fetch_historical.assert_not_called()
+
+    def test_daily_bars_serves_perpetual_chart_and_watchlist_quotes(self):
+        self.assertEqual(self.client.get('/api/crypto/symbols').json(), [])
+        self.assertEqual(self.client.get('/api/crypto/daily-bars/BTCUSDT').json(), [])
+        self.assertIsNone(self.repository.get_latest_update_time())
+
+        business = SQLiteDatabase(Path(self.tmp.name) / 'app.sqlite')
+        business.initialize()
+        watchlists = WatchlistRepository(business)
+        group = watchlists.ensure_default_pool('CRYPTO')
+        watchlists.add_item(group['id'], 'CRYPTO', 'BTCUSDT')
+        self.client.app.state.watchlist_service = WatchlistService(
+            watchlists, Mock(), Mock(), Mock(), crypto_repository=self.repository,
+        )
+        items_url = f"/api/watchlists/groups/{group['id']}/items"
+        self.assertIsNone(self.client.get(items_url).json()[0]['price'])
+
+        self.provider.fetch_historical.return_value = [
+            dict(date_ms=1767225600000 + day * 86400000, open_price=20,
+                 high_price=22, low_price=19, close_price=close, volume=1,
+                 turnover=close, source='Binance USD-M Perpetual')
+            for day, close in [(0, 20), (1, 22)]
+        ]
+        response = self.client.post('/api/crypto/sync', json={'symbol': 'BTCUSDT'})
+        self.assertEqual(response.json()['rows'], 2)
+        bars = self.client.get('/api/crypto/daily-bars/BTCUSDT').json()
+        self.assertEqual([bar['close'] for bar in bars], [20, 22])
+        self.assertEqual({bar['source'] for bar in bars}, {'Binance USD-M Perpetual'})
+        item = self.client.get(items_url).json()[0]
+        self.assertEqual(item['price'], 22)
+        self.assertAlmostEqual(item['change_pct'], 10)
+        self.assertTrue(item['quote_date'].startswith('2026-01-02'))
+        self.db.initialize()
+        self.assertEqual([bar["close"] for bar in self.repository.get_daily_bars("BTCUSDT")], [20, 22])
+        with self.db.connection() as connection:
+            self.assertEqual(connection.execute("SHOW TABLES").fetchall(), [("daily_bars",)])
 
     def test_invalid_empty_and_upstream_failure(self):
         for body in [{"symbol": "BTC/USDT"}, {"symbol": "BTCUSDT", "days": 0}]:

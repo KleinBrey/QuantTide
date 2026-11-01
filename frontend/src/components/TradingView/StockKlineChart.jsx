@@ -319,7 +319,7 @@ export default function StockKlineChart({
       }
     });
 
-    // 低价交易对需要更多小数位；股票页面沿用原有精度。
+    // 低价永续合约需要更多小数位；股票页面沿用原有精度。
     const priceFormat =
       pricePrecision == null
         ? {}

@@ -1,4 +1,4 @@
-"""同步加密货币交易对池日 K 数据；通过 lookback_days 指定自然日范围。"""
+"""同步加密货币永续合约池日 K 数据；通过 lookback_days 指定自然日范围。"""
 
 from backend.app.config.config import get_settings
 from backend.app.database import CryptoDuckDBDatabase, SQLiteDatabase
@@ -17,7 +17,7 @@ def sync_crypto_daily_bars(
     database: CryptoDuckDBDatabase | None = None,
     app_database: SQLiteDatabase | None = None,
 ) -> dict[str, int]:
-    """初始化依赖并同步交易对池日 K；同步失败时向调用方抛出异常。"""
+    """初始化依赖并同步永续合约池日 K；同步失败时向调用方抛出异常。"""
     settings = get_settings()
     market_database = database or CryptoDuckDBDatabase(settings.crypto_database_path)
     market_database.initialize()
@@ -35,11 +35,11 @@ def sync_crypto_daily_bars(
         repository=CryptoMarketRepository(market_database),
         watchlist_repository=watchlist_repository,
     )
+    if max_workers is None:
+        max_workers = min(settings.sync_workers, lookback_days)
     return service.update_daily_bars(
         lookback_days,
-        max_workers=(
-            max_workers if max_workers is not None else min(settings.sync_workers, lookback_days)
-        ),
+        max_workers=max_workers,
         request_interval=request_interval,
     )
 

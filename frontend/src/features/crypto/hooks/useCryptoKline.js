@@ -15,18 +15,23 @@ export function useCryptoKline(symbol, revision) {
       return;
     }
     setLoading(true);
-    getCryptoBars(symbol).then(({ data }) => {
-      if (!cancelled) setData({ rows: data.map(row => ({ ...row, date: row.trade_date.slice(0, 10) })) });
-    }).catch(error => {
-      if (!cancelled) setError(error.message);
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    // 快速切换交易对时，忽略上一次请求的结果。
-    return () => { cancelled = true; };
+    getCryptoBars(symbol)
+      .then(({ data }) => {
+        if (!cancelled) setData({ rows: data.map(row => ({ ...row, date: row.trade_date.slice(0, 10) })) });
+      })
+      .catch(error => {
+        if (!cancelled) setError(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    // 快速切换永续合约时，忽略上一次请求的结果。
+    return () => {
+      cancelled = true;
+    };
   }, [symbol, revision]);
 
-  // 低价交易对增加小数位，高价交易对保持紧凑显示。
+  // 低价永续合约增加小数位，高价永续合约保持紧凑显示。
   const lowestPrice = Math.min(...(data?.rows || []).map(row => row.low).filter(price => price > 0));
   const pricePrecision = lowestPrice >= 1 ? 2 : Math.min(8, Math.ceil(-Math.log10(lowestPrice)) + 3);
   return { data, loading, error, pricePrecision };

@@ -73,7 +73,7 @@ class WatchlistDailyBarSyncTests(unittest.TestCase):
         self.yahoo = Mock()
         self.yahoo.fetch_historical.return_value = {"data": {"item": [bar]}}
         self.binance = Mock()
-        self.binance.fetch_historical.return_value = [{**bar, "turnover": 20, "source": "Binance"}]
+        self.binance.fetch_historical.return_value = [{**bar, "turnover": 20, "source": "Binance USD-M Perpetual"}]
         self.app = FastAPI()
         self.app.state.watchlist_service = Mock(repository=self.watchlists)
         self.app.state.cn_market_service = CNMarketService(

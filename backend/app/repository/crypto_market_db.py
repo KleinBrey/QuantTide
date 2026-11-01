@@ -1,4 +1,4 @@
-"""加密货币行情的数据库读写。"""
+"""加密货币永续合约行情的数据库读写。"""
 
 from datetime import datetime
 
@@ -13,24 +13,28 @@ class CryptoMarketRepository:
 
     def get_latest_update_time(self) -> datetime | None:
         with self.db.connection(read_only=True) as connection:
-            row = connection.execute("SELECT MAX(update_time) FROM daily_bars").fetchone()
-        return row[0] if row and row[0] is not None else None
+            row = connection.execute(
+                "SELECT MAX(update_time) FROM daily_bars"
+            ).fetchone()
+        return row[0]
 
     def list_symbols(self) -> list[dict]:
-        # 列表直接取已保存行情的交易对，无需再维护一份重复名单。
+        # 列表直接取已保存行情的永续合约，无需再维护一份重复名单。
         with self.db.connection() as connection:
-            return connection.execute("""
+            rows = connection.execute("""
                 SELECT symbol, max(trade_date) AS latest_date,
                        max(update_time) AS update_time
                 FROM daily_bars GROUP BY symbol ORDER BY symbol
-            """).df().to_dict(orient="records")
+            """).df()
+        return rows.to_dict(orient="records")
 
     def get_daily_bars(self, symbol: str) -> list[dict]:
         with self.db.connection() as connection:
-            return connection.execute("""
+            rows = connection.execute("""
                 SELECT symbol, trade_date, open, high, low, close, volume, amount, source
                 FROM daily_bars WHERE symbol = ? ORDER BY trade_date
-            """, [symbol]).df().to_dict(orient="records")
+            """, [symbol]).df()
+        return rows.to_dict(orient="records")
 
     def upsert_daily_bars(self, rows: pd.DataFrame) -> int:
         if rows.empty:

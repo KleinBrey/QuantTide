@@ -27,7 +27,7 @@ quanttide/
 │   ├── cn_market.duckdb       # A 股
 │   ├── hk_market.duckdb       # 港股
 │   ├── us_market.duckdb       # 美股
-│   └── crypto_market.duckdb   # 加密货币（币安现货）
+│   └── crypto_market.duckdb   # 加密货币（币安 U 本位永续合约）
 ├── frontend/
 ├── pyproject.toml
 └── README.md
@@ -169,7 +169,7 @@ HK、US 默认分组不可删除或重命名，CN 没有 `stock_pool`。移出�
 
 前端“任务列表”支持新增、编辑、删除、启停调度、立即执行和拖动排序，配置保存在 SQLite。
 拖动任务左侧手柄即可调整顺序，松开后自动保存到 `tasks.sort_order`，刷新或重启后保持顺序。
-新增任务追加到末尾；旧数据库启动时自动补齐排序字段并保留原有 ID 顺序。
+新增任务追加到末尾。
 `PUT /api/tasks/order` 接收 `{"ids": [任务ID, ...]}`，必须包含当前全部任务且不能重复。
 首次启动只创建空的 `tasks` 表，不预填任何任务。用户在前端点击“新增任务”配置脚本、参数和定时规则。
 FastAPI 启动时从 `tasks` 表恢复用户保存的调度。
@@ -186,8 +186,9 @@ A 股库表名统一为 `daily_stocks`、`daily_bars`、`daily_basic`、`daily_h
 回测按当日或此前最近快照选股，市值、热度与行情禁止引用未来日期。
 历史补数及缺失数据规则见 [后端说明](backend/README.md)。
 
-加密货币页面位于 `/crypto-market`，可添加币安现货交易对并手动同步最近一年的日 K。
-后端启动时自动初始化 `data/crypto_market.duckdb`；日线按 UTC 日期保存，包含当天尚未收盘的行情。
+加密货币页面位于 `/crypto-market`，可添加币安 USDT 永续合约并手动同步最近一年的日 K。
+后端启动时自动初始化 `data/crypto_market.duckdb` 的 `daily_bars` 表，列表和 K 线统一读取永续合约行情。
+分组点击刷新即可同步最近一年永续行情；日线按 UTC 日期保存，包含当天尚未收盘的行情。
 
 
 ### 期货（默认主力合约）

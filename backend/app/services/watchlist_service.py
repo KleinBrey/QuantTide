@@ -2,19 +2,25 @@ import re
 
 import pandas as pd
 
+from backend.app.provider.binance_provider import BinanceProvider
 from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.repository.futures_market_db import MAIN_CONTRACT_FILTER
 from backend.app.repository.watchlist_quotes import latest_watchlist_quotes
 from backend.app.utils.symbol import exchange_for, normalize_daily_bar_symbol
 
-MARKET_IDS = {"CN": "cn_stock", "HK": "hk_stock", "US": "us_stock", "FUTURES": "futures"}
+MARKET_IDS = {
+    "CN": "cn_stock",
+    "HK": "hk_stock",
+    "US": "us_stock",
+    "FUTURES": "futures",
+}
 
 
 def normalize_watchlist_symbol(symbol, market):
     value = symbol.strip().upper()
     if market == "CRYPTO":
         if not re.fullmatch(r"[A-Z0-9]{2,30}", value):
-            raise WatchlistError("交易对代码格式不正确，例如 BTCUSDT")
+            raise WatchlistError("永续合约代码格式不正确，例如 BTCUSDT")
         return value
     if market == "CN":
         if re.fullmatch(r"\d{6}", value):
@@ -56,7 +62,7 @@ class WatchlistService:
         if market == "CRYPTO":
             rows = repository.list_symbols()
             return [
-                {**row, "name": row["symbol"], "source": "Binance"}
+                {**row, "name": row["symbol"], "source": BinanceProvider.source}
                 for row in rows
                 if (symbols is None or row["symbol"] in symbols)
                 and (query is None or query.upper() in row["symbol"])
@@ -165,6 +171,6 @@ class WatchlistService:
             if market == "FUTURES":
                 raise WatchlistError("主力合约不存在，请先运行“期货市场同步”任务", 404)
             if market == "CRYPTO":
-                raise WatchlistError("交易对行情不存在，请先同步行情", 404)
+                raise WatchlistError("永续合约行情不存在，请先同步行情", 404)
             raise WatchlistError("股票基础信息不存在，请先添加到对应市场股票池", 404)
         return self.repository.add_item(group_id, market, symbol)

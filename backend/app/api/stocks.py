@@ -1,4 +1,4 @@
-"""股票列表、港美股股票池管理及加密货币交易对查询。"""
+"""股票列表、港美股股票池管理及加密货币永续合约查询。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,6 @@ def stocks(
     return stock_list
 
 
-
 @router.get("/market-stocks", response_model=list[GlobalStock])
 def market_stocks(
     watchlist_service: WatchlistServiceDep,
@@ -54,7 +53,6 @@ def market_stocks(
 
     pool = watchlist_service.repository.get_pool("HK" if market == "hk_stock" else "US")
     return watchlist_service.list_items(pool["id"])
-
 
 
 @router.post("/market-stocks", response_model=GlobalStock, status_code=201)
@@ -91,7 +89,6 @@ def add_market_stock(
         return rows.loc[rows["symbol"] == symbol].to_dict(orient="records")[0]
 
 
-
 @router.delete("/market-stocks")
 def delete_market_stock(
     watchlist_service: WatchlistServiceDep,
@@ -111,7 +108,6 @@ def delete_market_stock(
     return {"status": "success"}
 
 
-
 @router.post("/stocks-list")
 def update_daily_stocks(cn_market_service: CNMarketServiceDep) -> dict[str, str]:
     """从数据源获取最新股票列表，并保存到本地数据库。"""
@@ -123,4 +119,3 @@ def update_daily_stocks(cn_market_service: CNMarketServiceDep) -> dict[str, str]
         "status": "success",
         "message": "股票列表更新成功",
     }
-
