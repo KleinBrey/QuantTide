@@ -30,6 +30,7 @@ class FuturesMarketService:
         with concurrent_requests(
             EXCHANGES,
             fetch_exchange,
+            request_interval=0.3,
             max_workers=len(EXCHANGES),
             thread_name_prefix="futures-contracts",
         ) as results:
@@ -160,6 +161,7 @@ class FuturesMarketService:
         with concurrent_requests(
             tasks,
             fetch_batch,
+            request_interval=0.3,
             max_workers=worker_count,
             thread_name_prefix="futures-daily-bar",
         ) as results:
