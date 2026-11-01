@@ -7,24 +7,33 @@ QuantTide 是一个本地量化投研平台，使用 FastAPI、SQLite、DuckDB�
 ## 项目结构
 
 ```text
-quanttide/
+QuantTide/
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # API 路由和依赖
 │   │   ├── config/       # 应用配置
 │   │   ├── database/     # 数据库连接和表结构
+│   │   │   ├── duckdb/  # 行情数据库
+│   │   │   └── sqlite/  # 应用数据库
 │   │   ├── jobs/         # 定时任务
 │   │   ├── provider/     # 数据源接入
 │   │   ├── repository/   # 数据访问
 │   │   ├── schemas/      # API 数据模型
 │   │   ├── services/     # 同步和业务逻辑
-│   │   ├── strategy/     # 选股策略
 │   │   ├── utils/        # 通用工具
-│   │   ├── view/         # 命令行展示
 │   │   └── main.py       # FastAPI 入口
+│   ├── quant/
+│   │   ├── backtest/     # 回测引擎
+│   │   ├── factor/       # 因子计算
+│   │   ├── signal/       # 信号与形态识别
+│   │   ├── stock/        # 股票池与筛选
+│   │   └── strategy/     # 量化策略
 │   ├── scripts/          # 数据同步脚本
+│   ├── tests/            # 后端测试
+│   ├── .env              # 本地数据源与应用配置
 │   ├── dev.py            # 前后端启动管理
-│   └── run.py            # 后端启动入口
+│   ├── run.py            # 后端启动入口
+│   └── README.md         # 后端详细说明
 ├── data/
 │   ├── app.sqlite              # 自选分组、任务配置
 │   ├── cn_market.duckdb        # A 股
@@ -32,9 +41,28 @@ quanttide/
 │   ├── us_market.duckdb        # 美股
 │   ├── futures_market.duckdb   # 期货
 │   └── crypto_market.duckdb    # 加密货币
-├── frontend/             # 前端页面
+├── frontend/
+│   ├── public/           # 公共静态资源
+│   ├── src/
+│   │   ├── api/          # 后端与数据源请求
+│   │   ├── assets/       # 图片、图标
+│   │   ├── components/   # 通用组件
+│   │   ├── contexts/     # 主题、交易日历等共享状态
+│   │   ├── features/     # 行情、热度、信号、回测、数据同步等功能
+│   │   ├── hooks/        # 通用 React Hooks
+│   │   ├── layouts/      # 页面布局
+│   │   ├── pages/        # 页面入口
+│   │   ├── routes/       # 路由配置
+│   │   ├── shadcn/       # UI 基础组件与工具
+│   │   ├── utils/        # 前端工具
+│   │   ├── App.jsx       # 应用组件
+│   │   └── main.jsx      # 前端启动入口
+│   ├── .env              # 本地前端配置
+│   ├── package.json      # 前端依赖与运行命令
+│   └── vite.config.js    # Vite 配置
 ├── start.command         # 一键启动
 ├── pyproject.toml        # Python 依赖配置
+├── uv.lock               # Python 依赖锁定
 └── README.md
 ```
 
