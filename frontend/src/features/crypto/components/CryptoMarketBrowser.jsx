@@ -3,6 +3,7 @@ import WatchlistGroups from '@/components/watchlist/WatchlistGroups.jsx';
 import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
 import { useCryptoMarket } from '../hooks/useCryptoMarket.js';
 import { useCryptoKline } from '../hooks/useCryptoKline.js';
+import { pairName } from '../utils/pairName.js';
 import CryptoMarketList from './CryptoMarketList.jsx';
 import styles from './CryptoMarketBrowser.module.css';
 
@@ -23,7 +24,8 @@ export default function CryptoMarketBrowser() {
           <div className={styles.chartPane}>
             {market.selected ? (
               <StockKlineChart {...kline} fillContainer enableMouseWheelZoom
-                stock={{ name: '现货', symbol: market.selected }}
+                stock={{ name: pairName(market.selected), symbol: market.selected }}
+                showStockCode={false}
                 period={period} onPeriodChange={setPeriod} />
             ) : <div className={styles.emptyChart}>添加交易对后，在这里查看 K 线与成交量。</div>}
           </div>

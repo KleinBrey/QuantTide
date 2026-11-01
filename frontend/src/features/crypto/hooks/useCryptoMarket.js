@@ -87,6 +87,7 @@ export function useCryptoMarket() {
       } finally {
         // 部分交易对失败时也重新读取已经保存的行情。
         setRevision(value => value + 1);
+        await load();
       }
     }, true);
   }

@@ -16,7 +16,7 @@
 .browser {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
@@ -96,23 +96,6 @@
 .submitButton:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.pairName {
-  font-size: 13px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pairName strong {
-  font-weight: 600;
-}
-
-.pairName .quoteAsset {
-  color: #a1a1aa;
-  font-weight: 400;
 }
 
 .chartPane {

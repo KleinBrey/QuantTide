@@ -102,6 +102,64 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(response.status_code, status, response.text)
         return response.json()
 
+    def test_latest_saved_quotes_across_all_five_markets(self):
+        from backend.app.database import CryptoDuckDBDatabase, FuturesDuckDBDatabase
+        from backend.app.repository.crypto_market_db import CryptoMarketRepository
+        from backend.app.repository.futures_market_db import FuturesMarketRepository
+
+        for market, database_class, repository_class in [
+            ('CRYPTO', CryptoDuckDBDatabase, CryptoMarketRepository),
+            ('FUTURES', FuturesDuckDBDatabase, FuturesMarketRepository),
+        ]:
+            db = database_class(self.business.database_path.parent / f'{market}.duckdb')
+            db.initialize()
+            self.service.stock_repositories[market] = repository_class(db)
+        futures = self.service.stock_repositories['FUTURES']
+        futures.upsert_contracts(pd.DataFrame([dict(
+            symbol='RB.SHF', name='螺纹钢主力', exchange='SHFE', code='RB',
+            main_symbol='RB2701.SHF', main_name='螺纹钢2701', trade_date='2026-10-30',
+        )]))
+        group_id = self.create_group('全部资产')
+        members = [('CN', '300308.SZ'), ('HK', '00700.HK'), ('US', 'NVDA'),
+                   ('FUTURES', 'RB.SHF'), ('CRYPTO', 'BTCUSDT')]
+        for index, (market, symbol) in enumerate(members):
+            repo = self.service.stock_repositories[market]
+            # 各市场、各代码独立取最近两根日 K，不依赖输入顺序或市场最新日期。
+            with repo.db.connection() as connection:
+                for day, close in [('2026-10-30', 11 + index), ('2026-10-28', 8), ('2026-10-29', 10)]:
+                    connection.execute('''
+                        INSERT INTO daily_bars
+                            (symbol, trade_date, open, high, low, close, volume, amount, source)
+                        VALUES (?, ?, 10, 20, 0, ?, 1, 10, 'Test')
+                    ''', [symbol, day, close])
+            self.add_item(group_id, market, symbol)
+        self.add_item(group_id, 'US', 'AAPL')
+        items = self.client.get(f'/api/watchlists/groups/{group_id}/items').json()
+        self.assertEqual([item['symbol'] for item in items], [symbol for _, symbol in members] + ['AAPL'])
+        for index, item in enumerate(items[:-1]):
+            self.assertEqual(item['price'], 11 + index)
+            self.assertAlmostEqual(item['change_pct'], 10 + index * 10)
+            self.assertTrue(item['quote_date'].startswith('2026-10-30'))
+        self.assertEqual(items[3]['display_symbol'], 'RB2701.SHF')
+        self.assertIsNone(items[-1]['price'])
+        self.assertIsNone(items[-1]['change_pct'])
+        self.assertIsNone(items[-1]['quote_date'])
+
+    def test_quote_missing_previous_close_and_zero_previous_close(self):
+        group_id = self.repository.get_pool('US')['id']
+        with self.us.db.connection() as connection:
+            for symbol, day, close in [('NVDA', '2026-10-29', 0), ('NVDA', '2026-10-30', 11),
+                                       ('AAPL', '2026-10-28', 9)]:
+                connection.execute('''
+                    INSERT INTO daily_bars
+                        (symbol, trade_date, open, high, low, close, volume, source)
+                    VALUES (?, ?, 10, 20, 0, ?, 1, 'Test')
+                ''', [symbol, day, close])
+        items = self.client.get(f'/api/watchlists/groups/{group_id}/items').json()
+        self.assertEqual([item['price'] for item in items], [11, 9])
+        self.assertTrue(all(item['change_pct'] is None for item in items))
+        self.assertTrue(items[1]['quote_date'].startswith('2026-10-28'))
+
     def test_default_pools_share_sqlite_with_tasks(self):
         groups = self.repository.list_groups()
         pools = [group for group in groups if group['is_default']]

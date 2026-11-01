@@ -4,6 +4,7 @@ import pandas as pd
 
 from backend.app.repository.watchlist import WatchlistError, WatchlistRepository
 from backend.app.repository.futures_market_db import MAIN_CONTRACT_FILTER
+from backend.app.repository.watchlist_quotes import latest_watchlist_quotes
 from backend.app.utils.symbol import exchange_for, normalize_daily_bar_symbol
 
 MARKET_IDS = {"CN": "cn_stock", "HK": "hk_stock", "US": "us_stock", "FUTURES": "futures"}
@@ -114,6 +115,7 @@ class WatchlistService:
     def list_items(self, group_id):
         items = self.repository.list_items(group_id)
         metadata = {}
+        quotes = {}
         for market in self.stock_repositories:
             symbols = [item["symbol"] for item in items if item["market"] == market]
             metadata.update(
@@ -122,12 +124,25 @@ class WatchlistService:
                     for row in self._metadata(market, symbols)
                 }
             )
+            if symbols:
+                quotes.update(
+                    {
+                        (market, row["symbol"]): row
+                        for row in latest_watchlist_quotes(
+                            self.stock_repositories[market].db, symbols
+                        )
+                    }
+                )
         return [
             {
                 **item,
                 **metadata.get(
                     (item["market"], item["symbol"]),
                     {"name": item["symbol"], "source": None, "update_time": None},
+                ),
+                **quotes.get(
+                    (item["market"], item["symbol"]),
+                    {"price": None, "change_pct": None, "quote_date": None},
                 ),
             }
             for item in items

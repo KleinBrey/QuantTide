@@ -16,7 +16,7 @@
 .browser {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
@@ -118,8 +118,17 @@
   width: 100%;
 }
 
-.stockItem span {
-  font-size: 13px;
+.assetIdentity {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.assetName {
+  font-size: 14px;
   font-weight: 600;
   min-width: 0;
   overflow: hidden;
@@ -127,11 +136,38 @@
   white-space: nowrap;
 }
 
-.stockItem small {
-  color: #71717a;
-  flex: 0 0 auto;
+.assetSymbol {
+  color: #a1a1aa;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetQuote {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  gap: 14px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.assetChange {
+  min-width: 58px;
+}
+
+.quoteUp {
+  color: #f04451;
+}
+
+.quoteDown {
+  color: #24bd7a;
 }
 
 .stockList :global(.ag-row-selected) small,

@@ -43,6 +43,9 @@ function MarketStockContent({ marketId, market, stockList }) {
   const { selectedStock } = stockList;
   const kline = useMarketStockKline(marketId, selectedStock?.symbol, stockList.revision);
   const [period, setPeriod] = useState('daily');
+  const chartStock = marketId === 'futures' && selectedStock
+    ? { ...selectedStock, symbol: (selectedStock.display_symbol || selectedStock.symbol)?.split('.')[0] }
+    : selectedStock;
 
   return (
     <div className={styles.browser}>
@@ -60,7 +63,7 @@ function MarketStockContent({ marketId, market, stockList }) {
           loading={kline.loading}
           onPeriodChange={setPeriod}
           period={period}
-          stock={selectedStock}
+          stock={chartStock}
         />
       </div>
     </div>

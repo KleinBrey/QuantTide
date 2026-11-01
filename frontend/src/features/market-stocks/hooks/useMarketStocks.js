@@ -149,6 +149,7 @@ export function useMarketStocks(marketId) {
         // 部分失败时也刷新已保存的行情，同时清除组内其他资产的旧缓存。
         invalidateMarketStockKlines(marketId);
         if (activeMarketRef.current === market) setRevision(value => value + 1);
+        await loadStocks();
         setSyncing(false);
       }
     });

@@ -22,22 +22,9 @@ import {
   SelectValue
 } from '@/shadcn/components/ui/select.jsx';
 import sharedStyles from '@/components/watchlist/MarketBrowser.module.css';
+import AssetListItemContent from '@/components/watchlist/AssetListItemContent.jsx';
+import { pairName, QUOTE_ASSETS } from '../utils/pairName.js';
 import styles from './CryptoMarketBrowser.module.css';
-
-const QUOTE_ASSETS = ['USDT', 'USDC', 'FDUSD', 'TUSD', 'DAI', 'BTC', 'ETH', 'BNB', 'EUR', 'TRY'];
-
-function PairName({ symbol }) {
-  // 只拆分显示名称，请求、分组和排序仍使用原始交易对代码。
-  const quote = QUOTE_ASSETS.find(asset => symbol.length > asset.length && symbol.endsWith(asset));
-  const base = quote ? symbol.slice(0, -quote.length) : symbol;
-
-  return (
-    <span className={styles.pairName}>
-      <strong>{base}</strong>
-      {quote && <span className={styles.quoteAsset}> /{quote}</span>}
-    </span>
-  );
-}
 
 const modules = [
   ClientSideRowModelModule,
@@ -81,8 +68,7 @@ function CryptoDragPreview({ dragSource }) {
       aria-hidden="true"
     >
       <div className={sharedStyles.stockItem}>
-        <PairName symbol={rowNode.data.symbol} />
-        <small>现货</small>
+        <AssetListItemContent {...rowNode.data} name={pairName(rowNode.data.symbol)} />
       </div>
     </div>
   );
@@ -95,8 +81,7 @@ function CryptoCell({ data: item, context }) {
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild disabled={disabled}>
         <div data-crypto-row className={sharedStyles.stockItem} title={item.symbol}>
-          <PairName symbol={item.symbol} />
-          <small>现货</small>
+          <AssetListItemContent {...item} name={pairName(item.symbol)} />
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -335,7 +320,7 @@ export default function CryptoMarketList({
               context={context}
               getRowId={getRowId}
               headerHeight={0}
-              rowHeight={45}
+              rowHeight={54}
               rowSelection={rowSelection}
               rowDragManaged
               rowDragEntireRow

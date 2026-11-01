@@ -15,6 +15,7 @@ import { ChevronRight, ChevronsDown, ChevronsUp, FolderPlus, Loader2, Plus, Refr
 import { ContextMenu, Popover } from 'radix-ui';
 
 import CNStockSearch from './CNStockSearch.jsx';
+import AssetListItemContent from '@/components/watchlist/AssetListItemContent.jsx';
 import styles from '@/components/watchlist/MarketBrowser.module.css';
 
 const modules = [
@@ -59,8 +60,7 @@ function StockDragPreview({ dragSource }) {
       aria-hidden="true"
     >
       <div className={styles.stockItem}>
-        <span>{rowNode.data.name}</span>
-        <small>{rowNode.data.display_symbol || rowNode.data.symbol}</small>
+        <AssetListItemContent {...rowNode.data} symbol={rowNode.data.display_symbol || rowNode.data.symbol} />
       </div>
     </div>
   );
@@ -72,8 +72,7 @@ function StockCell({ data, context }) {
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild disabled={context.disabled}>
         <div data-stock-row className={styles.stockItem} title={`${data.name} · ${data.display_symbol || data.symbol}${data.trade_date ? ` · 主力映射日期 ${data.trade_date}` : ''}`}>
-          <span>{data.name}</span>
-          <small>{data.display_symbol || data.symbol}</small>
+          <AssetListItemContent {...data} symbol={data.display_symbol || data.symbol} />
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -336,7 +335,7 @@ export default function MarketStockList({
               context={context}
               getRowId={getRowId}
               headerHeight={0}
-              rowHeight={45}
+              rowHeight={54}
               rowSelection={rowSelection}
               rowDragManaged
               rowDragEntireRow

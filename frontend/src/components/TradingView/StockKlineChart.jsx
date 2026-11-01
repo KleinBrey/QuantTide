@@ -198,6 +198,7 @@ export default function StockKlineChart({
   emptyTitle = '个股 K 线',
   data,
   stock,
+  showStockCode = true,
   loading,
   error,
   period,
@@ -319,9 +320,12 @@ export default function StockKlineChart({
     });
 
     // 低价交易对需要更多小数位；股票页面沿用原有精度。
-    const priceFormat = pricePrecision == null ? {} : {
-      priceFormat: { type: 'price', precision: pricePrecision, minMove: 10 ** -pricePrecision }
-    };
+    const priceFormat =
+      pricePrecision == null
+        ? {}
+        : {
+            priceFormat: { type: 'price', precision: pricePrecision, minMove: 10 ** -pricePrecision }
+          };
     const candleSeries = chart.addSeries(CandlestickSeries, {
       ...priceFormat,
       upColor: '#ef4444',
@@ -428,7 +432,7 @@ export default function StockKlineChart({
     <section className={`${styles.kline}${fillContainer ? ` ${styles.fillContainer}` : ''}`}>
       <div className={styles.header}>
         <div>
-          <h3>{stock ? `${stockName}  |  ${String(stockCode)}` : emptyTitle}</h3>
+          <h3>{stock ? (showStockCode ? `${stockName}  |  ${String(stockCode)}` : stockName) : emptyTitle}</h3>
           {/* <span>TradingView Charts</span> */}
         </div>
         <div className={styles.periods}>
