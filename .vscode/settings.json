@@ -24,16 +24,14 @@
     {
       "alias": "hk_market",
       "type": "file",
-      "path": "${workspaceFolder}/data/hk_market.duckdb",
-      "attached": false,
-      "readOnly": false
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/hk_market.duckdb",
+      "attached": false
     },
     {
       "alias": "us_market",
       "type": "file",
-      "path": "${workspaceFolder}/data/us_market.duckdb",
-      "attached": false,
-      "readOnly": false
+      "path": "/Users/kleinbrey/Documents/QuantTide/data/us_market.duckdb",
+      "attached": false
     },
     {
       "alias": "cn_market",
@@ -57,7 +55,7 @@
       "readOnly": false
     }
   ],
-  "duckdb.defaultDatabase": "futures_market",
+  "duckdb.defaultDatabase": "us_market",
   "[sql]": {
     "editor.formatOnSave": false
   }

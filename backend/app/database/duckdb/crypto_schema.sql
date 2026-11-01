@@ -6,11 +6,10 @@ CREATE TABLE IF NOT EXISTS daily_bars (
     high DOUBLE NOT NULL,
     low DOUBLE NOT NULL,
     close DOUBLE NOT NULL,
-    volume DOUBLE NOT NULL CHECK (volume >= 0),
+    volume DOUBLE NOT NULL,
     amount DOUBLE NOT NULL,
     source VARCHAR NOT NULL,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (symbol, trade_date),
-    CHECK (high >= greatest(open, low, close)),
-    CHECK (low <= least(open, high, close))
+    CHECK (volume >= 0)
 );

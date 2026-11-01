@@ -31,10 +31,6 @@ CREATE TABLE IF NOT EXISTS daily_bars (
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   -- 同一股票、同一交易日只能存在一条记录。
   PRIMARY KEY (symbol, trade_date),
-  -- 最高价必须不低于开盘价、最高价、最低价和收盘价中的任意值。
-  CHECK (high >= greatest(open, high, low, close)),
-  -- 最低价必须不高于开盘价、最高价、最低价和收盘价中的任意值。
-  CHECK (low <= least(open, high, low, close)),
   -- 成交量不能为负数。
   CHECK (volume >= 0)
 );

@@ -15,9 +15,16 @@ CREATE TABLE IF NOT EXISTS contracts (
 CREATE TABLE IF NOT EXISTS daily_bars (
     symbol VARCHAR NOT NULL,
     trade_date DATE NOT NULL,
-    open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,
-    volume DOUBLE, amount DOUBLE, settle DOUBLE, open_interest DOUBLE,
+    open DOUBLE,
+    high DOUBLE,
+    low DOUBLE,
+    close DOUBLE,
+    volume DOUBLE,
+    amount DOUBLE,
+    settle DOUBLE,
+    open_interest DOUBLE,
     source VARCHAR NOT NULL DEFAULT 'Tushare',
     update_time TIMESTAMP NOT NULL DEFAULT current_timestamp,
-    PRIMARY KEY (symbol, trade_date)
+    PRIMARY KEY (symbol, trade_date),
+    CHECK (volume >= 0)
 );
