@@ -159,6 +159,7 @@ export default function MarketStockList({
   const [symbol, setSymbol] = useState('');
   const [name, setName] = useState('');
   const [addError, setAddError] = useState('');
+  const selectedSymbol = selectedStock?.symbol;
   const disabled = loading || mutating;
   const context = useMemo(
     () => ({ stocks, disabled, moveStock, removeStock, groups, groupId, addToGroup }),
@@ -177,12 +178,12 @@ export default function MarketStockList({
   useEffect(() => {
     const api = gridRef.current?.api;
     if (!api || api.isDestroyed()) return;
-    const node = api.getRowNode(selectedStock?.symbol);
+    const node = api.getRowNode(selectedSymbol);
     if (node) {
       node.setSelected(true);
       api.ensureNodeVisible(node);
     }
-  }, [selectedStock]);
+  }, [selectedSymbol]);
 
   const handleAdd = async event => {
     event.preventDefault();
@@ -353,6 +354,7 @@ export default function MarketStockList({
               }}
               onFirstDataRendered={({ api }) => syncSelection(api)}
               onRowDataUpdated={({ api }) => syncSelection(api)}
+              suppressScrollOnNewData
               suppressHorizontalScroll
               animateRows
             />

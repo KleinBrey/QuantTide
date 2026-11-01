@@ -217,9 +217,20 @@ export function useMarketStocks(marketId) {
 
   const removeStock = symbol =>
     runAction(async () => {
-      const item = stocks.find(stock => stock.symbol === symbol);
-      await deleteWatchlistItemApi(activeGroupsRef.current[market], item.id);
-      await loadStocks();
+      const index = stocks.findIndex(stock => stock.symbol === symbol);
+      if (index === -1) return;
+      const item = stocks[index];
+      const activeGroupId = activeGroupsRef.current[market];
+      await deleteWatchlistItemApi(activeGroupId, item.id);
+      if (activeMarketRef.current !== market || activeGroupsRef.current[market] !== activeGroupId) return;
+
+      // 删除后原位更新，保留其他选中项；删除选中项时优先选择下一条，末尾则选上一条。
+      allItemsRef.current = allItemsRef.current.filter(stock => stock.id !== item.id);
+      const remaining = stocks.filter(stock => stock.id !== item.id);
+      setStocks(remaining);
+      setSelectedStock(current =>
+        current?.symbol === symbol ? remaining[Math.min(index, remaining.length - 1)] || null : current
+      );
     });
 
   const reorderStocks = next =>

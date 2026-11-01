@@ -312,6 +312,7 @@ export default function CryptoMarketList({
               }}
               onFirstDataRendered={({ api }) => syncSelection(api)}
               onRowDataUpdated={({ api }) => syncSelection(api)}
+              suppressScrollOnNewData
               suppressHorizontalScroll
               animateRows
             />

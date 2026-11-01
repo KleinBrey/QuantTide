@@ -162,8 +162,20 @@ export function useCryptoMarket() {
     });
   const removeSymbol = item =>
     action(async () => {
-      await deleteWatchlistItemApi(groupId, item.id);
-      await load();
+      const index = symbols.findIndex(symbol => symbol.id === item.id);
+      if (index === -1) return;
+      const activeGroupId = activeGroup.current;
+      const currentRequestId = requestId.current;
+      await deleteWatchlistItemApi(activeGroupId, item.id);
+      if (activeGroup.current !== activeGroupId || requestId.current !== currentRequestId) return;
+
+      // 删除后原位更新；删除选中项时优先选择下一条，末尾则选上一条。
+      allItems.current = allItems.current.filter(symbol => symbol.id !== item.id);
+      const remaining = symbols.filter(symbol => symbol.id !== item.id);
+      setSymbols(remaining);
+      setSelected(current =>
+        current === item.symbol ? remaining[Math.min(index, remaining.length - 1)]?.symbol || '' : current
+      );
     });
   const reorderSymbols = next =>
     action(async () => {
