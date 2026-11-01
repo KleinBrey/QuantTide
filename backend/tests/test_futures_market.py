@@ -95,7 +95,7 @@ class FuturesMarketTests(unittest.TestCase):
             close=3050, vol=100, amount=12, settle=3040, oi=200,
         )])
         self.service.update_daily_bars(366)
-        self.assertEqual(self.provider.fetch_futures_daily.call_count, 2)
+        self.assertEqual(self.provider.fetch_futures_daily.call_count, 1)
         rows = self.repo.get_by_symbol_and_date_range('RB.SHF', date(2026, 1, 1), date(2026, 12, 31))
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows.iloc[0].amount, 120000)

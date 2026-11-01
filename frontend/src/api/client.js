@@ -1,4 +1,4 @@
-const API_BASE_URLS = [import.meta.env.VITE_API_BASE_URL, 'http://127.0.0.1:8001'].filter(Boolean);
+const API_BASE_URLS = [import.meta.env.VITE_API_BASE_URL, 'http://127.0.0.1:18765'].filter(Boolean);
 
 function networkError(lastError) {
   const targets = API_BASE_URLS.join('、');

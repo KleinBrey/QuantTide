@@ -11,6 +11,7 @@ from ..utils.progress import progress_bar, progress_write
 # CFFEX-中金所 DCE-大商所 CZCE-郑商所 SHFE-上期所
 # INE-上海国际能源交易中心 GFEX-广州期货交易所
 EXCHANGES = ("CFFEX", "DCE", "CZCE", "SHFE", "INE", "GFEX")
+DAILY_BATCH_DAYS = 1000
 
 
 class FuturesMarketService:
@@ -138,13 +139,13 @@ class FuturesMarketService:
             return {"contracts": 0, "rows": 0}
         end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
         start = end - timedelta(days=lookback_days - 1)
-        # 每次最多一年，单合约不会触及 fut_daily 的 2000 条上限。
-        offsets = range(0, lookback_days, 365)
+        # 每批最多 1000 个自然日，单合约不会触及 fut_daily 的 2000 条上限。
+        offsets = range(0, lookback_days, DAILY_BATCH_DAYS)
         tasks = (
             (
                 item["symbol"],
                 start + timedelta(days=offset),
-                min(start + timedelta(days=offset + 364), end),
+                min(start + timedelta(days=offset + DAILY_BATCH_DAYS - 1), end),
             )
             for item in items
             for offset in offsets

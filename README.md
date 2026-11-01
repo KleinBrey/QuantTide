@@ -114,8 +114,9 @@ cd frontend && npm install
 
 macOS 也可以在 Finder 中双击根目录的 `start.command`。
 前后端会在同一个终端启动，浏览器自动打开 <http://127.0.0.1:5173>，
-API 文档位于 <http://127.0.0.1:8001/docs>。按 `Ctrl+C` 同时停止两个服务；
-任一服务退出也会自动停止另一服务。端口被占用时会提示，避免重复启动。
+API 文档位于 <http://127.0.0.1:18765/docs>。按 `Ctrl+C` 同时停止两个服务；
+任一服务退出也会自动停止另一服务。启动时若后端端口 18765 或前端端口 5173 被占用，
+会自动停止占用进程；等待 5 秒仍未释放时强制停止原占用进程，确认端口可用后再启动项目。
 
 也可以运行 `uv run python -m backend.dev`，或在 VS Code 的“终端 → 运行任务”中选择“启动：完整看板”。
 
@@ -129,10 +130,10 @@ uv run quant-api
 
 ```bash
 uv run uvicorn backend.app.main:app \
-  --host 127.0.0.1 --port 8001 --reload
+  --host 127.0.0.1 --port 18765 --reload
 ```
 
-- Swagger：<http://127.0.0.1:8001/docs>
+- Swagger：<http://127.0.0.1:18765/docs>
 - `GET /api/stocks-list`：读取本地股票列表
 - `POST /api/stocks-list`：从 Tushare 更新股票列表
 

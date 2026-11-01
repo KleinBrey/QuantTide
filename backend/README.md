@@ -27,7 +27,7 @@ FastAPI 入口，负责初始化数据库、组装 Provider、Repository 和各�
 
 ```bash
 uv run uvicorn backend.app.main:app \
-  --host 127.0.0.1 --port 8001 --reload
+  --host 127.0.0.1 --port 18765 --reload
 ```
 
 ### `app/api/`

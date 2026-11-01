@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 from pathlib import Path
 import shutil
@@ -13,6 +14,71 @@ import time
 
 
 ROOT = Path(__file__).resolve().parent.parent
+PORT_RELEASE_TIMEOUT = 5
+
+
+def _port_available(port: int) -> bool:
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError as exc:
+            if exc.errno == errno.EADDRINUSE:
+                return False
+            raise
+    return True
+
+
+def _listener_pids(port: int) -> set[int]:
+    lsof = shutil.which("lsof")
+    if lsof is None:
+        raise RuntimeError("未找到 lsof，无法自动清理占用端口的进程。")
+    result = subprocess.run(
+        [lsof, "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    # lsof returns 1 when no listeners remain (e.g. they just exited).
+    if result.returncode not in (0, 1) or result.stderr.strip():
+        raise RuntimeError(f"查询端口 {port} 失败：{result.stderr.strip()}")
+    return {int(pid) for pid in result.stdout.split()}
+
+
+def _wait_for_port(port: int) -> bool:
+    deadline = time.monotonic() + PORT_RELEASE_TIMEOUT
+    while not _port_available(port):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def _release_port(port: int) -> None:
+    if _port_available(port):
+        return
+    pids = _listener_pids(port)
+    if os.getpid() in pids:
+        raise RuntimeError(f"当前启动进程正在占用端口 {port}，无法自动停止自身。")
+    for pid in sorted(pids):
+        print(f"端口 {port} 被进程 {pid} 占用，正在停止…", flush=True)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    if _wait_for_port(port):
+        print(f"端口 {port} 已释放。", flush=True)
+        return
+    # Only force-stop the original listeners that still occupy this port.
+    for pid in sorted(pids & _listener_pids(port)):
+        print(f"进程 {pid} 未退出，正在强制停止…", flush=True)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if not _wait_for_port(port):
+        raise RuntimeError(f"端口 {port} 仍被占用，无法启动项目。")
+    print(f"端口 {port} 已释放。", flush=True)
 
 
 def _stop(processes: list[subprocess.Popen]) -> None:
@@ -44,14 +110,12 @@ def main() -> int:
     if not (ROOT / "frontend/node_modules/.bin/vite").exists():
         print("前端依赖未安装，请先运行：cd frontend && npm install", file=sys.stderr)
         return 1
-    for port in (8001, 5173):
-        with socket.socket() as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                probe.bind(("127.0.0.1", port))
-            except OSError as exc:
-                print(f"无法使用端口 {port}，请检查是否已有服务运行：{exc}", file=sys.stderr)
-                return 1
+    try:
+        for port in (18765, 5173):
+            _release_port(port)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        print(f"清理启动端口失败：{exc}", file=sys.stderr)
+        return 1
 
     processes: list[subprocess.Popen] = []
 
@@ -63,7 +127,7 @@ def main() -> int:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     }
     try:
-        print("正在启动 QuantTide：前端 http://127.0.0.1:5173，API http://127.0.0.1:8001/docs", flush=True)
+        print("正在启动 QuantTide：前端 http://127.0.0.1:5173，API http://127.0.0.1:18765/docs", flush=True)
         print("浏览器将自动打开；按 Ctrl+C 同时停止前后端。", flush=True)
         for command in (
             [sys.executable, "-m", "backend.run"],

@@ -26,7 +26,7 @@ export class QuantClient extends HttpClient {
 
 // 创建Quant连接
 const request = new QuantClient({
-  baseURL: import.meta.env.VITE_QUANT_API_URL || 'http://127.0.0.1:8001'
+  baseURL: import.meta.env.VITE_QUANT_API_URL || 'http://127.0.0.1:18765'
 });
 
 export default request;
