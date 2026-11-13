@@ -38,13 +38,11 @@ from backend.app.repository import (
     DailyHotRepository,
     DailyStockRepository,
 )
-from backend.quant.factor import calculate_volume_ratio
+from backend.quant.signal.range_utils import DateLike, normalize_trade_dates
 from backend.quant.stock import filter_market_cap, filter_static_stocks
 from backend.quant.stock.universe import match_stock_snapshots
 
 console = Console()
-
-DateLike = date | str | pd.Timestamp
 
 # 形态识别最终向信号 API 暴露的字段，不包含买卖规则。
 RESULT_COLUMNS = [
@@ -147,64 +145,70 @@ class TodayConfirmedBreakoutPattern:
     def scan_range(
         self,
         trade_dates: Iterable[DateLike],
-        latest_stocks: pd.DataFrame,
+        historical_stocks: pd.DataFrame,
         daily_bars: pd.DataFrame,
-        latest_hot: pd.DataFrame,
-        latest_basic: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
     ) -> pd.DataFrame:
         """一次计算多个确认日的信号，避免逐日重复扫描行情。"""
 
-        confirm_dates = self._normalize_dates(trade_dates)
-        if confirm_dates.empty or latest_stocks.empty or daily_bars.empty:
+        confirm_dates = normalize_trade_dates(trade_dates)
+        if confirm_dates.empty or historical_stocks.empty or daily_bars.empty:
             return _empty_result()
-        if "trade_date" not in latest_stocks:
+        if "trade_date" not in historical_stocks:
             raise ValueError("股票池必须包含 trade_date")
 
-        # 1. 行情准备：确认日配突破日，清洗行情，只留用得到的时间段。
+        # 1. 基础筛选：按确认日匹配股票池、市值，排除 ST、科创板、北交所。
+        candidates = self.filter_stocks(
+            historical_stocks, historical_basic, daily_bars, confirm_dates
+        )
+        if candidates.empty:
+            return _empty_result()
+
+        # 2. 只保留候选股票的有效行情，以及指标需要的前置交易日。
         date_pairs = self._pair_dates(daily_bars, confirm_dates)
-        bars = self._prepare_bars(daily_bars, latest_stocks["symbol"])
+        bars = self.clean_daily_bars(daily_bars, candidates["symbol"])
         bars = self._trim_bars(bars, date_pairs, confirm_dates.max())
         if bars.empty:
             return _empty_result()
 
-        # 2. 突破阶段：计算指标并筛选突破日。
-        bars = self._add_breakout_indicators(bars)
-        signals = self._select_breakout_signals(bars, date_pairs)
+        # 3. 一次计算突破日和确认日的量比、涨幅、均线与影线指标。
+        indicators = self.calculate_indicators(bars, date_pairs)
 
-        # 3. 确认阶段：拼上确认日 K 线，检查形态。
-        signals = self._attach_confirm_bars(signals, bars, confirm_dates)
-        signals = self._apply_confirmation(signals)
-        if signals.empty:
-            return _empty_result()
+        # 4. 按股票和确认日合并，依次过滤突破条件、次日确认条件。
+        result = candidates.merge(indicators, on=["symbol", "confirm_date"], how="inner")
+        result = self._filter_breakout(result)
+        result = self._filter_confirmation(result)
 
-        # 4. 补充基本面与热度，最后排名。只处理已通过形态的少量信号。
-        signals = match_stock_snapshots(signals, latest_stocks, date_column="confirm_date")
-        signals = filter_static_stocks(signals)
-        if signals.empty:
-            return _empty_result()
-        signals = self._merge_market_cap(signals, latest_basic)
-        signals = filter_market_cap(self.config.min_market_cap, signals)
-        signals = self._merge_heat(signals, latest_hot)
-        signals = signals.sort_values(
-            ["confirm_date", "hot_rank", "breakout_volume_ratio"],
-            ascending=[True, True, False],
-            na_position="last",
-            kind="stable",
+        # 5. 按历史热度排序，并计算每个确认日的入选排名。
+        return self._sort_by_hot(result, historical_hot)
+
+    # ---------- 步骤 1：候选股票 ----------
+
+    def filter_stocks(
+        self,
+        latest_stocks: pd.DataFrame,
+        latest_basic: pd.DataFrame,
+        daily_bars: pd.DataFrame,
+        confirm_dates: pd.DatetimeIndex,
+    ) -> pd.DataFrame:
+        """按各确认日筛选股票，避免用当前股票池或未来市值筛选历史。"""
+        candidates = daily_bars[["symbol", "trade_date"]].rename(
+            columns={"trade_date": "confirm_date"}
         )
-        signals["selection_rank"] = (
-            signals.groupby("confirm_date", sort=False).cumcount() + 1
+        candidates["confirm_date"] = pd.to_datetime(candidates["confirm_date"]).dt.normalize()
+        candidates = candidates[candidates["confirm_date"].isin(confirm_dates)]
+        candidates = candidates.drop_duplicates(["symbol", "confirm_date"])
+        candidates = match_stock_snapshots(
+            candidates, latest_stocks, date_column="confirm_date"
         )
-        return signals[RESULT_COLUMNS].reset_index(drop=True)
+        candidates = filter_static_stocks(candidates)
+        if candidates.empty:
+            return candidates
+        candidates = self._merge_market_cap(candidates, latest_basic)
+        return filter_market_cap(self.config.min_market_cap, candidates)
 
-    # ------------------------------------------------------------------
-    # 行情准备
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _normalize_dates(trade_dates: Iterable[DateLike]) -> pd.DatetimeIndex:
-        """统一到零点，去重并排序。"""
-
-        dates = pd.DatetimeIndex(pd.to_datetime(list(trade_dates))).normalize()
-        return dates.drop_duplicates().sort_values()
+    # ---------- 步骤 2：行情清洗 ----------
 
     @staticmethod
     def _pair_dates(
@@ -226,7 +230,7 @@ class TodayConfirmedBreakoutPattern:
         )
 
     @staticmethod
-    def _prepare_bars(daily_bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
+    def clean_daily_bars(daily_bars: pd.DataFrame, symbols: pd.Series) -> pd.DataFrame:
         """只保留候选股票的有效行情，并按股票、日期排序去重。"""
 
         # 先按股票池裁剪，再做类型转换，降低批量计算开销。
@@ -260,9 +264,19 @@ class TodayConfirmedBreakoutPattern:
             & (bars["trade_date"] <= last_confirm_date)
         ].reset_index(drop=True)
 
-    # ------------------------------------------------------------------
-    # 突破阶段
-    # ------------------------------------------------------------------
+    # ---------- 步骤 3：指标计算 ----------
+
+    def calculate_indicators(
+        self, bars: pd.DataFrame, date_pairs: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """批量计算两个交易日的指标，此步骤不执行信号条件筛选。"""
+        bars = self._add_breakout_indicators(bars)
+        indicators = self._pair_breakout_bars(bars, date_pairs)
+        indicators = self._attach_confirm_bars(
+            indicators, bars, pd.DatetimeIndex(date_pairs["confirm_date"])
+        )
+        return self._add_confirmation_indicators(indicators)
+
     def _add_breakout_indicators(self, bars: pd.DataFrame) -> pd.DataFrame:
         """为每一行计算“如果以这一天作为突破日”的各项指标。"""
 
@@ -273,13 +287,12 @@ class TodayConfirmedBreakoutPattern:
         # 滚动结果带有“股票”这一层索引，droplevel(0) 去掉后即可与原行对齐。
         bars["breakout_prev_close"] = close.shift(1)
         # recent_days=1 表示以当日成交量对比此前 N 日的基准均量。
-        bars["breakout_volume_ratio"] = by_symbol["volume"].transform(
-            lambda volume: calculate_volume_ratio(
-                volume.to_frame(name="volume"),
-                recent_days=1,
-                previous_days=cfg.previous_volume_days,
-            )["volume_ratio"]
+        previous_volume = by_symbol["volume"].shift()
+        average_volume = (
+            previous_volume.groupby(bars["symbol"], sort=False)
+            .rolling(cfg.previous_volume_days).mean().droplevel(0)
         )
+        bars["breakout_volume_ratio"] = bars["volume"] / average_volume
         bars["breakout_return_1d_pct"] = bars["close"] / bars["breakout_prev_close"] - 1
         bars["breakout_return_5d_pct"] = (
             bars["close"] / close.shift(cfg.weekly_return_days) - 1
@@ -290,24 +303,15 @@ class TodayConfirmedBreakoutPattern:
         bars["breakout_ma_long"] = close.rolling(cfg.long_ma_days).mean().droplevel(0)
         return bars
 
-    def _select_breakout_signals(
+    def _pair_breakout_bars(
         self,
         bars: pd.DataFrame,
         date_pairs: pd.DataFrame,
     ) -> pd.DataFrame:
-        """在突破日那一行上检查全部突破条件，并配上对应的确认日。"""
+        """取出突破日指标，并配上对应确认日，供后续合并筛选。"""
 
-        cfg = self.config
-        is_breakout = (
-            bars["trade_date"].isin(date_pairs["breakout_date"])
-            & (bars["breakout_volume_ratio"] >= cfg.min_breakout_volume_ratio)
-            & (bars["breakout_return_1d_pct"] > cfg.min_breakout_return_1d_pct)
-            & (bars["breakout_return_5d_pct"] < cfg.max_breakout_return_5d_pct)
-            & (bars["breakout_ma_long"] > bars["breakout_ma_short"])
-            & (bars["breakout_from_low"] <= cfg.max_breakout_from_low)
-        )
         signals = bars.loc[
-            is_breakout,
+            bars["trade_date"].isin(date_pairs["breakout_date"]),
             [
                 "symbol",
                 "trade_date",
@@ -316,6 +320,10 @@ class TodayConfirmedBreakoutPattern:
                 "breakout_prev_close",
                 "breakout_volume_ratio",
                 "breakout_return_1d_pct",
+                "breakout_return_5d_pct",
+                "breakout_ma_long",
+                "breakout_ma_short",
+                "breakout_from_low",
             ],
         ].rename(
             columns={
@@ -326,9 +334,6 @@ class TodayConfirmedBreakoutPattern:
         )
         return date_pairs.merge(signals, on="breakout_date")
 
-    # ------------------------------------------------------------------
-    # 确认阶段
-    # ------------------------------------------------------------------
     @staticmethod
     def _attach_confirm_bars(
         signals: pd.DataFrame,
@@ -352,10 +357,9 @@ class TodayConfirmedBreakoutPattern:
         )
         return signals.merge(confirm_bars, on=["confirm_date", "symbol"])
 
-    def _apply_confirmation(self, rows: pd.DataFrame) -> pd.DataFrame:
-        """检查小阳线、影线与量能。"""
-
-        cfg = self.config
+    @staticmethod
+    def _add_confirmation_indicators(rows: pd.DataFrame) -> pd.DataFrame:
+        """计算确认日涨幅、实体、影线与量比。"""
         # 振幅是两个影线比例的分母；非正振幅置为 NaN，使后续比较自然为 False。
         candle_range = (rows["confirm_high"] - rows["confirm_low"]).where(
             lambda s: s > 0
@@ -364,6 +368,7 @@ class TodayConfirmedBreakoutPattern:
         # 确认日涨幅按前一交易日（突破日）收盘价计算，不能只看日内实体。
         confirm_return = rows["confirm_close"] / rows["breakout_close"] - 1
         rows = rows.assign(
+            confirm_return_1d_pct=confirm_return,
             confirm_body_pct=rows["confirm_close"] / rows["confirm_open"] - 1,
             # 只接受阳线：开盘价是实体下沿、收盘价是实体上沿。
             confirm_lower_wick_ratio=(rows["confirm_open"] - rows["confirm_low"])
@@ -372,6 +377,25 @@ class TodayConfirmedBreakoutPattern:
             / candle_range,
             confirm_volume_ratio=rows["confirm_volume"] / rows["breakout_volume"],
         )
+        return rows
+
+    # ---------- 步骤 4：条件过滤 ----------
+
+    def _filter_breakout(self, result: pd.DataFrame) -> pd.DataFrame:
+        """过滤突破日的量比、涨幅、均线和距低点涨幅。"""
+        cfg = self.config
+        return result[
+            (result["breakout_volume_ratio"] >= cfg.min_breakout_volume_ratio)
+            & (result["breakout_return_1d_pct"] > cfg.min_breakout_return_1d_pct)
+            & (result["breakout_return_5d_pct"] < cfg.max_breakout_return_5d_pct)
+            & (result["breakout_ma_long"] > result["breakout_ma_short"])
+            & (result["breakout_from_low"] <= cfg.max_breakout_from_low)
+        ]
+
+    def _filter_confirmation(self, rows: pd.DataFrame) -> pd.DataFrame:
+        """过滤确认日的阳线、涨幅、影线与量能条件。"""
+        cfg = self.config
+        confirm_return = rows["confirm_return_1d_pct"]
         is_confirmed = (
             (rows["confirm_close"] > rows["confirm_open"])
             & (confirm_return > cfg.min_confirm_return_1d_pct)
@@ -382,9 +406,22 @@ class TodayConfirmedBreakoutPattern:
         )
         return rows[is_confirmed]
 
-    # ------------------------------------------------------------------
-    # 市值与热度
-    # ------------------------------------------------------------------
+    # ---------- 步骤 5：热度排序 ----------
+
+    def _sort_by_hot(self, result: pd.DataFrame, latest_hot: pd.DataFrame) -> pd.DataFrame:
+        """按突破日可见热度排序，无热度的股票保留并排在末尾。"""
+        if result.empty:
+            return _empty_result()
+        result = self._merge_heat(result, latest_hot)
+        result = result.sort_values(
+            ["confirm_date", "hot_rank", "breakout_volume_ratio"],
+            ascending=[True, True, False], na_position="last", kind="stable",
+        )
+        result["selection_rank"] = result.groupby("confirm_date", sort=False).cumcount() + 1
+        return result[RESULT_COLUMNS].reset_index(drop=True)
+
+    # ---------- 历史市值与热度匹配 ----------
+
     @staticmethod
     def _merge_market_cap(
         signals: pd.DataFrame,

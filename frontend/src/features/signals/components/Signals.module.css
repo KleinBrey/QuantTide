@@ -118,13 +118,15 @@
 }
 
 .resultHeader {
+  flex-wrap: wrap;
+  gap: 12px;
   min-height: 96px;
   padding-bottom: 14px;
   padding-top: 14px;
 }
 
 .headerContent {
-  flex: 1;
+  flex: 1 1 460px;
   min-width: 0;
 }
 
@@ -168,6 +170,7 @@
 .headerActions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -204,4 +207,68 @@
   .signalList {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
+}
+
+.dateRange {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dateRange label {
+  align-items: center;
+  color: #a1a1aa;
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.dateRange input {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  color-scheme: dark;
+  padding: 6px 8px;
+}
+
+.scanTabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+.scanTab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+}
+
+.scanTab[data-state='active'] {
+  border-bottom-color: #60a5fa;
+  color: var(--foreground);
+}
+
+.scanTab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.scanBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.todayHint {
+  color: var(--muted-foreground);
+  font-size: 12px;
 }

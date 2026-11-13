@@ -6,7 +6,6 @@ import logging
 import time
 from datetime import datetime
 from typing import Callable
-from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import APIRouter, HTTPException
@@ -20,6 +19,7 @@ from backend.scripts.sync_daily_basic import sync_daily_basic
 from backend.scripts.sync_daily_stocks import sync_daily_stocks
 from backend.scripts.sync_realtime_hot import sync_realtime_hot
 
+from ..config.config import TIMEZONE
 from .dependencies import (
     CNMarketServiceDep,
     CryptoMarketServiceDep,
@@ -119,7 +119,7 @@ async def _run_database_sync(
         "script": script,
         "message": success_message,
         "duration_seconds": round(time.perf_counter() - started_at, 2),
-        "finished_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
+        "finished_at": datetime.now(TIMEZONE).isoformat(
             timespec="seconds"
         ),
     }

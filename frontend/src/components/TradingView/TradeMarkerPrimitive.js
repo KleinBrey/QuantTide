@@ -18,14 +18,17 @@ class TradeMarkerRenderer {
   draw(target) {
     target.useBitmapCoordinateSpace(scope => {
       const { context, bitmapSize, horizontalPixelRatio, verticalPixelRatio } = scope;
-      const badgeWidth = BADGE_SIZE * horizontalPixelRatio;
       const badgeHeight = BADGE_SIZE * verticalPixelRatio;
       const radius = 4 * Math.min(horizontalPixelRatio, verticalPixelRatio);
 
       this.markers.forEach(marker => {
+        const isSignal = marker.side === 'SIGNAL';
+        const isBuy = marker.side === 'BUY';
+        const label = isSignal ? '信号K' : isBuy ? 'B' : 'S';
+        const badgeWidth = (isSignal ? 42 : BADGE_SIZE) * horizontalPixelRatio;
         const x = Math.round(marker.x * horizontalPixelRatio);
         const anchorY = Math.round(marker.y * verticalPixelRatio);
-        const direction = marker.side === 'BUY' ? 1 : -1;
+        const direction = isBuy ? 1 : -1;
         const desiredBadgeCenterY = anchorY + direction * (STEM_LENGTH * verticalPixelRatio + badgeHeight / 2);
         const badgeCenterY = Math.min(
           bitmapSize.height - badgeHeight / 2 - 4 * verticalPixelRatio,
@@ -34,7 +37,7 @@ class TradeMarkerRenderer {
         const badgeLeft = x - badgeWidth / 2;
         const badgeTop = badgeCenterY - badgeHeight / 2;
         const badgeEdgeY = badgeCenterY - (direction * badgeHeight) / 2;
-        const color = marker.side === 'BUY' ? '#6a6a6a' : '#6a6a6a';
+        const color = isSignal ? '#2563eb' : '#6a6a6a';
 
         context.save();
 
@@ -56,7 +59,7 @@ class TradeMarkerRenderer {
         context.stroke();
 
         roundedRect(context, badgeLeft, badgeTop, badgeWidth, badgeHeight, radius);
-        context.fillStyle = marker.side === 'BUY' ? '#6a6a6a' : '#6a6a6a';
+        context.fillStyle = color;
         context.fill();
         context.lineWidth = Math.max(1.5, 1.5 * horizontalPixelRatio);
         context.strokeStyle = color;
@@ -66,7 +69,7 @@ class TradeMarkerRenderer {
         context.font = `700 ${12 * verticalPixelRatio}px Inter, ui-sans-serif, system-ui, sans-serif`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillText(marker.side === 'BUY' ? 'B' : 'S', x, badgeCenterY + 0.5 * verticalPixelRatio);
+        context.fillText(label, x, badgeCenterY + 0.5 * verticalPixelRatio);
         context.restore();
       });
     });

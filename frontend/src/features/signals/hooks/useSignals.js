@@ -1,10 +1,23 @@
+import moment from 'moment';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getSignalResults, getSignals } from '../api/signalsApi.js';
 
 import { columnDefs as columnDefsConfig } from '../utils/tableColumns.jsx';
 
+function defaultRange() {
+  const today = moment().utcOffset(8 * 60);
+  return {
+    startDate: today.clone().subtract(3, 'months').format('YYYY-MM-DD'),
+    endDate: today.format('YYYY-MM-DD')
+  };
+}
+
 export function useSignals() {
+  const [scanMode, setScanMode] = useState('today');
+  const [initialRange] = useState(defaultRange);
+  const [range, setRange] = useState(initialRange);
+  const validRange = scanMode === 'today' || Boolean(range.startDate && range.endDate && range.startDate <= range.endDate);
   const [signals, setSignals] = useState([]);
   const [activeSignalId, setActiveSignalId] = useState('');
   const [result, setResult] = useState(null);
@@ -13,17 +26,36 @@ export function useSignals() {
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
   const resultRequestControllerRef = useRef(null);
+  const resultsCacheRef = useRef(new Map());
 
-  const loadSignalResult = useCallback(async signalId => {
+  const loadSignalResult = useCallback(async (signalId, mode, scanRange, force = false) => {
     resultRequestControllerRef.current?.abort();
+    resultRequestControllerRef.current = null;
+    const requestId = ++requestIdRef.current;
+    setError('');
+    if (mode === 'history' && (!scanRange.startDate || !scanRange.endDate || scanRange.startDate > scanRange.endDate)) {
+      setResult(null);
+      setLoading(false);
+      setError('请选择有效的历史扫描日期范围');
+      return;
+    }
+    const cacheKey = JSON.stringify([signalId, mode, mode === 'history' ? scanRange : null]);
+    const cached = resultsCacheRef.current.get(cacheKey);
+    setResult(cached || null);
+    if (cached && !force) {
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     resultRequestControllerRef.current = controller;
-    const requestId = ++requestIdRef.current;
     setLoading(true);
-    setError('');
     try {
-      const payload = await getSignalResults(signalId, { signal: controller.signal });
-      if (requestId === requestIdRef.current) setResult(payload);
+      const payload = await getSignalResults(signalId, { mode, ...scanRange, signal: controller.signal });
+      if (requestId === requestIdRef.current) {
+        resultsCacheRef.current.set(cacheKey, payload);
+        setResult(payload);
+      }
     } catch (requestError) {
       if (requestError.name !== 'AbortError' && requestId === requestIdRef.current) {
         setError(requestError.message || '信号结果加载失败');
@@ -49,7 +81,7 @@ export function useSignals() {
         setSignals(signalItems);
         setActiveSignalId(firstSignalId);
         if (firstSignalId) {
-          await loadSignalResult(firstSignalId);
+          await loadSignalResult(firstSignalId, 'today', initialRange);
         } else {
           setLoading(false);
         }
@@ -68,20 +100,28 @@ export function useSignals() {
       resultRequestControllerRef.current = null;
       requestIdRef.current += 1;
     };
-  }, [loadSignalResult]);
+  }, [initialRange, loadSignalResult]);
 
   const selectSignal = useCallback(
     signalId => {
-      if (!signalId || signalId === activeSignalId) return;
+      if (!signalId || signalId === activeSignalId || !validRange) return;
       setActiveSignalId(signalId);
       setColumnDefs(columnDefsConfig[signalId] || columnDefsConfig['default']);
       setResult(null);
-      loadSignalResult(signalId);
+      loadSignalResult(signalId, scanMode, range);
     },
-    [activeSignalId, loadSignalResult]
+    [activeSignalId, loadSignalResult, range, scanMode, validRange]
   );
 
+  const selectMode = useCallback(mode => {
+    if (!mode || mode === scanMode) return;
+    setScanMode(mode);
+    if (activeSignalId) loadSignalResult(activeSignalId, mode, range);
+  }, [activeSignalId, loadSignalResult, range, scanMode]);
+
   return {
+    scanMode,
+    selectMode,
     signals,
     activeSignalId,
     result,
@@ -89,6 +129,9 @@ export function useSignals() {
     error,
     columnDefs,
     selectSignal,
-    refresh: () => activeSignalId && loadSignalResult(activeSignalId)
+    range,
+    setRange,
+    validRange,
+    refresh: () => activeSignalId && validRange && loadSignalResult(activeSignalId, scanMode, range, true)
   };
 }

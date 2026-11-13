@@ -11,6 +11,7 @@ import akshare as ak
 import pandas as pd
 import requests
 
+from ..config.config import TIMEZONE_NAME
 from ..utils.symbol import exchange_for, validate_symbol
 
 
@@ -76,7 +77,7 @@ class AkShareProvider:
         """把毫秒时间戳转换为上海时区的 YYYYMMDD 日期。"""
 
         timestamp = pd.to_datetime(timestamp_ms, unit="ms", utc=True)
-        return timestamp.tz_convert("Asia/Shanghai").strftime("%Y%m%d")
+        return timestamp.tz_convert(TIMEZONE_NAME).strftime("%Y%m%d")
 
     def fetch_stock_list(self) -> dict:
         """获取沪、深、北交易所的全部 A 股。"""
@@ -181,7 +182,7 @@ class AkShareProvider:
         result = result.iloc[offset:].reset_index(drop=True)
 
         trade_dates = pd.to_datetime(result.pop("date"), errors="raise")
-        shanghai_dates = trade_dates.dt.tz_localize("Asia/Shanghai")
+        shanghai_dates = trade_dates.dt.tz_localize(TIMEZONE_NAME)
         # Pandas 不同版本的 datetime 内部精度可能是秒、毫秒、微秒或纳秒，
         # 直接 astype("int64") 后再固定除数会得到错误年份。显式转时间戳更稳定。
         result["date_ms"] = shanghai_dates.map(

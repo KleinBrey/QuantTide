@@ -342,8 +342,22 @@ with concurrent_requests(
 信号层不决定买入、卖出、止损或止盈。
 
 信号的名称、说明和规则集中配置在 `quant/signal/signals.json`。新增信号时，在该文件
-增加唯一 `id`，并在 `quant/signal/registry.py` 的 `SIGNAL_EXECUTORS` 中关联对应的
-`patterns/` 执行函数。
+增加唯一 `id`，并在 `quant/signal/registry.py` 的 `SIGNAL_HANDLERS` 中注册
+`SignalHandler(单日执行函数, 策略类)`。单日与区间入口从同一份注册信息生成。
+
+每个策略类实现相同的区间接口：
+
+```python
+scan_range(trade_dates, historical_stocks, daily_bars, historical_hot, historical_basic)
+```
+
+`history.py` 只校验起止日期、选取交易日并分发。各策略在自己的文件中决定前置行情、
+批量指标、日期配对和筛选排序；新增策略不需要修改 `history.py`。
+`range_utils.py` 提供无策略判断的日期、行情裁剪和按快照筛选工具；
+`stock/universe.py` 的 `build_snapshot_lookup` 查找信号当日可见的整份历史快照。
+N 字与二次冲高按形态参数计算前置窗口，次日确认保留自己的突破/确认日处理。
+其他四个策略先清洗、去重，再按 `SignalConfig.required_trading_days` 保留首日所需的
+有效前置行情；无效记录不占用指标窗口，调度层不统一限制历史长度。
 
 ### `quant/strategy/`
 

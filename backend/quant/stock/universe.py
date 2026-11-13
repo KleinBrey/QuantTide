@@ -22,3 +22,16 @@ def match_stock_snapshots(
     )
     return matched.merge(history, on=["stock_snapshot_date", "symbol"], how="inner",
                          validate="many_to_one").drop(columns="stock_snapshot_date")
+
+
+def build_snapshot_lookup(history: pd.DataFrame):
+    """构建按日期向前查找整份最近快照的函数；没有过去快照时返回空表。"""
+    groups = history.groupby(pd.to_datetime(history['trade_date']), sort=True).indices
+    dates = pd.DatetimeIndex(list(groups))
+    positions = list(groups.values())
+
+    def as_of(day):
+        index = dates.searchsorted(day, side='right') - 1
+        return history.iloc[positions[index]] if index >= 0 else history.iloc[:0]
+
+    return as_of

@@ -3,7 +3,7 @@ import { ClientSideRowModelModule, CellStyleModule, colorSchemeDark, themeQuartz
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
 import moment from 'moment';
 import { getDailyBarsApi } from '@/api/quantide/api.js';
-import StockKlineChart from '@/components/TradingView/StockKlineChart.jsx';
+import StockKlineChart from '@/components/tradingView/StockKlineChart.jsx';
 import styles from './SignalResultsTable.module.css';
 import { transformHistory } from '../utils/tableColumns.jsx';
 
@@ -18,25 +18,24 @@ function useSignalStockKline() {
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
 
-  const loadKline = useCallback(async symbol => {
+  const loadKline = useCallback(async (symbol, start, end) => {
     if (!symbol) return;
     const requestId = ++requestIdRef.current;
-    const cachedRows = historyCache.get(symbol);
+    const cacheKey = `${symbol}:${start}:${end}`;
+    setError('');
+    const cachedRows = historyCache.get(cacheKey);
     if (cachedRows) {
+      setLoading(false);
       setData({ dataSource: '本地历史行情', adjustLabel: '前复权', rows: cachedRows });
       return;
     }
 
     setLoading(true);
-    setError('');
     try {
-      const response = await getDailyBarsApi({
-        symbol,
-        start: moment().subtract(1, 'year').format('YYYY-MM-DD'),
-        end: moment().format('YYYY-MM-DD')
-      });
+      const response = await getDailyBarsApi({ symbol, start, end });
       const rows = transformHistory(response?.data);
-      historyCache.set(symbol, rows);
+      if (historyCache.size >= 100) historyCache.delete(historyCache.keys().next().value);
+      historyCache.set(cacheKey, rows);
       if (requestId === requestIdRef.current) {
         setData({ dataSource: '本地历史行情', adjustLabel: '前复权', rows });
       }
@@ -59,13 +58,17 @@ function useSignalStockKline() {
 }
 
 function SignalKlineRow({ data }) {
-  const stock = data.stock;
+  const { stock, hits } = data;
   const [period, setPeriod] = useState('daily');
   const { data: klineData, loading, error, loadKline } = useSignalStockKline();
 
+  const start = moment(hits[0].signal_date).subtract(3, 'months').format('YYYY-MM-DD');
+  const end = moment(hits.at(-1).signal_date).add(3, 'months').format('YYYY-MM-DD');
+  const markers = useMemo(() => hits.map(hit => ({ time: hit.signal_date, side: 'SIGNAL' })), [hits]);
+
   useEffect(() => {
-    loadKline(stock.symbol);
-  }, [loadKline, stock.symbol]);
+    loadKline(stock.symbol, start, end);
+  }, [loadKline, stock.symbol, start, end]);
 
   return (
     <div className={styles.klineRow}>
@@ -76,36 +79,46 @@ function SignalKlineRow({ data }) {
         error={error}
         period={period}
         onPeriodChange={setPeriod}
+        markers={markers}
         enableMouseWheelZoom={false}
+        alignDataLeft
       />
     </div>
   );
 }
 
+function groupByStock(rows, getRow = row => row) {
+  const groups = new Map();
+  rows.forEach(row => {
+    const { symbol } = getRow(row);
+    if (!groups.has(symbol)) groups.set(symbol, []);
+    groups.get(symbol).push(row);
+  });
+  return groups;
+}
+
 function keepKlineRowsWithStocks({ nodes }) {
-  const klineRowsByStock = new Map(
-    nodes.filter(node => node.data?.rowType === 'kline').map(node => [node.data.parentRowId, node])
+  const charts = new Map(
+    nodes.filter(node => node.data.rowType === 'kline').map(node => [node.data.symbol, node])
   );
-  const stockRows = nodes.filter(node => node.data?.rowType !== 'kline');
+  const groups = groupByStock(nodes.filter(node => node.data.rowType !== 'kline'), node => node.data);
   nodes.length = 0;
-  stockRows.forEach(stockRow => {
-    nodes.push(stockRow);
-    const klineRow = klineRowsByStock.get(stockRow.data.rowId);
-    if (klineRow) nodes.push(klineRow);
+  groups.forEach((hits, symbol) => {
+    nodes.push(...hits);
+    const chart = charts.get(symbol);
+    if (chart) nodes.push(chart);
   });
 }
 
-export default function SignalResultsTable({ columnDefs, rows, loading }) {
+export default function SignalResultsTable({ columnDefs, rows, loading, emptyMessage }) {
   const rowData = useMemo(
-    () =>
-      rows.flatMap((row, index) => {
-        const rowKey = `${row.symbol}-${index}`;
-        const stockRowId = `stock-${rowKey}`;
-        return [
-          { ...row, rowId: stockRowId },
-          { rowType: 'kline', rowId: `kline-${rowKey}`, parentRowId: stockRowId, stock: row }
-        ];
-      }),
+    () => [...groupByStock(rows)].flatMap(([symbol, matches]) => {
+      const hits = [...matches].sort((a, b) => a.signal_date.localeCompare(b.signal_date));
+      return [
+        ...hits.map(hit => ({ ...hit, rowId: `signal-${symbol}-${hit.signal_date}` })),
+        { rowType: 'kline', rowId: `kline-${symbol}`, symbol, stock: hits.at(-1), hits }
+      ];
+    }),
     [rows]
   );
 
@@ -122,7 +135,7 @@ export default function SignalResultsTable({ columnDefs, rows, loading }) {
           getRowId={params => params.data.rowId}
           isFullWidthRow={params => params.rowNode.data?.rowType === 'kline'}
           loading={loading}
-          overlayNoRowsTemplate="<span>当前信号暂无命中股票</span>"
+          overlayNoRowsTemplate={`<span>${emptyMessage}</span>`}
           postSortRows={keepKlineRowsWithStocks}
           suppressCellFocus
         />

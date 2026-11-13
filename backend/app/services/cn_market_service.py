@@ -6,10 +6,10 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from ..config.config import TIMEZONE
 from ..provider import HithinkProvider, IwencaiProvider, TushareProvider
 from ..repository import (
     DailyBarRepository,
@@ -114,7 +114,7 @@ class CNMarketService(HotStockService):
             trade_dates = [None]
             range_text = "最新交易日"
         else:
-            end_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            end_date = datetime.now(TIMEZONE).date()
             start_date = end_date - timedelta(days=lookback_days - 1)
             if start_date < date(2016, 1, 1):
                 raise ValueError("历史股票池范围必须从 2016-01-01 起")
@@ -188,7 +188,7 @@ class CNMarketService(HotStockService):
             trade_dates = [None]
             range_text = "最新交易日"
         else:
-            end_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            end_date = datetime.now(TIMEZONE).date()
             start_date = end_date - timedelta(days=lookback_days - 1)
             trade_dates = self.tushare_provider.fetch_trade_dates(start_date, end_date)
             range_text = f"{start_date} 至 {end_date}"
@@ -286,7 +286,7 @@ class CNMarketService(HotStockService):
         ):
             raise RuntimeError("未配置 Hithink Provider、股票池或股票热度 Repository")
 
-        end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        end = datetime.now(TIMEZONE).date()
         start = end - timedelta(days=lookback_days - 1)
         symbols = self.daily_stock_repository.get_symbols_in_range(start, end)
         if not symbols:
@@ -366,7 +366,7 @@ class CNMarketService(HotStockService):
         """只获取指定分组股票的日 K，不触发全市场同步。"""
         if lookback_days <= 0 or lookback_days > 365:
             raise ValueError("分组日 K 同步范围须为 1 至 365 天")
-        end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        end = datetime.now(TIMEZONE).date()
         start = end - timedelta(days=lookback_days - 1)
         written = 0
         failed = []
@@ -398,7 +398,7 @@ class CNMarketService(HotStockService):
         if lookback_days <= 0:
             raise ValueError("lookback_days 必须大于 0")
 
-        end_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        end_date = datetime.now(TIMEZONE).date()
         start_date = end_date - timedelta(days=lookback_days - 1)
         trade_dates = self.tushare_provider.fetch_trade_dates(start_date, end_date)
         range_text = f"{start_date} 至 {end_date}"

@@ -8,7 +8,6 @@ Tushare 官方地址。Token 只从构造参数或 ``backend/.env`` / 环境变�
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 from pathlib import Path
 
 
@@ -16,6 +15,7 @@ import pandas as pd
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tushare as ts
 
+from ..config.config import TIMEZONE
 from ..utils.symbol import exchange_for, validate_symbol
 from ..utils.date import timestamp_to_date
 
@@ -156,7 +156,7 @@ class TushareProvider:
         return sorted(set(day for day in dates if start <= day <= end))
 
     def latest_trade_date(self) -> date:
-        today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        today = datetime.now(TIMEZONE).date()
         days = self.fetch_trade_dates(today - timedelta(days=60), today)
         if not days:
             raise RuntimeError("交易日历没有返回最近交易日")

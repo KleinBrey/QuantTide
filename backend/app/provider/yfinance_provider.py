@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from ..config.config import TIMEZONE_NAME
 from ..utils.symbol import normalize_daily_bar_symbol
 
 
@@ -150,7 +151,7 @@ class YFinanceProvider:
             dates = dates.tz_convert(timezone)
         trade_dates = dates.date
         result["date_ms"] = [
-            int(pd.Timestamp(day, tz="Asia/Shanghai").timestamp() * 1000)
+            int(pd.Timestamp(day, tz=TIMEZONE_NAME).timestamp() * 1000)
             for day in trade_dates
         ]
         result = result[(trade_dates >= start_date) & (trade_dates <= end_date)]

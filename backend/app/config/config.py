@@ -8,12 +8,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录：从当前文件所在目录往上三级
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+# 业务日期与时间展示统一使用的时区。
+TIMEZONE_NAME = "Asia/Shanghai"
+TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 
 
 class Settings(BaseSettings):
@@ -50,7 +56,7 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
 
     # 调度器时区
-    scheduler_timezone: str = "Asia/Shanghai"
+    scheduler_timezone: str = TIMEZONE_NAME
 
     # 数据同步的并发工作进程数
     sync_workers: int = 10

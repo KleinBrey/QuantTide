@@ -1,10 +1,10 @@
 """从 Tushare 同步主力合约资料，以及自选合约的日线。"""
 
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from ..config.config import TIMEZONE
 from ..utils.concurrency import concurrent_requests
 from ..utils.progress import progress_bar, progress_write
 
@@ -59,7 +59,7 @@ class FuturesMarketService:
 
     def _latest_trade_date(self):
         # 先从最近一个月的期货日历确定最近交易日，再只查询该日的主力映射。
-        today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        today = datetime.now(TIMEZONE).date()
         start = (pd.Timestamp(today) - pd.DateOffset(months=1)).date()
         trade_dates = self.provider.fetch_futures_trade_dates(start, today)
         if not trade_dates:
@@ -137,7 +137,7 @@ class FuturesMarketService:
         if not items:
             progress_write("期货合约池为空，跳过日 K 同步")
             return {"contracts": 0, "rows": 0}
-        end = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        end = datetime.now(TIMEZONE).date()
         start = end - timedelta(days=lookback_days - 1)
         # 每批最多 1000 个自然日，单合约不会触及 fut_daily 的 2000 条上限。
         offsets = range(0, lookback_days, DAILY_BATCH_DAYS)

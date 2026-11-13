@@ -72,6 +72,7 @@ const COLUMN_DEFS = [
   {
     headerName: '涨幅%',
     field: 'change_pct',
+    sortingOrder: ['desc', 'asc', null],
     flex: 0.5,
     minWidth: 100,
     cellRenderer: ChangePercentCell

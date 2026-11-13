@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterable, Iterator
 import numpy as np
 import pandas as pd
 
+from ..config.config import TIMEZONE_NAME
 from ..utils.symbol import exchange_for
 
 
@@ -158,8 +159,8 @@ class TdxProvider:
                 f"通达信不支持行情周期或复权方式: {interval!r}, {adjust!r}"
             ) from error
         code = self._stock_code(thscode)
-        first = pd.to_datetime(start, unit="ms", utc=True).tz_convert("Asia/Shanghai")
-        last = pd.to_datetime(end, unit="ms", utc=True).tz_convert("Asia/Shanghai")
+        first = pd.to_datetime(start, unit="ms", utc=True).tz_convert(TIMEZONE_NAME)
+        last = pd.to_datetime(end, unit="ms", utc=True).tz_convert(TIMEZONE_NAME)
         if period in ("1d", "1w", "1mon"):
             first = first.normalize()
             last = (
@@ -210,9 +211,9 @@ class TdxProvider:
                 pd.to_datetime(result.index.astype(str), format="mixed", errors="raise")
             )
             dates = (
-                dates.tz_localize("Asia/Shanghai")
+                dates.tz_localize(TIMEZONE_NAME)
                 if dates.tz is None
-                else dates.tz_convert("Asia/Shanghai")
+                else dates.tz_convert(TIMEZONE_NAME)
             )
             if dates.isna().any():
                 raise ValueError("K 线时间为空")

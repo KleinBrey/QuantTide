@@ -9,11 +9,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
+import numpy as np
 import pandas as pd
 from rich.console import Console
+
+from backend.quant.signal.range_utils import (
+    DateLike, normalize_trade_dates, select_by_snapshot, trim_history_bars,
+)
 
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
@@ -184,60 +190,79 @@ class VolumeBreakoutPattern:
 
         return bars
 
+    def scan_range(
+        self,
+        trade_dates: Iterable[DateLike],
+        historical_stocks: pd.DataFrame,
+        daily_bars: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """批量计算区间指标，再按信号日快照执行本策略筛选与排序。"""
+        trade_dates = normalize_trade_dates(trade_dates)
+        if trade_dates.empty or daily_bars.empty:
+            return pd.DataFrame(columns=RESULT_COLUMNS)
+        # 先清洗、去重，再保留首个扫描日前真正需要的有效交易日。
+        bars = self.filter_daily_bars(daily_bars, daily_bars["symbol"].unique())
+        bars = bars.sort_values(["symbol", "trade_date"], kind="stable")
+        bars = bars.drop_duplicates(["symbol", "trade_date"], keep="last")
+        bars = trim_history_bars(
+            bars, trade_dates, lookback_rows=self.config.required_trading_days - 1,
+        )
+        indicators = self.calculate_range_indicators(bars)
+        indicators = indicators[indicators["latest_date"].isin(trade_dates)]
+        return select_by_snapshot(
+            indicators, historical_stocks, historical_hot, historical_basic,
+            self.select_indicators,
+        )
+
     def calculate_indicators(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """最近5个交易日均成交量/最近5个交易日前20个交易日均成交量大于等于1.5,
-        最近5日涨幅大于等于5%"""
+        """复用批量指标，只取每只股票最后一个有效交易日。"""
+        indicators = self.calculate_range_indicators(bars)
+        return indicators.groupby("symbol", sort=False).tail(1).reset_index(drop=True)
 
-        rows: list[dict[str, object]] = []
-        # 一共需要25个交易日
-        required_days = self.config.required_trading_days
-        # 最近5个交易日
-        recent_days = self.config.recent_volume_days
+    def calculate_range_indicators(self, daily_bars: pd.DataFrame) -> pd.DataFrame:
+        """按股票一次计算全部交易日，仅要求足够的有效历史行情。"""
+        bars = daily_bars.sort_values(["symbol", "trade_date"], kind="stable").copy()
+        bars = self.filter_daily_bars(bars, bars["symbol"].unique())
+        bars = bars.drop_duplicates(["symbol", "trade_date"], keep="last").reset_index(drop=True)
+        if bars.empty:
+            return pd.DataFrame(columns=INDICATOR_COLUMNS)
 
-        for symbol, symbol_bars in bars.groupby("symbol", sort=False):
-            window = (
-                symbol_bars.sort_values("trade_date")
-                .drop_duplicates(subset="trade_date", keep="last")
-                .tail(required_days)
-            )
-            if len(window) < required_days:
-                continue
+        groups = bars.groupby("symbol", sort=False)
 
-            # 从0到倒数第5条数据，获取的前20日数据
-            previous = window.iloc[:-recent_days]
-            # 从倒数第5条数据直到最后，获取的最近5天的数据
-            recent = window.iloc[-recent_days:]
+        def rolling(column, days, operation):
+            # NumPy 窗口批量归约保留原逐窗口 mean 的求和顺序，
+            # 避免 rolling 累积误差改变均线相等、量比恰好达标等边界。
+            values = bars[column].to_numpy(dtype=float)
+            result = pd.Series(np.nan, index=bars.index)
+            if len(values) >= days:
+                windows = np.lib.stride_tricks.sliding_window_view(values, days)
+                result.iloc[days - 1:] = getattr(windows, operation)(axis=1)
+            return result.where(groups.cumcount() >= days - 1)
 
-            previous_avg_volume = previous["volume"].mean()
+        result = pd.DataFrame({
+            "symbol": bars["symbol"], "latest_date": bars["trade_date"],
+            "latest_close": bars["close"],
+        })
+        recent = self.config.recent_volume_days
+        previous = self.config.previous_volume_days
+        recent_mean = rolling("volume", recent, "mean")
+        previous_mean = rolling("volume", previous, "mean").groupby(bars["symbol"], sort=False).shift(recent)
+        result["recent_5d_avg_volume"] = recent_mean
+        result["previous_20d_avg_volume"] = previous_mean
+        result["volume_ratio"] = recent_mean / previous_mean
+        result["latest_5d_pct"] = bars["close"] / groups["close"].shift(5) - 1
+        result["latest_1d_pct"] = bars["close"] / groups["close"].shift() - 1
+        valid = groups.cumcount() >= self.config.required_trading_days - 1
+        return result.loc[valid, INDICATOR_COLUMNS]
 
-            recent_avg_volume = recent["volume"].mean()
-
-            volume_ratio = recent_avg_volume / previous_avg_volume
-
-            recent_1d_pct = window["close"] / window["close"].shift(1) - 1
-
-            # 5日涨幅的series
-            recent_5d_pct = window["close"] / window["close"].shift(5) - 1
-
-            # 取最新的值
-            latest_1d_pct = recent_1d_pct.iloc[-1]
-
-            latest_5d_pct = recent_5d_pct.iloc[-1]
-
-            rows.append(
-                {
-                    "symbol": symbol,
-                    "latest_date": recent["trade_date"].iloc[-1],
-                    "latest_close": recent["close"].iloc[-1],
-                    "recent_5d_avg_volume": recent_avg_volume,
-                    "previous_20d_avg_volume": previous_avg_volume,
-                    "volume_ratio": volume_ratio,
-                    "latest_5d_pct": latest_5d_pct,
-                    "latest_1d_pct": latest_1d_pct,
-                }
-            )
-
-        return pd.DataFrame(rows, columns=INDICATOR_COLUMNS)
+    def select_indicators(self, indicators, stocks, basic, hot) -> pd.DataFrame:
+        """将批量指标与当日快照合并，复用原筛选条件和排名。"""
+        candidates = self.filter_stocks(self.merge_stock_basic(stocks, basic))
+        result = candidates.merge(indicators, on="symbol", how="inner")
+        result = self._filter_return(self._filter_volume_ratio(result))
+        return self._sort_filter_by_hot(result, hot)
 
     def _filter_volume_ratio(self, result: pd.DataFrame) -> pd.DataFrame:
         """保留最近 5 日均量至少是此前 20 日均量 1.5 倍的股票。"""

@@ -8,6 +8,7 @@ from typing import Any, Callable, Iterable, Iterator
 
 import pandas as pd
 
+from ..config.config import TIMEZONE_NAME
 from ..utils.symbol import exchange_for
 
 
@@ -221,7 +222,7 @@ class FutuProvider:
     @staticmethod
     def _timestamp_to_date(timestamp_ms: int) -> str:
         timestamp = pd.to_datetime(timestamp_ms, unit="ms", utc=True)
-        return timestamp.tz_convert("Asia/Shanghai").strftime("%Y-%m-%d")
+        return timestamp.tz_convert(TIMEZONE_NAME).strftime("%Y-%m-%d")
 
     def fetch_stock_list(
         self,
@@ -407,7 +408,7 @@ class FutuProvider:
         result = frame[list(column_map)].rename(columns=column_map).copy()
         result = result.iloc[offset:].reset_index(drop=True)
         trade_dates = pd.to_datetime(result.pop("date"), errors="raise")
-        shanghai_dates = trade_dates.dt.tz_localize("Asia/Shanghai")
+        shanghai_dates = trade_dates.dt.tz_localize(TIMEZONE_NAME)
         result["date_ms"] = shanghai_dates.map(
             lambda value: int(value.timestamp() * 1000)
         )

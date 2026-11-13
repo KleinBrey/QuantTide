@@ -101,22 +101,17 @@ function markerGroupKey(time, period) {
 function normalizeMarkers(markers, period, rows) {
   if (!Array.isArray(markers) || !markers.length || !rows.length) return EMPTY_MARKERS;
 
-  const chartTimeByGroup = new Map(rows.map(row => [markerGroupKey(row.time, period), row.time]));
+  const chartRowByGroup = new Map(rows.map(row => [markerGroupKey(row.time, period), row]));
   return markers
     .flatMap(marker => {
       const sourceTime = marker?.time || marker?.date || marker?.trade_date;
-      const price = Number(marker?.price);
-      if (!sourceTime || !Number.isFinite(price)) return [];
-      const time = chartTimeByGroup.get(markerGroupKey(sourceTime, period));
-      if (!time) return [];
-      const isBuy = String(marker.side).toUpperCase() === 'BUY';
-      return [
-        {
-          time,
-          price,
-          side: isBuy ? 'BUY' : 'SELL'
-        }
-      ];
+      if (!sourceTime) return [];
+      const row = chartRowByGroup.get(markerGroupKey(sourceTime, period));
+      if (!row) return [];
+      const side = String(marker.side).toUpperCase();
+      const price = side === 'SIGNAL' ? row.high : Number(marker.price);
+      if (!Number.isFinite(price)) return [];
+      return [{ time: row.time, price, side: side === 'BUY' || side === 'SIGNAL' ? side : 'SELL' }];
     })
     .sort((left, right) => String(left.time).localeCompare(String(right.time)));
 }

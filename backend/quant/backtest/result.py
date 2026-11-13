@@ -7,9 +7,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from math import sqrt
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+from backend.app.config.config import TIMEZONE
 
 # 净值曲线和交易流水对外保持固定列顺序，空结果也返回相同结构。
 EQUITY_COLUMNS = [
@@ -328,7 +329,7 @@ def format_backtest_result(
     # 这里是后端回测对象到前端 API 数据结构的唯一转换入口。
     return {
         "strategy": strategy,
-        "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
+        "generated_at": datetime.now(TIMEZONE).isoformat(
             timespec="seconds"
         ),
         "summary": result.summary(),

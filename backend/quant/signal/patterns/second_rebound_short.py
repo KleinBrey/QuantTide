@@ -9,11 +9,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
 from rich.console import Console
+
+from backend.quant.signal.range_utils import (
+    DateLike, normalize_trade_dates, select_by_snapshot, trim_history_bars,
+)
 
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
@@ -79,6 +84,12 @@ class SignalConfig:
     min_follow_return: float = -0.02
     # 本地日 K 成交额单位为千元，20 万即 2 亿元。
     min_amount: float = 200_000
+
+    @property
+    def warmup_days(self) -> int:
+        """拒绝日最长指标窗口，加上次日跟随确认。"""
+        return max(self.peak_lookback_days, self.pullback_lookback_days + 1,
+                   self.volume_average_days + 1, 6) + 1
 
 
 DEFAULT_CONFIG = SignalConfig()
@@ -267,8 +278,12 @@ def latest_filter_counts(signals: pd.DataFrame) -> list[tuple[str, int]]:
 def latest_confirmed_signals(signals: pd.DataFrame) -> pd.DataFrame:
     """提取最新确认信号，并使用拒绝日的形态指标。"""
 
-    latest = signals.groupby("symbol", sort=False).tail(1).copy()
-    latest = latest[latest["follow_signal"]].copy()
+    return confirmed_signals(signals.groupby("symbol", sort=False).tail(1))
+
+
+def confirmed_signals(signals: pd.DataFrame) -> pd.DataFrame:
+    """整理全部确认日的指标，供单日与区间扫描共用。"""
+    latest = signals[signals["follow_signal"]].copy()
     for column in [
         "first_peak",
         "pullback_depth",
@@ -305,6 +320,11 @@ def run_signal(
             "return_5d": "latest_5d_pct",
         }
     )
+    return select_indicators(latest, latest_stocks, latest_basic, latest_hot)
+
+
+def select_indicators(latest, latest_stocks, latest_basic, latest_hot) -> pd.DataFrame:
+    """按确认日快照补齐基本面、过滤股票并排序。"""
     if latest.empty:
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
@@ -334,6 +354,46 @@ def run_signal(
         ]
         .reset_index(drop=True)
     )
+
+
+class SecondReboundShortPattern:
+    """区间扫描适配：整段行情计算一次，再逐日匹配快照。"""
+
+    def __init__(self, config: SignalConfig = DEFAULT_CONFIG):
+        self.config = config
+
+    def scan_range(
+        self,
+        trade_dates: Iterable[DateLike],
+        historical_stocks: pd.DataFrame,
+        daily_bars: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """批量计算区间指标，再按信号日快照执行本策略筛选与排序。"""
+        trade_dates = normalize_trade_dates(trade_dates)
+        if trade_dates.empty or daily_bars.empty:
+            return pd.DataFrame(columns=RESULT_COLUMNS)
+        bars = trim_history_bars(
+            daily_bars, trade_dates, lookback_rows=self.config.warmup_days,
+        )
+        indicators = self.calculate_range_indicators(bars)
+        indicators = indicators[indicators["latest_date"].isin(trade_dates)]
+        return select_by_snapshot(
+            indicators, historical_stocks, historical_hot, historical_basic,
+            self.select_indicators,
+        )
+
+    def calculate_range_indicators(self, daily_bars: pd.DataFrame) -> pd.DataFrame:
+        signals = detect_second_rebound_short(
+            daily_bars.rename(columns={"trade_date": "date"}), config=self.config,
+        )
+        return confirmed_signals(signals).rename(columns={
+            "date": "latest_date", "close": "latest_close",
+            "return_1d": "latest_1d_pct", "return_5d": "latest_5d_pct",
+        })
+
+    select_indicators = staticmethod(select_indicators)
 
 
 if __name__ == "__main__":

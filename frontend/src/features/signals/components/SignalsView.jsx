@@ -1,5 +1,6 @@
 import { BookOpenText, ChevronRight, Loader2, RefreshCcw } from 'lucide-react';
 import moment from 'moment';
+import { Tabs } from 'radix-ui';
 import FullscreenButton from '@/components/fullscreen/FullscreenButton.jsx';
 import { useWindowFullscreen } from '@/hooks/useFullscreen.js';
 import { Button } from '@/shadcn/components/ui/button.jsx';
@@ -16,7 +17,11 @@ function formatTimestamp(value) {
 
 export default function SignalsView() {
   const { isFullscreen, targetClassName, toggleFullscreen } = useWindowFullscreen();
-  const { signals, activeSignalId, result, columnDefs, loading, error, selectSignal, refresh } = useSignals();
+  const {
+    signals, activeSignalId, result, columnDefs, loading, error, selectSignal,
+    refresh, range, setRange, validRange, scanMode, selectMode
+  } = useSignals();
+  const isHistory = scanMode === 'history';
   const activeSignal = result?.signal || signals.find(signal => signal.id === activeSignalId);
   const rows = result?.items || [];
 
@@ -36,6 +41,7 @@ export default function SignalsView() {
                 type="button"
                 className={cn(styles.signalItem, active && styles.signalItemActive)}
                 onClick={() => selectSignal(signal.id)}
+                disabled={!validRange}
                 aria-current={active ? 'page' : undefined}
               >
                 <span className={styles.signalIcon}>
@@ -52,45 +58,89 @@ export default function SignalsView() {
         </nav>
       </aside>
 
-      <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.resultPanel, targetClassName)}>
-        <div className={cn('dashboard-panel-header', styles.resultHeader)}>
-          <div className={styles.headerContent}>
-            <div className={styles.signalHeading}>
-              <h2>{activeSignal?.name || '信号结果'}</h2>
-              {activeSignal?.description ? <span>{activeSignal.description}</span> : null}
+      <Tabs.Root value={scanMode} onValueChange={selectMode} activationMode="manual" asChild>
+        <section className={cn('dashboard-panel', 'dashboard-table-panel', styles.resultPanel, targetClassName)}>
+          <div className={cn('dashboard-panel-header', styles.resultHeader)}>
+            <Tabs.List className={styles.scanTabs} aria-label="扫描方式">
+              <Tabs.Trigger className={styles.scanTab} value="today" disabled={!activeSignalId}>当日扫描</Tabs.Trigger>
+              <Tabs.Trigger className={styles.scanTab} value="history" disabled={!activeSignalId}>历史扫描</Tabs.Trigger>
+            </Tabs.List>
+            <div className={styles.headerContent}>
+              <div className={styles.signalHeading}>
+                <h2>{activeSignal?.name || '信号结果'}</h2>
+                {activeSignal?.description ? <span>{activeSignal.description}</span> : null}
+              </div>
+              <div className={styles.headerMeta}>
+                <span>
+                  最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong>
+                </span>
+                <span>
+                  命中股票 <strong>{loading && !result ? '-' : (result?.stock_count ?? 0)}</strong>
+                </span>
+                <span>
+                  命中次数 <strong>{loading && !result ? '-' : (result?.count ?? 0)}</strong>
+                </span>
+                <span>
+                  {isHistory ? '已扫描' : '扫描交易日'}{' '}
+                  <strong>{result ? (isHistory ? `${result.start_date} 至 ${result.end_date}` : result.end_date) : '-'}</strong>
+                </span>
+              </div>
             </div>
-            <div className={styles.headerMeta}>
-              <span>
-                最近运行 <strong>{formatTimestamp(result?.generated_at)}</strong>
-              </span>
-              <span>
-                命中股票 <strong>{loading && !result ? '-' : (result?.count ?? 0)}</strong>
-              </span>
-              <span>
-                交易日期 <strong>{result?.trade_date || '-'}</strong>
-              </span>
-            </div>
-          </div>
-          <div className={styles.headerActions}>
-            <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
-            <Button
-              type="button"
-              className="dashboard-ghost-button"
-              onClick={refresh}
-              disabled={loading || !activeSignalId}
-              variant="outline"
+            <form
+              className={styles.headerActions}
+              onSubmit={event => {
+                event.preventDefault();
+                refresh();
+              }}
             >
-              {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
-              <span>{loading ? '运行中' : '重新运行'}</span>
-            </Button>
+              {isHistory ? <div className={styles.dateRange}>
+                <label>
+                  开始日期
+                  <input
+                    type="date"
+                    required
+                    value={range.startDate}
+                    max={range.endDate || undefined}
+                    onInput={event => setRange({ ...range, startDate: event.currentTarget.value })}
+                  />
+                </label>
+                <label>
+                  结束日期
+                  <input
+                    type="date"
+                    required
+                    value={range.endDate}
+                    min={range.startDate || undefined}
+                    onInput={event => setRange({ ...range, endDate: event.currentTarget.value })}
+                  />
+                </label>
+              </div> : <span className={styles.todayHint}>按本地最新交易日扫描</span>}
+              <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
+              <Button
+                type="submit"
+                className="dashboard-ghost-button"
+                disabled={loading || !activeSignalId || !validRange}
+                variant="outline"
+              >
+                {loading ? <Loader2 className="dashboard-spin" size={15} /> : <RefreshCcw size={15} />}
+                <span>{loading ? '扫描中' : '扫描信号'}</span>
+              </Button>
+            </form>
           </div>
-        </div>
 
-        {error ? <div className={styles.errorNotice}>{error}</div> : null}
-        <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>
-          <SignalResultsTable rows={rows} columnDefs={columnDefs} loading={loading} />
-        </div>
-      </section>
+          <Tabs.Content value={scanMode} className={styles.scanBody}>
+            {error ? <div className={styles.errorNotice}>{error}</div> : null}
+            <div className={cn(styles.tableWrap, isFullscreen && styles.fullscreenTableWrap)}>
+              <SignalResultsTable
+                rows={rows}
+                columnDefs={columnDefs}
+                loading={loading}
+                emptyMessage={isHistory ? '所选日期范围内暂无命中股票' : '最新交易日暂无命中股票'}
+              />
+            </div>
+          </Tabs.Content>
+        </section>
+      </Tabs.Root>
     </div>
   );
 }

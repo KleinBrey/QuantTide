@@ -10,11 +10,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
 from rich.console import Console
+
+from backend.quant.signal.range_utils import (
+    DateLike, normalize_trade_dates, select_by_snapshot, trim_history_bars,
+)
 
 from backend.app.database import DuckDBDatabase
 from backend.app.repository import (
@@ -190,42 +195,65 @@ class TodayEmotionReversalPattern:
 
         return bars
 
+    def scan_range(
+        self,
+        trade_dates: Iterable[DateLike],
+        historical_stocks: pd.DataFrame,
+        daily_bars: pd.DataFrame,
+        historical_hot: pd.DataFrame,
+        historical_basic: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """批量计算区间指标，再按信号日快照执行本策略筛选与排序。"""
+        trade_dates = normalize_trade_dates(trade_dates)
+        if trade_dates.empty or daily_bars.empty:
+            return pd.DataFrame(columns=RESULT_COLUMNS)
+        # 先清洗、去重，再保留首个扫描日前真正需要的有效交易日。
+        bars = self.filter_daily_bars(daily_bars, daily_bars["symbol"].unique())
+        bars = bars.sort_values(["symbol", "trade_date"], kind="stable")
+        bars = bars.drop_duplicates(["symbol", "trade_date"], keep="last")
+        bars = trim_history_bars(
+            bars, trade_dates, lookback_rows=self.config.required_trading_days - 1,
+        )
+        indicators = self.calculate_range_indicators(bars)
+        indicators = indicators[indicators["latest_date"].isin(trade_dates)]
+        return select_by_snapshot(
+            indicators, historical_stocks, historical_hot, historical_basic,
+            self.select_indicators,
+        )
+
     def calculate_indicators(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """计算前一日涨幅、最新交易日高开幅度和涨幅。"""
+        """复用批量指标，只取每只股票最后一个有效交易日。"""
+        indicators = self.calculate_range_indicators(bars)
+        return indicators.groupby("symbol", sort=False).tail(1).reset_index(drop=True)
 
-        rows: list[dict[str, object]] = []
-        required_days = self.config.required_trading_days
+    def calculate_range_indicators(self, daily_bars: pd.DataFrame) -> pd.DataFrame:
+        """按股票一次计算全部交易日，仅要求足够的有效历史行情。"""
+        bars = daily_bars.sort_values(["symbol", "trade_date"], kind="stable").copy()
+        bars = self.filter_daily_bars(bars, bars["symbol"].unique())
+        bars = bars.drop_duplicates(["symbol", "trade_date"], keep="last").reset_index(drop=True)
+        if bars.empty:
+            return pd.DataFrame(columns=INDICATOR_COLUMNS)
 
-        for symbol, symbol_bars in bars.groupby("symbol", sort=False):
-            window = (
-                symbol_bars.sort_values("trade_date")
-                .drop_duplicates(subset="trade_date", keep="last")
-                .tail(required_days)
-            )
-            if len(window) < required_days:
-                continue
+        groups = bars.groupby("symbol", sort=False)
 
-            before_previous = window.iloc[-3]
-            previous = window.iloc[-2]
-            latest = window.iloc[-1]
+        result = pd.DataFrame({
+            "symbol": bars["symbol"], "latest_date": bars["trade_date"],
+            "latest_close": bars["close"],
+        })
+        previous_close = groups["close"].shift()
+        result["latest_open"] = bars["open"]
+        result["previous_1d_pct"] = previous_close / groups["close"].shift(2) - 1
+        result["latest_open_gap_pct"] = bars["open"] / previous_close - 1
+        result["latest_1d_pct"] = bars["close"] / previous_close - 1
+        valid = groups.cumcount() >= self.config.required_trading_days - 1
+        return result.loc[valid, INDICATOR_COLUMNS]
 
-            previous_1d_pct = previous["close"] / before_previous["close"] - 1
-            latest_open_gap_pct = latest["open"] / previous["close"] - 1
-            latest_1d_pct = latest["close"] / previous["close"] - 1
-
-            rows.append(
-                {
-                    "symbol": symbol,
-                    "latest_date": latest["trade_date"],
-                    "latest_open": latest["open"],
-                    "latest_close": latest["close"],
-                    "previous_1d_pct": previous_1d_pct,
-                    "latest_open_gap_pct": latest_open_gap_pct,
-                    "latest_1d_pct": latest_1d_pct,
-                }
-            )
-
-        return pd.DataFrame(rows, columns=INDICATOR_COLUMNS)
+    def select_indicators(self, indicators, stocks, basic, hot) -> pd.DataFrame:
+        """将批量指标与当日快照合并，复用原筛选条件和排名。"""
+        candidates = self.filter_stocks(self.merge_stock_basic(stocks, basic))
+        result = candidates.merge(indicators, on="symbol", how="inner")
+        result = self._filter_latest_return(self._filter_open_gap(self._filter_previous_return(result)))
+        return self._sort_filter_by_hot(result, hot)
 
     def _filter_previous_return(self, result: pd.DataFrame) -> pd.DataFrame:
         """保留前一交易日涨跌幅在 -5% 到 0% 之间的股票。"""

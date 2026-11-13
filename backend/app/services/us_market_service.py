@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from ..config.config import TIMEZONE_NAME
 from ..provider import IwencaiProvider, YFinanceProvider
 from ..repository import USDailyBarRepository, USStockHotDailyRepository
 from ..repository.watchlist import WatchlistRepository
@@ -77,7 +78,7 @@ class USMarketService(HotStockService):
         frame["symbol"] = str(symbol).strip().upper()
         frame["trade_date"] = (
             pd.to_datetime(frame["date_ms"], unit="ms", utc=True)
-            .dt.tz_convert("Asia/Shanghai")
+            .dt.tz_convert(TIMEZONE_NAME)
             .dt.date
         )
         frame["open"] = pd.to_numeric(frame["open_price"], errors="raise")
@@ -161,8 +162,8 @@ class USMarketService(HotStockService):
                 total=len(symbols),
                 desc=f"同步{self._market_name}日 K",
                 unit="只",
-                range_text=f"{pd.Timestamp(start, unit='ms', tz='Asia/Shanghai').date()} 至 "
-                f"{pd.Timestamp(end, unit='ms', tz='Asia/Shanghai').date()}",
+                range_text=f"{pd.Timestamp(start, unit='ms', tz=TIMEZONE_NAME).date()} 至 "
+                f"{pd.Timestamp(end, unit='ms', tz=TIMEZONE_NAME).date()}",
                 workers=max_workers,
             )
             for symbol, future in progress:

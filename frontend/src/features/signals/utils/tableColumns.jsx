@@ -2,8 +2,8 @@ export const columnDefs = {
   confirmed_volume_breakout: [
     { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
     { headerName: '代码', field: 'symbol', minWidth: 110, flex: 1 },
-    { headerName: '突破日', field: 'breakout_date', minWidth: 112, flex: 0.9 },
-    { headerName: '确认日', field: 'confirm_date', minWidth: 112, flex: 0.9 },
+    { headerName: '突破日', field: 'breakout_date', minWidth: 112, flex: 0.9, valueFormatter: ({ value }) => value?.slice(0, 10) || '-' },
+    { headerName: '信号日期', field: 'signal_date', minWidth: 112, flex: 0.9 },
     {
       headerName: '确认收盘',
       field: 'confirm_close',
@@ -43,7 +43,8 @@ export const columnDefs = {
   recent_volume_breakout: [
     { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
     { headerName: '代码', field: 'symbol', minWidth: 110, flex: 1 },
-    { headerName: '今日涨幅', field: 'latest_1d_pct', minWidth: 104, flex: 0.8, cellRenderer: PercentCell },
+    { headerName: '信号日期', field: 'signal_date', minWidth: 112, flex: 0.9 },
+    { headerName: '信号日涨幅', field: 'latest_1d_pct', minWidth: 104, flex: 0.8, cellRenderer: PercentCell },
     {
       headerName: '成交量比',
       field: 'volume_ratio',
@@ -69,7 +70,8 @@ export const columnDefs = {
   default: [
     { headerName: '股票', field: 'name', minWidth: 120, flex: 1, cellStyle: { color: '#ff7f50', fontWeight: 700 } },
     { headerName: '代码', field: 'symbol', minWidth: 110, flex: 1 },
-    { headerName: '今日涨幅', field: 'latest_1d_pct', minWidth: 104, flex: 0.8, cellRenderer: PercentCell },
+    { headerName: '信号日期', field: 'signal_date', minWidth: 112, flex: 0.9 },
+    { headerName: '信号日涨幅', field: 'latest_1d_pct', minWidth: 104, flex: 0.8, cellRenderer: PercentCell },
     {
       headerName: '市值(亿)',
       field: 'market_cap',
@@ -124,7 +126,7 @@ export function formatMarketCap(value) {
 export function transformHistory(items = []) {
   if (!Array.isArray(items)) return [];
   return items.map(item => ({
-    date: item.trade_date,
+    date: item.trade_date.slice(0, 10),
     open: Number(item.open.toFixed(2)),
     high: Number(item.high.toFixed(2)),
     low: Number(item.low.toFixed(2)),

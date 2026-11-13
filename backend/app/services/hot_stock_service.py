@@ -5,10 +5,10 @@ from __future__ import annotations
 import threading
 from datetime import date, datetime, timedelta
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from ..config.config import TIMEZONE
 from ..provider import IwencaiProvider
 
 
@@ -90,7 +90,7 @@ class HotStockService:
             raise RuntimeError("未配置问财 Provider 或股票热度 Repository")
 
         if trade_date is None:
-            trade_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            trade_date = datetime.now(TIMEZONE).date()
 
         try:
             result = getattr(self.iwencai_provider, self._fetch_method_name)()
@@ -114,7 +114,7 @@ class HotStockService:
         if self.stock_hot_repository is None:
             raise RuntimeError("未配置股票热度 Repository")
 
-        current_time = request_time or datetime.now(ZoneInfo("Asia/Shanghai"))
+        current_time = request_time or datetime.now(TIMEZONE)
         latest_update_time = self.stock_hot_repository.get_latest_update_time()
 
         if not self._is_hot_stock_fresh(latest_update_time, current_time):
@@ -146,4 +146,4 @@ class HotStockService:
 
         if value.tzinfo is None:
             return value
-        return value.astimezone(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+        return value.astimezone(TIMEZONE).replace(tzinfo=None)
